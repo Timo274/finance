@@ -1,6 +1,6 @@
 # Конфиг Fly.io. Имя приложения подставится при `fly launch`/`fly deploy`.
-app = "salary-allocation-planner"
-primary_region = "waw"  # Варшава — ближе всего к Киеву
+app = "salary-planner-475c5d"
+primary_region = "fra"  # Франкфурт — ближайший к Киеву регион Fly
 
 [build]
   dockerfile = "Dockerfile"
