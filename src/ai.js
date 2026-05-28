@@ -7,7 +7,7 @@ const API_KEY = process.env.AI_API_KEY || '';
 const DEFAULT_MODELS = {
   openai: 'gpt-4o-mini',
   anthropic: 'claude-3-5-haiku-latest',
-  gemini: 'gemini-1.5-flash',
+  gemini: 'gemini-2.5-flash',
 };
 
 export function aiEnabled() {
