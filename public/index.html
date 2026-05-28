@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#0b1220" />
+  <title>Salary Planner — план зарплаты</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <!-- Экран входа / установки PIN -->
+  <div id="authGate" class="auth-gate hidden">
+    <div class="auth-card">
+      <div class="brand">
+        <div class="brand-mark">SP</div>
+        <div>
+          <div class="brand-title">Salary Planner</div>
+          <div class="brand-sub">Планируй зарплату заранее</div>
+        </div>
+      </div>
+      <h2 id="authTitle">Вход</h2>
+      <p id="authHint" class="muted"></p>
+      <form id="authForm">
+        <input id="pinInput" type="password" inputmode="numeric" autocomplete="off"
+               placeholder="PIN-код" maxlength="12" />
+        <input id="pinConfirm" type="password" inputmode="numeric" autocomplete="off"
+               placeholder="Повторите PIN" maxlength="12" class="hidden" />
+        <div id="authError" class="auth-error"></div>
+        <button type="submit" class="btn btn-primary btn-block" id="authSubmit">Войти</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Основное приложение -->
+  <div id="app" class="app hidden">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">SP</div>
+        <div>
+          <div class="brand-title">Salary Planner</div>
+          <div class="brand-sub">Capital Queue</div>
+        </div>
+      </div>
+      <nav class="nav">
+        <button class="nav-item active" data-view="dashboard"><span class="ico">◎</span> Кабинет</button>
+        <button class="nav-item" data-view="queue"><span class="ico">≡</span> Очередь желаний</button>
+        <button class="nav-item" data-view="plan"><span class="ico">▤</span> План распределения</button>
+        <button class="nav-item" data-view="timeline"><span class="ico">⟋</span> Таймлайн</button>
+        <button class="nav-item" data-view="scenarios"><span class="ico">◧</span> Сценарии</button>
+        <button class="nav-item" data-view="history"><span class="ico">↺</span> История</button>
+        <button class="nav-item" data-view="assistant"><span class="ico">✦</span> Ассистент</button>
+      </nav>
+      <div class="sidebar-foot">
+        <button id="logoutBtn" class="btn btn-ghost btn-block">Выйти</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <div id="topPlanName" class="top-plan">—</div>
+          <div id="topPayday" class="muted small">—</div>
+        </div>
+        <div class="top-right">
+          <span id="topStatus" class="status-badge">—</span>
+          <button id="editPlanBtn" class="btn btn-outline">Настроить зарплату</button>
+        </div>
+      </header>
+
+      <div id="views" class="views"></div>
+    </main>
+  </div>
+
+  <!-- Модальные окна -->
+  <div id="modalRoot"></div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/app.js" type="module"></script>
+</body>
+</html>

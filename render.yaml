@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: salary-allocation-planner
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: DB_PATH
+        value: /var/data/app.db
+      # AI опционально — задайте при необходимости:
+      # - key: AI_PROVIDER
+      #   sync: false
+      # - key: AI_API_KEY
+      #   sync: false
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 1
