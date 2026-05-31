@@ -53,8 +53,14 @@ db.exec(`
 function itemColumns() {
   return db.prepare('PRAGMA table_info(items)').all().map((c) => c.name);
 }
+function planColumns() {
+  return db.prepare('PRAGMA table_info(plans)').all().map((c) => c.name);
+}
 function ensureColumn(col, def) {
   if (!itemColumns().includes(col)) db.exec(`ALTER TABLE items ADD COLUMN ${col} ${def}`);
+}
+function ensurePlanColumn(col, def) {
+  if (!planColumns().includes(col)) db.exec(`ALTER TABLE plans ADD COLUMN ${col} ${def}`);
 }
 
 const hadBand = itemColumns().includes('band');
@@ -62,6 +68,7 @@ ensureColumn('band', "TEXT NOT NULL DEFAULT 'small'");
 ensureColumn('score_type', "TEXT NOT NULL DEFAULT 'none'");
 ensureColumn('scores', 'TEXT');
 ensureColumn('saved_amount', 'REAL NOT NULL DEFAULT 0');
+ensurePlanColumn('investment_fixed', 'REAL NOT NULL DEFAULT 0');
 
 if (!hadBand) {
   // Перенос старых значений в новую таксономию (слой капитала + категория покупки).
@@ -157,6 +164,7 @@ export function rowToPlan(r) {
     salary: r.salary,
     survivalCost: r.survival_cost,
     buffer: r.buffer,
+    investmentFixed: r.investment_fixed || 0,
     status: r.status,
     snapshot: r.snapshot ? JSON.parse(r.snapshot) : null,
     createdAt: r.created_at,

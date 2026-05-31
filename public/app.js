@@ -179,7 +179,11 @@ function drawCharts() {
   const donut = $('#donutAlloc');
   if (donut && state.allocation) {
     const t = state.allocation.totals;
-    const segs = [{ value: t.survival, color: '#64708f' }];
+    const segs = [
+      { value: t.survival, color: '#64708f' },
+      { value: t.reserve, color: cssVar('--accent', '#2f6bff') },
+      { value: t.fixedInvestment, color: cssVar('--green', '#16a34a') },
+    ];
     Object.entries(state.allocation.buckets).filter(([, v]) => v > 0)
       .forEach(([k, v]) => segs.push({ value: v, color: layerColor(k) }));
     if (t.remaining > 0) segs.push({ value: t.remaining, color: cssVar('--border', '#ccd') });
@@ -188,7 +192,7 @@ function drawCharts() {
   const line = $('#lineBalance');
   if (line && state.allocation) {
     const t = state.allocation.totals;
-    const pts = [{ value: t.salary - t.survival }];
+    const pts = [{ value: t.availableToAllocate }];
     state.allocation.timeline.forEach((n) => pts.push({ value: n.balanceAfter }));
     drawLine(line, pts);
   }
@@ -415,21 +419,22 @@ function viewDashboard() {
     return `<div class="view-head"><h1>Кабинет</h1><p>Обзор будущей зарплаты до её прихода.</p></div>${noPlanBlock()}`;
   }
   const t = state.allocation.totals;
+  const stablePct = (value) => (t.salary ? (value / t.salary) * 100 : 0);
   const segs = Object.entries(state.allocation.buckets)
     .filter(([, v]) => v > 0)
     .map(([k, v]) => `<div class="alloc-seg" style="width:${(v / t.salary) * 100}%;background:${bucketColor(k)}" title="${bucketLabel(k)}: ${fmt(v)}"></div>`)
     .join('');
-  const survW = (t.survival / t.salary) * 100;
 
   return `
   <div class="view-head"><h1>Кабинет</h1><p>Как разложить зарплату заранее — до того, как деньги пришли.</p></div>
   <div class="grid cards">
     <div class="card"><div class="stat-label">Зарплата</div><div class="stat-value">${fmt(t.salary)}</div><div class="stat-sub">${fmtDate(state.plan.payday)}</div></div>
-    <div class="card"><div class="stat-label">Обязательные расходы</div><div class="stat-value sm">${fmt(t.survival)}</div><div class="stat-sub">списываются первыми</div></div>
-    <div class="card"><div class="stat-label">Страховка / чёрный день</div><div class="stat-value sm accent-num">${fmt(t.reserve)}</div><div class="stat-sub">2–5%+ от зп, не трогаем</div></div>
-    <div class="card"><div class="stat-label">Доступно распределить</div><div class="stat-value accent-num">${fmt(t.availableToAllocate)}</div></div>
+    <div class="card"><div class="stat-label">Обязательные расходы</div><div class="stat-value sm">${fmt(t.survival)}</div><div class="stat-sub">стабильный расходник</div></div>
+    <div class="card"><div class="stat-label">Страховка</div><div class="stat-value sm accent-num">${fmt(t.reserve)}</div><div class="stat-sub">чёрный день, не трогаем</div></div>
+    <div class="card"><div class="stat-label">Инвестиции</div><div class="stat-value sm green-num">${fmt(t.fixedInvestment)}</div><div class="stat-sub">стабильно отложить</div></div>
+    <div class="card"><div class="stat-label">Излишки на желания</div><div class="stat-value accent-num">${fmt(t.availableToAllocate)}</div><div class="stat-sub">после стабильных пунктов</div></div>
     <div class="card"><div class="stat-label">Распределено</div><div class="stat-value sm">${fmt(t.allocated)}</div><div class="stat-sub">${state.allocation.approved.length} покупок одобрено</div></div>
-    <div class="card"><div class="stat-label">Останется</div><div class="stat-value ${t.freeAfterReserve < 0 ? 'red-num' : 'green-num'}">${fmt(t.remaining)}</div><div class="stat-sub">сверх резерва: ${fmt(t.freeAfterReserve)}</div></div>
+    <div class="card"><div class="stat-label">Останется из излишков</div><div class="stat-value ${t.remaining < 0 ? 'red-num' : 'green-num'}">${fmt(t.remaining)}</div></div>
   </div>
 
   <div class="chart-cols" style="margin-top:16px">
@@ -440,19 +445,23 @@ function viewDashboard() {
         <canvas id="donutAlloc" class="chart-donut"></canvas>
         <div class="legend legend-col">
           <span><span class="dot" style="background:#64708f"></span>Обязательные <b>${fmt(t.survival)}</b></span>
+          <span><span class="dot" style="background:var(--accent)"></span>Страховка <b>${fmt(t.reserve)}</b></span>
+          <span><span class="dot" style="background:var(--green)"></span>Инвестиции <b>${fmt(t.fixedInvestment)}</b></span>
           ${Object.entries(state.allocation.buckets).filter(([, v]) => v > 0).map(([k, v]) => `<span><span class="dot" style="background:${bucketColor(k)}"></span>${bucketLabel(k)} <b>${fmt(v)}</b></span>`).join('')}
           <span><span class="dot" style="background:var(--border)"></span>Останется <b>${fmt(t.remaining)}</b></span>
         </div>
       </div>
       <div class="alloc-bar" style="margin-top:16px">
-        <div class="alloc-seg" style="width:${survW}%;background:#64708f"></div>${segs}
+        <div class="alloc-seg" style="width:${stablePct(t.survival)}%;background:#64708f" title="Обязательные"></div>
+        <div class="alloc-seg" style="width:${stablePct(t.reserve)}%;background:var(--accent)" title="Страховка"></div>
+        <div class="alloc-seg" style="width:${stablePct(t.fixedInvestment)}%;background:var(--green)" title="Инвестиции"></div>${segs}
       </div>
-      ${t.status === 'overallocated' ? `<div class="tradeoff" style="background:color-mix(in srgb,var(--red) 10%,transparent);border-color:var(--red)"><b style="color:var(--red)">Перерасход.</b> Часть покупок не помещается без нарушения резерва — посмотрите «План распределения», что перенести.</div>` : ''}
+      ${t.status === 'overallocated' ? `<div class="tradeoff" style="background:color-mix(in srgb,var(--red) 10%,transparent);border-color:var(--red)"><b style="color:var(--red)">Перерасход.</b> Стабильные пункты и желания выше зарплаты — посмотрите «План распределения», что перенести.</div>` : ''}
     </div>
     <div class="card pad-lg">
       <div class="stat-label">Остаток после каждой покупки</div>
       ${state.allocation.timeline.length ? `<canvas id="lineBalance" class="chart-line"></canvas>
-      <div class="row-between small muted" style="margin-top:6px"><span>старт ${fmtShort(t.salary - t.survival)}</span><span>резерв ${fmtShort(t.reserve)}</span></div>`
+      <div class="row-between small muted" style="margin-top:6px"><span>излишки ${fmtShort(t.availableToAllocate)}</span><span>стабильно ${fmtShort(t.stableExpenses)}</span></div>`
       : '<div class="chart-empty muted">Добавьте покупки в план, чтобы увидеть график остатка.</div>'}
     </div>
   </div>
@@ -592,7 +601,7 @@ function viewWallets() {
   </div>
   <div class="grid cards">
     <div class="card"><div class="stat-label">В кошельках</div><div class="stat-value">${fmt(total)}</div><div class="stat-sub">${state.wallets.length} карманов</div></div>
-    <div class="card"><div class="stat-label">Доступно из зарплаты</div><div class="stat-value sm">${fmt(available)}</div><div class="stat-sub">${total > available ? 'кошельки выше доступного' : 'в пределах доступного'}</div></div>
+    <div class="card"><div class="stat-label">Излишки после стабильных пунктов</div><div class="stat-value sm">${fmt(available)}</div><div class="stat-sub">${total > available ? 'кошельки выше излишков' : 'в пределах излишков'}</div></div>
   </div>
   <div class="chart-cols" style="margin-top:16px">
     <div class="card pad-lg"><div class="section-title" style="margin-top:0">Карманы</div>${rows || '<p class="muted">Создайте карманы: еда, транспорт, желание, инвестиции...</p>'}</div>
@@ -615,7 +624,7 @@ function viewPlan() {
   }).join('');
   return `
   <div class="view-head row-between">
-    <div><h1>План распределения</h1><p>Сначала решаете сами, куда перекинуть деньги; авто-план остаётся подсказкой рядом.</p></div>
+    <div><h1>План распределения</h1><p>Распределяйте только излишки после обязательных расходов, страховки и инвестиций; авто-план остаётся подсказкой рядом.</p></div>
     <button class="btn btn-outline" data-act="close-month">Закрыть месяц</button>
   </div>
   <div class="card pad-lg" style="margin-bottom:16px">
@@ -652,9 +661,10 @@ function viewScenarios() {
       <div class="bucket-bar">${bars}<div style="flex:1;background:#142244"></div></div>
       <div class="legend small">
         <span class="muted">Карьера: ${fmtShort(s.career)}</span>
-        <span class="muted">Инвест: ${fmtShort(s.investment)}</span>
+        <span class="muted">Желания-инвест: ${fmtShort(s.investment)}</span>
         <span class="muted">Жизнь: ${fmtShort(s.quality)}</span>
         <span class="muted">Резерв: ${fmtShort(s.reserve)}</span>
+        <span class="muted">Стабильные инвест: ${fmtShort(s.fixedInvestment || 0)}</span>
       </div>
       <div class="legend small scenario-weights">${weights}</div>
       <div style="margin-top:10px;display:flex;justify-content:space-between">
@@ -665,7 +675,7 @@ function viewScenarios() {
   }).join('');
 
   return `
-  <div class="view-head"><h1>Сценарии месяца</h1><p>Сравнение стратегий по резерву, инвестициям, карьере и качеству жизни. Математика считается от доступного бюджета после обязательных расходов и резерва.</p></div>
+  <div class="view-head"><h1>Сценарии месяца</h1><p>Сравнение стратегий по излишкам после стабильных пунктов: обязательные расходы, страховка и инвестиции уже вычтены из зарплаты.</p></div>
   <div class="grid scn-grid">${cards}</div>
   ${state.scenario === 'custom' ? customScenarioEditor() : ''}`;
 }
@@ -837,16 +847,20 @@ function closeModal() { $('#modalRoot').innerHTML = ''; }
 function openPlanModal() {
   const p = state.plan || { name: 'Зарплата', payday: new Date().toISOString().slice(0, 10), ...state.meta.defaults };
   const reservePct = p.salary ? Math.round((Number(p.buffer || 0) / Number(p.salary)) * 100) : 0;
+  const investPct = p.salary ? Math.round((Number(p.investmentFixed || 0) / Number(p.salary)) * 100) : 0;
   openModal(`<div class="modal">
-    <div class="modal-head"><h2>Будущая зарплата</h2><button class="close-x" onclick="document.getElementById('modalRoot').innerHTML=''">×</button></div>
+    <div class="modal-head"><h2>Стабильные пункты зарплаты</h2><button class="close-x" onclick="document.getElementById('modalRoot').innerHTML=''">×</button></div>
     <form id="planForm" class="form-grid">
       <div class="field full"><label>Название (например, «Зарплата июнь»)</label><input name="name" value="${escapeAttr(p.name)}" /></div>
       <div class="field"><label>Дата зарплаты</label><input type="date" name="payday" value="${p.payday}" /></div>
-      <div class="field"><label>Сумма зарплаты, грн</label><input type="number" name="salary" value="${p.salary}" min="0" /></div>
+      <div class="field"><label>Зарплата, грн</label><input type="number" name="salary" value="${p.salary}" min="0" /></div>
       <div class="field"><label>Обязательные расходы, грн</label><input type="number" name="survivalCost" value="${p.survivalCost}" min="0" />
-        <span class="muted small">по умолчанию для жизни с родителями</span></div>
-      <div class="field"><label>Страховка / чёрный день, грн</label><input type="number" name="buffer" value="${p.buffer}" min="0" />
-        <span class="muted small">деньги, которые отложил и не трогаешь. Сейчас ~${reservePct}% от зп; спокойная цель 2–5%+</span></div>
+        <span class="muted small">стабильные траты, которые списываются первыми</span></div>
+      <div class="field"><label>Страховка, грн</label><input type="number" name="buffer" value="${p.buffer}" min="0" />
+        <span class="muted small">на чёрный день, не трогаем. Сейчас ~${reservePct}% от зп</span></div>
+      <div class="field"><label>Инвестиции, грн</label><input type="number" name="investmentFixed" value="${p.investmentFixed || 0}" min="0" />
+        <span class="muted small">стабильно отложить с зарплаты. Сейчас ~${investPct}% от зп</span></div>
+      <div class="field full"><span class="muted small">Излишки после этих пунктов пойдут в желания, кошельки и ручной план распределения.</span></div>
       <div class="modal-foot field full" style="flex-direction:row">
         <button type="button" class="btn btn-ghost" onclick="document.getElementById('modalRoot').innerHTML=''">Отмена</button>
         <button type="submit" class="btn btn-primary">Сохранить</button>
@@ -857,7 +871,7 @@ function openPlanModal() {
     const f = new FormData(e.currentTarget);
     await api.post('/api/plan', {
       name: f.get('name'), payday: f.get('payday'),
-      salary: +f.get('salary'), survivalCost: +f.get('survivalCost'), buffer: +f.get('buffer'),
+      salary: +f.get('salary'), survivalCost: +f.get('survivalCost'), buffer: +f.get('buffer'), investmentFixed: +f.get('investmentFixed'),
     });
     closeModal(); toast('Зарплата сохранена'); await refresh();
   });

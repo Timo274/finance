@@ -25,7 +25,7 @@ app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 
 // Разумные дефолты под жизнь с родителями и доход ~25k грн.
-const DEFAULTS = { salary: 25000, survivalCost: 6000, buffer: 3000 };
+const DEFAULTS = { salary: 25000, survivalCost: 6000, buffer: 1000, investmentFixed: 2000 };
 const SETTINGS = {
   investments: 'investments',
   monthlyWallets: 'monthly_wallets',
@@ -37,10 +37,10 @@ const stmt = {
   activePlan: db.prepare("SELECT * FROM plans WHERE status = 'active' ORDER BY id DESC LIMIT 1"),
   planById: db.prepare('SELECT * FROM plans WHERE id = ?'),
   insertPlan: db.prepare(
-    'INSERT INTO plans (name, payday, salary, survival_cost, buffer) VALUES (@name, @payday, @salary, @survivalCost, @buffer)'
+    'INSERT INTO plans (name, payday, salary, survival_cost, buffer, investment_fixed) VALUES (@name, @payday, @salary, @survivalCost, @buffer, @investmentFixed)'
   ),
   updatePlan: db.prepare(
-    'UPDATE plans SET name=@name, payday=@payday, salary=@salary, survival_cost=@survivalCost, buffer=@buffer WHERE id=@id'
+    'UPDATE plans SET name=@name, payday=@payday, salary=@salary, survival_cost=@survivalCost, buffer=@buffer, investment_fixed=@investmentFixed WHERE id=@id'
   ),
   closePlan: db.prepare("UPDATE plans SET status='closed', snapshot=@snapshot, closed_at=datetime('now') WHERE id=@id"),
   closedPlans: db.prepare("SELECT * FROM plans WHERE status='closed' ORDER BY closed_at DESC"),
@@ -191,6 +191,7 @@ app.post('/api/plan', requireAuth, (req, res) => {
     salary: Math.max(0, Number(b.salary) || 0),
     survivalCost: Math.max(0, Number(b.survivalCost) || 0),
     buffer: Math.max(0, Number(b.buffer) || 0),
+    investmentFixed: Math.max(0, Number(b.investmentFixed) || 0),
   };
   const existing = getActivePlan();
   if (existing) {

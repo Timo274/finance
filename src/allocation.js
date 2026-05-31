@@ -80,7 +80,7 @@ function emptyBuckets() {
 
 /**
  * Построить план распределения.
- * @param {{payday:string, salary:number, survivalCost:number, buffer:number}} plan
+ * @param {{payday:string, salary:number, survivalCost:number, buffer:number, investmentFixed:number}} plan
  * @param {Array} items активные покупки
  * @param {{scenario?:string, includeIds?:Array}} [options]
  */
@@ -91,10 +91,12 @@ export function allocate(plan, items, options = {}) {
 
   const salary = Number(plan.salary) || 0;
   const survival = Number(plan.survivalCost) || 0;
+  const fixedInvestment = Number(plan.investmentFixed) || 0;
   const baseReserve = Number(plan.buffer) || 0;
   const effectiveReserve = Math.round(baseReserve * scenario.reserveMultiplier);
+  const stableExpenses = survival + effectiveReserve + fixedInvestment;
 
-  const availableToAllocate = Math.max(0, salary - survival - effectiveReserve);
+  const availableToAllocate = Math.max(0, salary - stableExpenses);
 
   const ranked = items
     .map((it) => ({ item: it, score: scoreItem(it, plan.payday, scenario.boost) }))
@@ -115,7 +117,7 @@ export function allocate(plan, items, options = {}) {
 
     const fits = item.cost <= availableToAllocate - spent;
     if (fits) {
-      approved.push({ item, balanceAfter: salary - survival - (spent + item.cost) });
+      approved.push({ item, balanceAfter: salary - stableExpenses - (spent + item.cost) });
       spent += item.cost;
       buckets[item.layer] = (buckets[item.layer] || 0) + item.cost;
     } else if (item.type === 'must') {
@@ -124,21 +126,21 @@ export function allocate(plan, items, options = {}) {
     } else if (!item.canDefer) {
       deferred.push({ item, reason: 'Не помещается, хотя помечено как неоткладываемое — нужно увеличить бюджет' });
     } else {
-      deferred.push({ item, reason: 'Не помещается без нарушения резерва — перенесено на потом' });
+      deferred.push({ item, reason: 'Не помещается в излишки после стабильных пунктов — перенесено на потом' });
     }
   }
 
   const allocated = spent;
-  const remaining = salary - survival - allocated; // включает резерв
-  const freeAfterReserve = remaining - effectiveReserve;
+  const remaining = salary - stableExpenses - allocated;
+  const freeAfterReserve = remaining;
 
   let status = 'safe';
-  if (remaining < effectiveReserve || mustDeferredForMoney) status = 'overallocated';
-  else if (remaining < effectiveReserve * 1.25 || deferred.length > 0) status = 'tight';
+  if (salary < stableExpenses || mustDeferredForMoney) status = 'overallocated';
+  else if (remaining < availableToAllocate * 0.15 || deferred.length > 0) status = 'tight';
 
   // Таймлайн: дата = max(payday, earliestDate). Running balance после каждой покупки.
   const timeline = [];
-  let balance = salary - survival;
+  let balance = salary - stableExpenses;
   const scheduled = approved
     .map((a, idx) => {
       const earliest = a.item.earliestDate && new Date(a.item.earliestDate) > new Date(plan.payday)
@@ -159,6 +161,8 @@ export function allocate(plan, items, options = {}) {
     totals: {
       salary,
       survival,
+      fixedInvestment,
+      stableExpenses,
       buffer: effectiveReserve,
       reserve: effectiveReserve,
       baseReserve,
@@ -187,7 +191,6 @@ export function tradeoff(targetId, plan, items, options = {}) {
 
   const isApproved = result.approved.some((a) => a.item.id === targetId);
   const remaining = result.totals.remaining;
-  const reserve = result.totals.reserve;
 
   if (isApproved) {
     // Уже в плане: показываем, что освободится, если отказаться.
@@ -202,12 +205,12 @@ export function tradeoff(targetId, plan, items, options = {}) {
 
   // Не в плане: сколько останется, если впихнуть, и кого это вытеснит.
   const remainingAfter = remaining - target.cost;
-  const belowReserve = remainingAfter < reserve;
+  const belowReserve = remainingAfter < 0;
 
   // Кого пришлось бы убрать, чтобы поместить (от наименее ценных).
   const displaces = [];
-  if (target.cost > result.totals.remaining - reserve) {
-    let need = target.cost - (result.totals.remaining - reserve);
+  if (target.cost > result.totals.remaining) {
+    let need = target.cost - result.totals.remaining;
     const removable = [...result.approved].sort(
       (a, b) => (a.item.priority || 1) - (b.item.priority || 1)
     );
@@ -242,6 +245,8 @@ export function scenarioSummaries(plan, items, customIncludeIds = null) {
       label: SCENARIOS[key].label,
       buckets: r.buckets,
       survival: r.totals.survival,
+      fixedInvestment: r.totals.fixedInvestment,
+      stableExpenses: r.totals.stableExpenses,
       buffer: r.totals.reserve,
       reserve: r.totals.reserve,
       career: r.buckets.career || 0,
