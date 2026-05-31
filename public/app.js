@@ -62,6 +62,115 @@ const TYPE_LABELS = { must: 'Must', should: 'Should', nice: 'Nice' };
 const STATUS_LABELS = { safe: 'Безопасно', tight: 'Впритык', overallocated: 'Перерасход' };
 const VERDICT_LABELS = { keep: 'Брать', reconsider: 'Подумать', drop: 'Отказаться' };
 
+// ---------- charts (vanilla canvas, без библиотек) ----------
+function cssVar(name, fallback = '#888') {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || fallback;
+}
+function setupCanvas(canvas) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth || canvas.parentElement.clientWidth || 300;
+  const h = canvas.clientHeight || 200;
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  return { ctx, w, h };
+}
+function drawDonut(canvas, segments) {
+  const { ctx, w, h } = setupCanvas(canvas);
+  const total = segments.reduce((s, x) => s + x.value, 0);
+  if (total <= 0) return;
+  const cx = w / 2, cy = h / 2;
+  const r = Math.min(w, h) / 2 - 6;
+  const inner = r * 0.62;
+  let a = -Math.PI / 2;
+  segments.forEach((seg) => {
+    const ang = (seg.value / total) * Math.PI * 2;
+    if (ang <= 0) return;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r, a, a + ang);
+    ctx.closePath();
+    ctx.fillStyle = seg.color;
+    ctx.fill();
+    a += ang;
+  });
+  // вырезаем центр (донат)
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.beginPath(); ctx.arc(cx, cy, inner, 0, Math.PI * 2); ctx.fill();
+  ctx.globalCompositeOperation = 'source-over';
+  // подпись в центре
+  ctx.fillStyle = cssVar('--text', '#111');
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = '700 18px Inter, sans-serif';
+  ctx.fillText(fmtShort(total), cx, cy - 4);
+  ctx.fillStyle = cssVar('--muted', '#888');
+  ctx.font = '500 11px Inter, sans-serif';
+  ctx.fillText('грн распределено', cx, cy + 13);
+}
+function drawLine(canvas, points) {
+  const { ctx, w, h } = setupCanvas(canvas);
+  if (points.length < 2) return;
+  const padL = 8, padR = 8, padT = 14, padB = 22;
+  const vals = points.map((p) => p.value);
+  const maxV = Math.max(...vals, 0);
+  const minV = Math.min(...vals, 0);
+  const span = (maxV - minV) || 1;
+  const innerW = w - padL - padR;
+  const innerH = h - padT - padB;
+  const x = (i) => padL + (innerW * i) / (points.length - 1);
+  const y = (v) => padT + innerH - ((v - minV) / span) * innerH;
+  const accent = cssVar('--accent', '#2f6bff');
+  // нулевая линия
+  if (minV < 0) {
+    ctx.strokeStyle = cssVar('--border', '#ddd');
+    ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(padL, y(0)); ctx.lineTo(w - padR, y(0)); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  // заливка под линией
+  const grad = ctx.createLinearGradient(0, padT, 0, padT + innerH);
+  grad.addColorStop(0, accent + '55');
+  grad.addColorStop(1, accent + '00');
+  ctx.beginPath();
+  ctx.moveTo(x(0), y(points[0].value));
+  points.forEach((p, i) => ctx.lineTo(x(i), y(p.value)));
+  ctx.lineTo(x(points.length - 1), padT + innerH);
+  ctx.lineTo(x(0), padT + innerH);
+  ctx.closePath(); ctx.fillStyle = grad; ctx.fill();
+  // линия
+  ctx.beginPath();
+  points.forEach((p, i) => (i ? ctx.lineTo(x(i), y(p.value)) : ctx.moveTo(x(i), y(p.value))));
+  ctx.strokeStyle = accent; ctx.lineWidth = 2.5; ctx.lineJoin = 'round'; ctx.stroke();
+  // точки
+  points.forEach((p, i) => {
+    ctx.beginPath(); ctx.arc(x(i), y(p.value), 3.2, 0, Math.PI * 2);
+    ctx.fillStyle = p.value < 0 ? cssVar('--red', '#e44') : accent;
+    ctx.fill();
+    ctx.strokeStyle = cssVar('--panel', '#fff'); ctx.lineWidth = 1.5; ctx.stroke();
+  });
+}
+function drawCharts() {
+  const donut = $('#donutAlloc');
+  if (donut && state.allocation) {
+    const t = state.allocation.totals;
+    const segs = [{ value: t.survival, color: '#64708f' }];
+    Object.entries(state.allocation.buckets).filter(([, v]) => v > 0)
+      .forEach(([k, v]) => segs.push({ value: v, color: layerColor(k) }));
+    if (t.remaining > 0) segs.push({ value: t.remaining, color: cssVar('--border', '#ccd') });
+    drawDonut(donut, segs);
+  }
+  const line = $('#lineBalance');
+  if (line && state.allocation) {
+    const t = state.allocation.totals;
+    const pts = [{ value: t.salary - t.survival }];
+    state.allocation.timeline.forEach((n) => pts.push({ value: n.balanceAfter }));
+    drawLine(line, pts);
+  }
+}
+
 // Клиентская копия логики вердикта (для живого отображения в модалке/таблице).
 function clientVerdict(scoreType, scores) {
   if (!scoreType || scoreType === 'none' || !scores) return null;
@@ -100,11 +209,11 @@ function applyTheme(t) {
   const icon = t === 'dark' ? '☀' : '☾';
   const a = $('#themeBtn'); if (a) a.textContent = icon;
   const b = $('#themeBtnAuth'); if (b) b.textContent = icon;
+  if (typeof drawCharts === 'function') requestAnimationFrame(drawCharts);
 }
 function toggleTheme() { applyTheme(currentTheme() === 'dark' ? 'light' : 'dark'); }
 $('#themeBtn')?.addEventListener('click', toggleTheme);
 $('#themeBtnAuth')?.addEventListener('click', toggleTheme);
-$('#logoutBtnTop')?.addEventListener('click', async () => { await api.post('/api/auth/logout'); location.reload(); });
 applyTheme(currentTheme());
 
 // ============================================================
@@ -153,10 +262,8 @@ $('#authForm').addEventListener('submit', async (e) => {
   }
 });
 
-$('#logoutBtn').addEventListener('click', async () => {
-  await api.post('/api/auth/logout');
-  location.reload();
-});
+$('#logoutBtn')?.addEventListener('click', doLogout);
+$('#logoutBtnMobile')?.addEventListener('click', doLogout);
 
 // ============================================================
 // LOAD + RENDER
@@ -200,11 +307,16 @@ function renderTopbar() {
   } else { badge.classList.add('hidden'); }
 }
 
-$$('.nav-item').forEach((b) => b.addEventListener('click', () => {
+$$('.nav-item[data-view]').forEach((b) => b.addEventListener('click', () => {
   state.view = b.dataset.view;
-  $$('.nav-item').forEach((x) => x.classList.toggle('active', x === b));
+  $$('.nav-item[data-view]').forEach((x) => x.classList.toggle('active', x.dataset.view === b.dataset.view));
   renderView();
 }));
+
+async function doLogout() {
+  await api.post('/api/auth/logout');
+  location.reload();
+}
 
 $('#editPlanBtn').addEventListener('click', openPlanModal);
 
@@ -219,7 +331,11 @@ function renderView() {
   else if (v === 'history') root.innerHTML = viewHistory();
   else if (v === 'assistant') { root.innerHTML = viewAssistant(); initAssistant(); }
   bindViewEvents();
+  requestAnimationFrame(drawCharts);
 }
+
+let _resizeT;
+window.addEventListener('resize', () => { clearTimeout(_resizeT); _resizeT = setTimeout(drawCharts, 150); });
 
 // ============================================================
 // VIEWS
@@ -252,18 +368,29 @@ function viewDashboard() {
     <div class="card"><div class="stat-label">Останется</div><div class="stat-value ${t.freeAfterBuffer < 0 ? 'red-num' : 'green-num'}">${fmt(t.remaining)}</div><div class="stat-sub">сверх буфера: ${fmt(t.freeAfterBuffer)}</div></div>
   </div>
 
-  <div class="card pad-lg" style="margin-top:16px">
-    <div class="row-between"><div class="stat-label">Распределение зарплаты</div>
-      <span class="status-badge status-${t.status}">${STATUS_LABELS[t.status]}</span></div>
-    <div class="alloc-bar" style="margin-top:14px">
-      <div class="alloc-seg" style="width:${survW}%;background:#64708f"></div>${segs}
+  <div class="chart-cols" style="margin-top:16px">
+    <div class="card pad-lg">
+      <div class="row-between"><div class="stat-label">Распределение по слоям</div>
+        <span class="status-badge status-${t.status}">${STATUS_LABELS[t.status]}</span></div>
+      <div class="donut-wrap">
+        <canvas id="donutAlloc" class="chart-donut"></canvas>
+        <div class="legend legend-col">
+          <span><span class="dot" style="background:#64708f"></span>Обязательные <b>${fmt(t.survival)}</b></span>
+          ${Object.entries(state.allocation.buckets).filter(([, v]) => v > 0).map(([k, v]) => `<span><span class="dot" style="background:${bucketColor(k)}"></span>${bucketLabel(k)} <b>${fmt(v)}</b></span>`).join('')}
+          <span><span class="dot" style="background:var(--border)"></span>Останется <b>${fmt(t.remaining)}</b></span>
+        </div>
+      </div>
+      <div class="alloc-bar" style="margin-top:16px">
+        <div class="alloc-seg" style="width:${survW}%;background:#64708f"></div>${segs}
+      </div>
+      ${t.status === 'overallocated' ? `<div class="tradeoff" style="background:color-mix(in srgb,var(--red) 10%,transparent);border-color:var(--red)"><b style="color:var(--red)">Перерасход.</b> Часть покупок не помещается без нарушения буфера — посмотрите «План распределения», что перенести.</div>` : ''}
     </div>
-    <div class="legend">
-      <span><span class="dot" style="background:#64708f"></span>Обязательные ${fmt(t.survival)}</span>
-      ${Object.entries(state.allocation.buckets).filter(([, v]) => v > 0).map(([k, v]) => `<span><span class="dot" style="background:${bucketColor(k)}"></span>${bucketLabel(k)} ${fmt(v)}</span>`).join('')}
-      <span><span class="dot" style="background:#142244"></span>Останется ${fmt(t.remaining)}</span>
+    <div class="card pad-lg">
+      <div class="stat-label">Остаток после каждой покупки</div>
+      ${state.allocation.timeline.length ? `<canvas id="lineBalance" class="chart-line"></canvas>
+      <div class="row-between small muted" style="margin-top:6px"><span>старт ${fmtShort(t.salary - t.survival)}</span><span>буфер ${fmtShort(t.buffer)}</span></div>`
+      : '<div class="chart-empty muted">Добавьте покупки в план, чтобы увидеть график остатка.</div>'}
     </div>
-    ${t.status === 'overallocated' ? `<div class="tradeoff" style="background:rgba(240,98,98,.1);border-color:var(--red)"><b style="color:#ff9b9b">Перерасход.</b> Часть покупок не помещается без нарушения буфера — посмотрите «План распределения», что перенести.</div>` : ''}
   </div>
 
   <div class="section-title">Одобрено в этой зарплате · ${state.allocation.approved.length}</div>
@@ -354,6 +481,10 @@ function viewTimeline() {
   const tl = state.allocation.timeline;
   return `
   <div class="view-head"><h1>Таймлайн покупок</h1><p>План по датам после зарплаты с остатком на счёте после каждой покупки.</p></div>
+  ${tl.length ? `<div class="card pad-lg" style="margin-bottom:16px">
+    <div class="stat-label">График остатка</div>
+    <canvas id="lineBalance" class="chart-line"></canvas>
+  </div>` : ''}
   <div class="card pad-lg">
     <div class="row-between"><div class="stat-label">Старт — зарплата ${fmtDate(state.plan.payday)}</div>
       <div class="stat-value sm">${fmt(state.allocation.totals.salary - state.allocation.totals.survival)} <span class="muted small">после обязательных</span></div></div>

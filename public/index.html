@@ -33,6 +33,9 @@
         <rect x="17.5" y="17" width="5" height="13.5" rx="2" fill="#fff" opacity=".78" />
         <rect x="25.5" y="10" width="5" height="20.5" rx="2" fill="#fff" />
       </symbol>
+      <symbol id="tgIcon" viewBox="0 0 24 24">
+        <path d="M9.78 18.65l.28-4.23 7.68-6.92c.34-.31-.07-.46-.52-.19L7.74 13.3 3.64 12c-.88-.25-.89-.86.2-1.3l15.97-6.16c.73-.33 1.43.18 1.15 1.3l-2.72 12.81c-.19.91-.74 1.13-1.5.71L12.6 16.3l-1.99 1.93c-.23.23-.42.42-.83.42z" fill="currentColor" />
+      </symbol>
     </defs>
   </svg>
 
@@ -58,7 +61,12 @@
       </form>
       <div class="auth-foot">
         <button id="themeBtnAuth" class="icon-btn" type="button" title="Сменить тему">◐</button>
-        <span class="foot-credit">powered by <b>tims</b> · <a href="https://t.me/timspp" target="_blank" rel="noopener">@timspp</a></span>
+        <div class="credit">
+          <span class="credit-by">powered by <b>tims</b></span>
+          <a class="tg-link" href="https://t.me/timspp" target="_blank" rel="noopener">
+            <svg class="tg-ico" viewBox="0 0 24 24"><use href="#tgIcon" /></svg><span>@timspp</span>
+          </a>
+        </div>
       </div>
     </div>
   </div>
@@ -83,8 +91,16 @@
         <button class="nav-item" data-view="assistant"><span class="ico">✦</span><span class="lbl">Ассистент</span></button>
       </nav>
       <div class="sidebar-foot">
-        <button id="logoutBtn" class="btn btn-ghost btn-block">Выйти</button>
-        <div class="foot-credit">powered by <b>tims</b> · <a href="https://t.me/timspp" target="_blank" rel="noopener">@timspp</a></div>
+        <button id="logoutBtn" class="btn btn-outline btn-block logout-btn" type="button">
+          <svg class="btn-ico" viewBox="0 0 24 24"><path d="M14 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-2M9 12h12m0 0-3-3m3 3-3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>Выйти из аккаунта</span>
+        </button>
+        <div class="credit">
+          <span class="credit-by">powered by <b>tims</b></span>
+          <a class="tg-link" href="https://t.me/timspp" target="_blank" rel="noopener">
+            <svg class="tg-ico" viewBox="0 0 24 24"><use href="#tgIcon" /></svg><span>@timspp</span>
+          </a>
+        </div>
       </div>
     </aside>
 
@@ -100,8 +116,7 @@
         <div class="top-right">
           <span id="topStatus" class="status-badge">—</span>
           <button id="themeBtn" class="icon-btn" title="Сменить тему" type="button">◐</button>
-          <button id="editPlanBtn" class="btn btn-outline">Настроить</button>
-          <button id="logoutBtnTop" class="icon-btn mobile-only" title="Выйти" type="button">⎋</button>
+          <button id="editPlanBtn" class="btn btn-primary">Настроить</button>
         </div>
       </header>
 
@@ -115,6 +130,7 @@
         <button class="nav-item" data-view="scenarios"><span class="ico">◧</span><span class="lbl">Сценарии</span></button>
         <button class="nav-item" data-view="history"><span class="ico">↺</span><span class="lbl">История</span></button>
         <button class="nav-item" data-view="assistant"><span class="ico">✦</span><span class="lbl">AI</span></button>
+        <button class="nav-item nav-action" id="logoutBtnMobile" type="button"><span class="ico">⏻</span><span class="lbl">Выйти</span></button>
       </nav>
     </main>
   </div>
