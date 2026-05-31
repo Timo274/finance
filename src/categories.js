@@ -1,62 +1,98 @@
-// Бакеты (большие группы) и категории внутри них.
-// Бакеты используются в сценариях и графиках, категории — для удобной разметки items.
+// Таксономия покупок.
+// Слой капитала (layer) — куда относится трата (используется в сценариях/графиках).
+// Категория (category) — что именно представляет покупка.
+// Band — авто-классификация по размеру суммы.
+// Score-критерии — для опциональной оценки спорных покупок (Quick / Full).
 
-export const BUCKETS = {
-  survival: { label: 'Выживание / Обязательства', color: '#64748b' },
-  stability: { label: 'Стабильность / Подушка', color: '#0ea5e9' },
-  career: { label: 'Карьерный капитал', color: '#6366f1' },
-  quality: { label: 'Качество жизни', color: '#22c55e' },
-  health: { label: 'Здоровье', color: '#f59e0b' },
-  gifts: { label: 'Подарки / Социальное', color: '#ec4899' },
+// ---- Слои капитала (Layer) ----
+export const LAYERS = {
+  survival: { label: 'Survival', ru: 'Выживание', color: '#64748b' },
+  stability: { label: 'Stability', ru: 'Стабильность', color: '#0ea5e9' },
+  career: { label: 'Career Capital', ru: 'Карьерный капитал', color: '#2f6bff' },
+  investment: { label: 'Investment', ru: 'Инвестиции', color: '#16a34a' },
+  quality: { label: 'Quality of Life', ru: 'Качество жизни', color: '#a855f7' },
+  leakage: { label: 'Leakage', ru: 'Утечки', color: '#ef4444' },
 };
 
+// Совместимость: часть кода/контекста раньше называла слои «бакетами».
+export const BUCKETS = LAYERS;
+
+// ---- Категории покупки (Category) ----
 export const CATEGORIES = [
-  // survival
-  { id: 'food', label: 'Еда / продукты', bucket: 'survival' },
-  { id: 'transport', label: 'Транспорт', bucket: 'survival' },
-  { id: 'connectivity', label: 'Связь / интернет', bucket: 'survival' },
-  { id: 'essential_subs', label: 'Необходимые подписки', bucket: 'survival' },
-  { id: 'family_debt', label: 'Родителям / долги', bucket: 'survival' },
-
-  // stability
-  { id: 'savings', label: 'Накопления', bucket: 'stability' },
-  { id: 'emergency', label: 'Подушка безопасности', bucket: 'stability' },
-  { id: 'insurance', label: 'Страховка', bucket: 'stability' },
-
-  // career
-  { id: 'courses', label: 'Курсы / обучение', bucket: 'career' },
-  { id: 'books', label: 'Книги', bucket: 'career' },
-  { id: 'work_software', label: 'Софт / подписки для учёбы', bucket: 'career' },
-  { id: 'work_gear', label: 'Техника для работы', bucket: 'career' },
-  { id: 'certification', label: 'Сертификации', bucket: 'career' },
-  { id: 'networking', label: 'Нетворкинг / конференции', bucket: 'career' },
-
-  // quality of life
-  { id: 'clothing', label: 'Одежда / внешний вид', bucket: 'quality' },
-  { id: 'dining', label: 'Кафе / рестораны', bucket: 'quality' },
-  { id: 'entertainment', label: 'Развлечения', bucket: 'quality' },
-  { id: 'hobby', label: 'Хобби', bucket: 'quality' },
-  { id: 'travel', label: 'Путешествия', bucket: 'quality' },
-  { id: 'gadgets', label: 'Гаджеты', bucket: 'quality' },
-
-  // health
-  { id: 'gym', label: 'Спортзал', bucket: 'health' },
-  { id: 'nutrition', label: 'Питание / добавки', bucket: 'health' },
-  { id: 'medical', label: 'Медицина', bucket: 'health' },
-
-  // gifts / social
-  { id: 'gifts', label: 'Подарки', bucket: 'gifts' },
-  { id: 'events', label: 'Мероприятия', bucket: 'gifts' },
+  { id: 'asset', label: 'Asset', ru: 'Актив', layer: 'investment' },
+  { id: 'tool', label: 'Tool', ru: 'Инструмент', layer: 'career' },
+  { id: 'infrastructure', label: 'Infrastructure', ru: 'Инфраструктура', layer: 'stability' },
+  { id: 'growth', label: 'Growth', ru: 'Рост', layer: 'career' },
+  { id: 'experience', label: 'Experience', ru: 'Опыт', layer: 'quality' },
+  { id: 'lifestyle', label: 'Lifestyle', ru: 'Образ жизни', layer: 'quality' },
+  { id: 'status', label: 'Status', ru: 'Статус', layer: 'quality' },
+  { id: 'dopamine', label: 'Dopamine', ru: 'Дофамин', layer: 'leakage' },
+  { id: 'waste', label: 'Waste', ru: 'Трата впустую', layer: 'leakage' },
 ];
 
+// ---- Тип покупки (приоритет в распределении) ----
 export const TYPES = {
-  must: { label: 'Must-have', rank: 0 },
-  should: { label: 'Should-have', rank: 1 },
-  nice: { label: 'Nice-to-have', rank: 2 },
+  must: { label: 'Must-have', ru: 'Обязательно', rank: 0 },
+  should: { label: 'Should-have', ru: 'Желательно', rank: 1 },
+  nice: { label: 'Nice-to-have', ru: 'По желанию', rank: 2 },
 };
 
-const CATEGORY_BUCKET = Object.fromEntries(CATEGORIES.map((c) => [c.id, c.bucket]));
+// ---- Band: авто-классификация по сумме (грн) ----
+export const BANDS = [
+  { id: 'trivial', label: 'Trivial', ru: 'Мелочь', max: 300 },
+  { id: 'small', label: 'Small', ru: 'Небольшая', max: 1500 },
+  { id: 'medium', label: 'Medium', ru: 'Средняя', max: 5000 },
+  { id: 'large', label: 'Large', ru: 'Крупная', max: 12000 },
+  { id: 'major', label: 'Major', ru: 'Большая', max: null },
+];
 
-export function bucketForCategory(categoryId) {
-  return CATEGORY_BUCKET[categoryId] || 'quality';
+export function bandForCost(cost) {
+  const c = Number(cost) || 0;
+  for (const b of BANDS) {
+    if (b.max == null || c < b.max) return b.id;
+  }
+  return 'major';
 }
+
+// Какой тип оценки рекомендуется для band.
+export function recommendedScoreType(band) {
+  if (band === 'large' || band === 'major') return 'full';
+  if (band === 'medium') return 'quick';
+  return 'none';
+}
+
+export const SCORE_TYPES = {
+  none: { ru: 'Без оценки' },
+  quick: { ru: 'Быстрая (Quick)' },
+  full: { ru: 'Полная (Full)' },
+};
+
+// ---- Критерии оценки ----
+// dir: 'pos' — больше = лучше, 'neg' — больше = хуже.
+export const SCORE_CRITERIA = {
+  quick: [
+    { id: 'retained_utility', ru: 'Удержанная польза', hint: 'Насколько вещь будет полезна и через месяцы', dir: 'pos' },
+    { id: 'trajectory_alignment', ru: 'Соответствие траектории', hint: 'Двигает ли к долгосрочным целям', dir: 'pos' },
+    { id: 'emotional_trigger', ru: 'Эмоциональный триггер', hint: 'Сколько здесь импульса «хочу сейчас»', dir: 'neg' },
+    { id: 'capital_velocity', ru: 'Скорость капитала', hint: 'Как быстро вернёт ценность/деньги', dir: 'pos' },
+    { id: 'predicted_30d', ru: 'Ценность через 30 дней', hint: 'Будешь ли ценить через месяц', dir: 'pos' },
+  ],
+  full: [
+    { id: 'future_leverage', ru: 'Будущий рычаг', hint: 'Открывает ли новые возможности', dir: 'pos' },
+    { id: 'opportunity_cost', ru: 'Альтернативная стоимость', hint: 'Что теряешь, потратив сюда', dir: 'neg' },
+    { id: 'identity_congruence', ru: 'Соответствие себе', hint: 'Это «настоящий ты» или образ?', dir: 'pos' },
+    { id: 'reversibility', ru: 'Обратимость', hint: 'Можно ли вернуть/перепродать', dir: 'pos' },
+    { id: 'optionality', ru: 'Опциональность', hint: 'Сохраняет ли свободу выбора', dir: 'pos' },
+    { id: 'social_signal_distortion', ru: 'Соц. сигнал', hint: 'Покупка ради впечатления других', dir: 'neg' },
+    { id: 'maintenance_burden', ru: 'Стоимость владения', hint: 'Сколько ещё потребует потом', dir: 'neg' },
+    { id: 'regret_probability', ru: 'Вероятность сожаления', hint: 'Шанс пожалеть о покупке', dir: 'neg' },
+  ],
+};
+
+const CATEGORY_LAYER = Object.fromEntries(CATEGORIES.map((c) => [c.id, c.layer]));
+
+export function layerForCategory(categoryId) {
+  return CATEGORY_LAYER[categoryId] || 'quality';
+}
+// Обратная совместимость со старым именем.
+export const bucketForCategory = layerForCategory;

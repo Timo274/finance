@@ -10,9 +10,12 @@ import db, {
 import {
   pinIsSet, setPin, verifyPin, issueToken, clearToken, isAuthed, requireAuth,
 } from './src/auth.js';
-import { CATEGORIES, BUCKETS, TYPES, bucketForCategory } from './src/categories.js';
 import {
-  allocate, tradeoff, scenarioSummaries, SCENARIOS,
+  CATEGORIES, LAYERS, TYPES, BANDS, SCORE_TYPES, SCORE_CRITERIA,
+  layerForCategory, bandForCost, recommendedScoreType,
+} from './src/categories.js';
+import {
+  allocate, tradeoff, scenarioSummaries, SCENARIOS, scoreVerdict,
 } from './src/allocation.js';
 import { aiStatus, askAssistant } from './src/ai.js';
 
@@ -41,11 +44,11 @@ const stmt = {
   allItems: db.prepare('SELECT * FROM items ORDER BY id DESC'),
   itemById: db.prepare('SELECT * FROM items WHERE id = ?'),
   insertItem: db.prepare(`INSERT INTO items
-    (title, cost, category, bucket, priority, type, deadline, earliest_date, can_defer, emotional, trajectory, notes)
-    VALUES (@title,@cost,@category,@bucket,@priority,@type,@deadline,@earliestDate,@canDefer,@emotional,@trajectory,@notes)`),
+    (title, cost, category, bucket, band, score_type, scores, priority, type, deadline, earliest_date, can_defer, emotional, trajectory, notes)
+    VALUES (@title,@cost,@category,@layer,@band,@scoreType,@scores,@priority,@type,@deadline,@earliestDate,@canDefer,@emotional,@trajectory,@notes)`),
   updateItem: db.prepare(`UPDATE items SET
-    title=@title, cost=@cost, category=@category, bucket=@bucket, priority=@priority, type=@type,
-    deadline=@deadline, earliest_date=@earliestDate, can_defer=@canDefer, emotional=@emotional,
+    title=@title, cost=@cost, category=@category, bucket=@layer, band=@band, score_type=@scoreType, scores=@scores,
+    priority=@priority, type=@type, deadline=@deadline, earliest_date=@earliestDate, can_defer=@canDefer, emotional=@emotional,
     trajectory=@trajectory, notes=@notes, updated_at=datetime('now') WHERE id=@id`),
   setItemStatus: db.prepare("UPDATE items SET status=@status, updated_at=datetime('now') WHERE id=@id"),
   deleteItem: db.prepare('DELETE FROM items WHERE id = ?'),
@@ -58,13 +61,33 @@ function getActiveItems() {
   return stmt.activeItems.all().map(rowToItem);
 }
 
+const VALID_CATEGORIES = new Set(CATEGORIES.map((c) => c.id));
+const VALID_LAYERS = new Set(Object.keys(LAYERS));
+
 function normalizeItemInput(b) {
-  const category = String(b.category || 'gadgets');
+  const category = VALID_CATEGORIES.has(b.category) ? b.category : 'lifestyle';
+  // Слой по умолчанию берётся из категории, но пользователь может переопределить.
+  const layer = VALID_LAYERS.has(b.layer) ? b.layer : layerForCategory(category);
+  const cost = Math.max(0, Number(b.cost) || 0);
+  const band = bandForCost(cost);
+  const scoreType = ['none', 'quick', 'full'].includes(b.scoreType) ? b.scoreType : 'none';
+  let scores = null;
+  if (scoreType !== 'none' && b.scores && typeof b.scores === 'object') {
+    const clean = {};
+    for (const [k, v] of Object.entries(b.scores)) {
+      const n = parseInt(v, 10);
+      if (n >= 1 && n <= 5) clean[k] = n;
+    }
+    if (Object.keys(clean).length) scores = JSON.stringify(clean);
+  }
   return {
     title: String(b.title || '').trim() || 'Без названия',
-    cost: Math.max(0, Number(b.cost) || 0),
+    cost,
     category,
-    bucket: bucketForCategory(category),
+    layer,
+    band,
+    scoreType,
+    scores,
     priority: Math.min(5, Math.max(1, parseInt(b.priority, 10) || 3)),
     type: ['must', 'should', 'nice'].includes(b.type) ? b.type : 'should',
     deadline: b.deadline || null,
@@ -103,15 +126,23 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 // ================= META =================
-app.get('/api/meta', requireAuth, (req, res) => {
-  res.json({
+function metaPayload() {
+  return {
     categories: CATEGORIES,
-    buckets: BUCKETS,
+    layers: LAYERS,
+    buckets: LAYERS, // обратная совместимость
     types: TYPES,
+    bands: BANDS,
+    scoreTypes: SCORE_TYPES,
+    scoreCriteria: SCORE_CRITERIA,
     scenarios: Object.entries(SCENARIOS).map(([key, v]) => ({ key, label: v.label })),
     defaults: DEFAULTS,
     ai: aiStatus(),
-  });
+  };
+}
+
+app.get('/api/meta', requireAuth, (req, res) => {
+  res.json(metaPayload());
 });
 
 // ================= PLAN =================
@@ -149,7 +180,7 @@ app.post('/api/plan/close', requireAuth, (req, res) => {
     closedScenario: result.scenario,
     totals: result.totals,
     buckets: result.buckets,
-    approved: result.approved.map((a) => ({ title: a.item.title, cost: a.item.cost, bucket: a.item.bucket })),
+    approved: result.approved.map((a) => ({ title: a.item.title, cost: a.item.cost, layer: a.item.layer })),
     deferred: result.deferred.map((d) => ({ title: d.item.title, cost: d.item.cost, reason: d.reason })),
   };
   stmt.closePlan.run({ id: plan.id, snapshot: JSON.stringify(snapshot) });
@@ -259,14 +290,7 @@ app.get('/api/state', requireAuth, (req, res) => {
     allocation,
     scenarios: plan ? scenarioSummaries(plan, items, customIds()) : [],
     history: stmt.closedPlans.all().map(rowToPlan),
-    meta: {
-      categories: CATEGORIES,
-      buckets: BUCKETS,
-      types: TYPES,
-      scenarios: Object.entries(SCENARIOS).map(([key, v]) => ({ key, label: v.label })),
-      defaults: DEFAULTS,
-      ai: aiStatus(),
-    },
+    meta: metaPayload(),
   });
 });
 

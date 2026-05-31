@@ -49,17 +49,64 @@ function toast(msg) {
   clearTimeout(toast._t);
   toast._t = setTimeout(() => t.classList.add('hidden'), 2400);
 }
-function bucketLabel(key) { return state.meta?.buckets?.[key]?.label || key; }
-function bucketColor(key) { return state.meta?.buckets?.[key]?.color || '#64748b'; }
-function catLabel(id) { return state.meta?.categories?.find((c) => c.id === id)?.label || id; }
+function layerLabel(key) { const l = state.meta?.layers?.[key]; return l ? `${l.ru}` : key; }
+function layerColor(key) { return state.meta?.layers?.[key]?.color || '#64748b'; }
+// Совместимость со старыми вызовами.
+const bucketLabel = layerLabel;
+const bucketColor = layerColor;
+function catObj(id) { return state.meta?.categories?.find((c) => c.id === id); }
+function catLabel(id) { const c = catObj(id); return c ? `${c.ru} · ${c.label}` : id; }
+function catLabelShort(id) { const c = catObj(id); return c ? c.ru : id; }
+function bandLabel(id) { const b = state.meta?.bands?.find((x) => x.id === id); return b ? b.label : id; }
 const TYPE_LABELS = { must: 'Must', should: 'Should', nice: 'Nice' };
 const STATUS_LABELS = { safe: 'Безопасно', tight: 'Впритык', overallocated: 'Перерасход' };
+const VERDICT_LABELS = { keep: 'Брать', reconsider: 'Подумать', drop: 'Отказаться' };
+
+// Клиентская копия логики вердикта (для живого отображения в модалке/таблице).
+function clientVerdict(scoreType, scores) {
+  if (!scoreType || scoreType === 'none' || !scores) return null;
+  const crit = scoreType === 'full'
+    ? [...(state.meta.scoreCriteria.quick), ...(state.meta.scoreCriteria.full)]
+    : state.meta.scoreCriteria.quick;
+  let pos = 0; let posMax = 0; let neg = 0; let negMax = 0;
+  for (const c of crit) {
+    const v = Number(scores[c.id]);
+    if (!v) continue;
+    if (c.dir === 'pos') { pos += v; posMax += 5; } else { neg += v; negMax += 5; }
+  }
+  if (posMax === 0 && negMax === 0) return null;
+  const posPart = posMax ? pos / posMax : 0.5;
+  const negPart = negMax ? neg / negMax : 0;
+  const score = Math.round(Math.max(0, Math.min(1, posPart - negPart * 0.6)) * 100);
+  let verdict = 'reconsider';
+  if (score >= 62) verdict = 'keep'; else if (score < 38) verdict = 'drop';
+  return { score, verdict };
+}
 
 function prioDots(p) {
   let s = '<span class="prio">';
   for (let i = 1; i <= 5; i++) s += `<i class="${i <= p ? 'on' : ''}"></i>`;
   return s + '</span>';
 }
+
+// ---------- theme ----------
+function currentTheme() {
+  return document.documentElement.getAttribute('data-theme') || 'light';
+}
+function applyTheme(t) {
+  document.documentElement.setAttribute('data-theme', t);
+  try { localStorage.setItem('cq-theme', t); } catch {}
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', t === 'dark' ? '#0a1020' : '#ffffff');
+  const icon = t === 'dark' ? '☀' : '☾';
+  const a = $('#themeBtn'); if (a) a.textContent = icon;
+  const b = $('#themeBtnAuth'); if (b) b.textContent = icon;
+}
+function toggleTheme() { applyTheme(currentTheme() === 'dark' ? 'light' : 'dark'); }
+$('#themeBtn')?.addEventListener('click', toggleTheme);
+$('#themeBtnAuth')?.addEventListener('click', toggleTheme);
+$('#logoutBtnTop')?.addEventListener('click', async () => { await api.post('/api/auth/logout'); location.reload(); });
+applyTheme(currentTheme());
 
 // ============================================================
 // AUTH
@@ -228,12 +275,19 @@ function viewDashboard() {
   `;
 }
 
+function verdictChip(item) {
+  const v = clientVerdict(item.scoreType, item.scores);
+  if (!v) return '';
+  return ` <span class="verdict verdict-${v.verdict}" title="Оценка ${v.score}/100">${VERDICT_LABELS[v.verdict]} ${v.score}</span>`;
+}
+
 function queueItemRow(item, extra = '', reason = '') {
+  const layer = item.layer || item.bucket;
   return `<div class="queue-item">
     <div class="qi-main">
-      <div class="qi-title"><span class="dot" style="background:${bucketColor(item.bucket)}"></span>${escapeHtml(item.title)}
-        <span class="tag tag-${item.type}">${TYPE_LABELS[item.type]}</span></div>
-      <div class="qi-meta">${catLabel(item.category)} · приоритет ${item.priority}/5 · траектория ${item.trajectory}/5${item.deadline ? ' · дедлайн ' + fmtDate(item.deadline) : ''}</div>
+      <div class="qi-title"><span class="dot" style="background:${layerColor(layer)}"></span>${escapeHtml(item.title)}
+        <span class="tag tag-${item.type}">${TYPE_LABELS[item.type]}</span>${verdictChip(item)}</div>
+      <div class="qi-meta">${layerLabel(layer)} · ${catLabelShort(item.category)} · ${bandLabel(item.band)} · приоритет ${item.priority}/5 · траектория ${item.trajectory}/5${item.deadline ? ' · дедлайн ' + fmtDate(item.deadline) : ''}</div>
       ${reason ? `<div class="reason">↪ ${reason}</div>` : ''}
       ${extra ? `<div class="qi-meta">${extra}</div>` : ''}
     </div>
@@ -244,15 +298,16 @@ function queueItemRow(item, extra = '', reason = '') {
 function viewQueue() {
   const rows = state.items.map((it) => {
     const inPlan = state.allocation?.approved.some((a) => a.item.id === it.id);
+    const layer = it.layer || it.bucket;
     return `<tr data-id="${it.id}">
-      <td><span class="dot" style="background:${bucketColor(it.bucket)}"></span>${escapeHtml(it.title)}</td>
+      <td><span class="dot" style="background:${layerColor(layer)}"></span>${escapeHtml(it.title)}${verdictChip(it)}</td>
       <td>${fmt(it.cost)}</td>
-      <td>${catLabel(it.category)}</td>
+      <td>${layerLabel(layer)}</td>
+      <td>${catLabelShort(it.category)}</td>
+      <td><span class="band">${bandLabel(it.band)}</span></td>
       <td><span class="tag tag-${it.type}">${TYPE_LABELS[it.type]}</span></td>
       <td>${prioDots(it.priority)}</td>
-      <td>${it.trajectory}/5</td>
       <td>${it.deadline ? fmtDate(it.deadline) : '—'}</td>
-      <td>${it.canDefer ? '<span class="muted">да</span>' : 'нет'}</td>
       <td>${inPlan ? '<span class="green-num">в плане</span>' : '<span class="muted">позже</span>'}</td>
       <td style="text-align:right">
         <button class="btn btn-sm btn-ghost" data-act="tradeoff" data-id="${it.id}">Trade-off</button>
@@ -268,7 +323,7 @@ function viewQueue() {
     <button class="btn btn-primary" data-act="add-item">+ Добавить желание</button>
   </div>
   ${state.items.length ? `<div class="table-wrap"><table>
-    <thead><tr><th>Желание</th><th>Стоимость</th><th>Категория</th><th>Тип</th><th>Приоритет</th><th>Траектория</th><th>Дедлайн</th><th>Откладывать</th><th>Статус</th><th></th></tr></thead>
+    <thead><tr><th>Желание</th><th>Стоимость</th><th>Слой</th><th>Категория</th><th>Band</th><th>Тип</th><th>Приоритет</th><th>Дедлайн</th><th>Статус</th><th></th></tr></thead>
     <tbody>${rows}</tbody></table></div>`
     : `<div class="empty"><div class="big">≡</div><p>Очередь пуста. Добавьте первое желание.</p>
        <button class="btn btn-primary" data-act="add-item">+ Добавить желание</button></div>`}
@@ -520,18 +575,43 @@ function openPlanModal() {
   });
 }
 
+function clientBand(cost) {
+  const c = Number(cost) || 0;
+  for (const b of state.meta.bands) { if (b.max == null || c < b.max) return b.id; }
+  return 'major';
+}
+
 function openItemModal(item) {
-  const i = item || { title: '', cost: '', category: 'gadgets', priority: 3, type: 'should', deadline: '', earliestDate: '', canDefer: true, emotional: 3, trajectory: 3, notes: '' };
-  const catOpts = state.meta.categories.map((c) => `<option value="${c.id}" ${c.id === i.category ? 'selected' : ''}>${c.label}</option>`).join('');
+  const i = item || {
+    title: '', cost: '', category: 'lifestyle', layer: '', priority: 3, type: 'should',
+    deadline: '', earliestDate: '', canDefer: true, emotional: 3, trajectory: 3, notes: '',
+    scoreType: 'none', scores: {},
+  };
+  const scores = i.scores || {};
+  const catOpts = state.meta.categories
+    .map((c) => `<option value="${c.id}" ${c.id === i.category ? 'selected' : ''}>${c.ru} · ${c.label}</option>`).join('');
+  const layerOpts = Object.entries(state.meta.layers)
+    .map(([k, v]) => `<option value="${k}" ${k === (i.layer || i.bucket) ? 'selected' : ''}>${v.ru} · ${v.label}</option>`).join('');
   const range = (name, val, label) => `<div class="field"><label>${label}</label><div class="range-row">
       <input type="range" name="${name}" min="1" max="5" value="${val}" oninput="this.nextElementSibling.textContent=this.value">
       <span class="range-val">${val}</span></div></div>`;
+  const critRow = (c) => `<div class="score-row" data-crit="${c.id}">
+      <div><div class="sr-label">${c.ru} ${c.dir === 'neg' ? '<span class="muted small">(чем меньше — тем лучше)</span>' : ''}</div><div class="sr-hint">${c.hint}</div></div>
+      <div class="range-row"><input type="range" class="score-input" data-id="${c.id}" data-dir="${c.dir}" min="1" max="5" value="${scores[c.id] || 3}">
+        <span class="range-val">${scores[c.id] || 3}</span></div>
+    </div>`;
+  const quickRows = state.meta.scoreCriteria.quick.map(critRow).join('');
+  const fullRows = state.meta.scoreCriteria.full.map(critRow).join('');
+
   openModal(`<div class="modal">
     <div class="modal-head"><h2>${item ? 'Редактировать желание' : 'Новое желание'}</h2><button class="close-x" onclick="document.getElementById('modalRoot').innerHTML=''">×</button></div>
     <form id="itemForm" class="form-grid">
       <div class="field full"><label>Название</label><input name="title" value="${escapeAttr(i.title)}" required /></div>
-      <div class="field"><label>Стоимость, грн</label><input type="number" name="cost" value="${i.cost}" min="0" required /></div>
-      <div class="field"><label>Категория</label><select name="category">${catOpts}</select></div>
+      <div class="field"><label>Стоимость, грн</label><input type="number" id="costInput" name="cost" value="${i.cost}" min="0" required /></div>
+      <div class="field"><label>Band (авто по сумме)</label><input id="bandDisplay" value="" disabled style="opacity:.8" /></div>
+      <div class="field"><label>Категория покупки</label><select name="category" id="catSelect">${catOpts}</select></div>
+      <div class="field"><label>Слой капитала</label><select name="layer" id="layerSelect">${layerOpts}</select>
+        <span class="hint">Подставляется из категории, можно изменить.</span></div>
       <div class="field"><label>Тип</label><select name="type">
         <option value="must" ${i.type === 'must' ? 'selected' : ''}>Must-have (обязательно)</option>
         <option value="should" ${i.type === 'should' ? 'selected' : ''}>Should-have (желательно)</option>
@@ -544,6 +624,17 @@ function openItemModal(item) {
       ${range('trajectory', i.trajectory, 'Долгосрочная ценность 1–5')}
       <div class="field full"><label class="switch-row"><input type="checkbox" name="canDefer" ${i.canDefer ? 'checked' : ''} style="width:18px;height:18px;accent-color:var(--accent)"> Можно отложить на следующую зарплату</label></div>
       <div class="field full"><label>Заметки</label><textarea name="notes">${escapeHtml(i.notes || '')}</textarea></div>
+
+      <div class="subhead">Оценка покупки</div>
+      <div class="field full"><label>Тип оценки</label><select name="scoreType" id="scoreType">
+        <option value="none" ${i.scoreType === 'none' ? 'selected' : ''}>Без оценки</option>
+        <option value="quick" ${i.scoreType === 'quick' ? 'selected' : ''}>Quick — 5 критериев (для Medium)</option>
+        <option value="full" ${i.scoreType === 'full' ? 'selected' : ''}>Full — 13 критериев (для Large / Major)</option>
+      </select><span class="hint" id="scoreHint"></span></div>
+      <div class="field full hidden" id="verdictBanner"></div>
+      <div class="field full hidden" id="quickWrap"><div class="score-grid">${quickRows}</div></div>
+      <div class="field full hidden" id="fullWrap"><div class="subhead" style="margin-top:0">Дополнительно (Full)</div><div class="score-grid">${fullRows}</div></div>
+
       <div class="modal-foot field full" style="flex-direction:row;justify-content:space-between">
         <div>${item ? `<button type="button" class="btn btn-danger" id="delItem">Удалить</button>` : ''}</div>
         <div style="display:flex;gap:10px">
@@ -553,14 +644,65 @@ function openItemModal(item) {
       </div>
     </form></div>`);
 
+  const costInput = $('#costInput');
+  const bandDisplay = $('#bandDisplay');
+  const catSelect = $('#catSelect');
+  const layerSelect = $('#layerSelect');
+  const scoreTypeSel = $('#scoreType');
+  let layerTouched = !!item; // у нового желания слой следует за категорией
+
+  function collectScores() {
+    const s = {};
+    $$('.score-input').forEach((el) => { s[el.dataset.id] = +el.value; });
+    return s;
+  }
+  function refreshBand() {
+    const band = clientBand(costInput.value);
+    bandDisplay.value = bandLabel(band);
+    const rec = (band === 'large' || band === 'major') ? 'Full' : (band === 'medium' ? 'Quick' : '—');
+    $('#scoreHint').textContent = rec === '—' ? 'Для мелких покупок оценка не нужна.' : `Рекомендуется: ${rec}.`;
+  }
+  function refreshVerdict() {
+    const v = clientVerdict(scoreTypeSel.value, collectScores());
+    const banner = $('#verdictBanner');
+    if (!v) { banner.classList.add('hidden'); return; }
+    banner.classList.remove('hidden');
+    const col = v.verdict === 'keep' ? 'var(--green)' : v.verdict === 'drop' ? 'var(--red)' : 'var(--amber)';
+    banner.innerHTML = `<div class="verdict-banner" style="background:color-mix(in srgb, ${col} 14%, transparent);color:${col}">
+      <span>Вердикт: ${VERDICT_LABELS[v.verdict]}</span><span>${v.score}/100</span></div>`;
+  }
+  function refreshScoreSections() {
+    const t = scoreTypeSel.value;
+    $('#quickWrap').classList.toggle('hidden', t === 'none');
+    $('#fullWrap').classList.toggle('hidden', t !== 'full');
+    refreshVerdict();
+  }
+
+  costInput.addEventListener('input', refreshBand);
+  catSelect.addEventListener('change', () => {
+    if (!layerTouched) {
+      const c = catObj(catSelect.value);
+      if (c) layerSelect.value = c.layer;
+    }
+  });
+  layerSelect.addEventListener('change', () => { layerTouched = true; });
+  scoreTypeSel.addEventListener('change', refreshScoreSections);
+  $$('.score-input').forEach((el) => el.addEventListener('input', (e) => {
+    e.target.nextElementSibling.textContent = e.target.value; refreshVerdict();
+  }));
+  refreshBand();
+  refreshScoreSections();
+
   $('#itemForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
+    const scoreType = f.get('scoreType');
     const payload = {
-      title: f.get('title'), cost: +f.get('cost'), category: f.get('category'), type: f.get('type'),
+      title: f.get('title'), cost: +f.get('cost'), category: f.get('category'), layer: f.get('layer'), type: f.get('type'),
       priority: +f.get('priority'), emotional: +f.get('emotional'), trajectory: +f.get('trajectory'),
       deadline: f.get('deadline') || null, earliestDate: f.get('earliestDate') || null,
       canDefer: f.get('canDefer') === 'on', notes: f.get('notes'),
+      scoreType, scores: scoreType === 'none' ? null : collectScores(),
     };
     if (item) await api.put(`/api/items/${item.id}`, payload);
     else await api.post('/api/items', payload);

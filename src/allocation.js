@@ -1,18 +1,43 @@
 // Ядро распределения зарплаты (Allocation engine).
 // Чистые функции без побочных эффектов — используются и API, и AI-контекстом.
 
-import { BUCKETS } from './categories.js';
+import { LAYERS, SCORE_CRITERIA } from './categories.js';
 
 const TYPE_WEIGHT = { must: 1000, should: 500, nice: 0 };
 
 // Сценарии меняют только веса ранжирования и целевой буфер.
 export const SCENARIOS = {
   balanced: { label: 'Сбалансированный', bufferMultiplier: 1, boost: {} },
-  save_more: { label: 'Больше копить', bufferMultiplier: 1.6, boost: { stability: 300 } },
-  career: { label: 'Карьерный капитал', bufferMultiplier: 1, boost: { career: 450 } },
-  enjoy: { label: 'Наслаждаться жизнью', bufferMultiplier: 0.85, boost: { quality: 350, health: 150 } },
+  save_more: { label: 'Больше копить', bufferMultiplier: 1.6, boost: { stability: 320, investment: 260 } },
+  career: { label: 'Карьерный капитал', bufferMultiplier: 1, boost: { career: 450, investment: 120 } },
+  enjoy: { label: 'Наслаждаться жизнью', bufferMultiplier: 0.85, boost: { quality: 350 } },
   custom: { label: 'Свой сценарий', bufferMultiplier: 1, boost: {} },
 };
+
+// Оценка спорной покупки (Quick/Full). Возвращает 0–100 и вердикт.
+export function scoreVerdict(item) {
+  const scores = item.scores || {};
+  const type = item.scoreType || 'none';
+  if (type === 'none') return null;
+  const crit = type === 'full'
+    ? [...SCORE_CRITERIA.quick, ...SCORE_CRITERIA.full]
+    : SCORE_CRITERIA.quick;
+  let pos = 0; let posMax = 0; let neg = 0; let negMax = 0;
+  for (const c of crit) {
+    const v = Number(scores[c.id]);
+    if (!v) continue;
+    if (c.dir === 'pos') { pos += v; posMax += 5; }
+    else { neg += v; negMax += 5; }
+  }
+  if (posMax === 0 && negMax === 0) return null;
+  const posPart = posMax ? pos / posMax : 0.5;
+  const negPart = negMax ? neg / negMax : 0;
+  const score = Math.round(Math.max(0, Math.min(1, posPart - negPart * 0.6)) * 100);
+  let verdict = 'reconsider';
+  if (score >= 62) verdict = 'keep';
+  else if (score < 38) verdict = 'drop';
+  return { score, verdict, type };
+}
 
 function daysBetween(a, b) {
   return Math.round((new Date(b) - new Date(a)) / (1000 * 60 * 60 * 24));
@@ -37,14 +62,21 @@ function scoreItem(item, payday, boost) {
   // Неоткладываемые покупки защищаем — распределяем раньше.
   if (!item.canDefer) score += 150;
 
-  // Бонус сценария по бакету.
-  score += boost[item.bucket] || 0;
+  // Утечки (Leakage: dopamine/waste) распределяем в последнюю очередь.
+  if (item.layer === 'leakage') score -= 200;
+
+  // Оценка покупки влияет на ранг: keep поднимает, drop опускает.
+  const v = scoreVerdict(item);
+  if (v) score += (v.score - 50) * 2;
+
+  // Бонус сценария по слою капитала.
+  score += boost[item.layer] || 0;
 
   return score;
 }
 
 function emptyBuckets() {
-  return Object.fromEntries(Object.keys(BUCKETS).map((k) => [k, 0]));
+  return Object.fromEntries(Object.keys(LAYERS).map((k) => [k, 0]));
 }
 
 /**
@@ -86,7 +118,7 @@ export function allocate(plan, items, options = {}) {
     if (fits) {
       approved.push({ item, balanceAfter: salary - survival - (spent + item.cost) });
       spent += item.cost;
-      buckets[item.bucket] = (buckets[item.bucket] || 0) + item.cost;
+      buckets[item.layer] = (buckets[item.layer] || 0) + item.cost;
     } else if (item.type === 'must') {
       mustDeferredForMoney = true;
       deferred.push({ item, reason: 'Не хватает бюджета даже на обязательную покупку' });

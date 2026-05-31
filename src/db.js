@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
+import { bandForCost, layerForCategory } from './categories.js';
 
 const DB_PATH = process.env.DB_PATH || './data/app.db';
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
@@ -32,7 +33,7 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
     cost REAL NOT NULL DEFAULT 0,
-    category TEXT NOT NULL DEFAULT 'gadgets',
+    category TEXT NOT NULL DEFAULT 'lifestyle',
     bucket TEXT NOT NULL DEFAULT 'quality',
     priority INTEGER NOT NULL DEFAULT 3,
     type TEXT NOT NULL DEFAULT 'should',
@@ -47,6 +48,54 @@ db.exec(`
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 `);
+
+// ---- Миграция к новой таксономии (band / score_type / scores + новые слои и категории) ----
+function itemColumns() {
+  return db.prepare('PRAGMA table_info(items)').all().map((c) => c.name);
+}
+function ensureColumn(col, def) {
+  if (!itemColumns().includes(col)) db.exec(`ALTER TABLE items ADD COLUMN ${col} ${def}`);
+}
+
+const hadBand = itemColumns().includes('band');
+ensureColumn('band', "TEXT NOT NULL DEFAULT 'small'");
+ensureColumn('score_type', "TEXT NOT NULL DEFAULT 'none'");
+ensureColumn('scores', 'TEXT');
+
+if (!hadBand) {
+  // Перенос старых значений в новую таксономию (слой капитала + категория покупки).
+  const OLD_BUCKET_TO_LAYER = {
+    survival: 'survival', stability: 'stability', career: 'career',
+    quality: 'quality', health: 'quality', gifts: 'quality',
+  };
+  const OLD_CATEGORY_TO_NEW = {
+    food: 'lifestyle', transport: 'infrastructure', connectivity: 'infrastructure',
+    essential_subs: 'infrastructure', family_debt: 'infrastructure',
+    savings: 'asset', emergency: 'asset', insurance: 'infrastructure',
+    courses: 'growth', books: 'growth', work_software: 'tool', work_gear: 'tool',
+    certification: 'growth', networking: 'experience',
+    clothing: 'status', dining: 'experience', entertainment: 'dopamine',
+    hobby: 'experience', travel: 'experience', gadgets: 'tool',
+    gym: 'lifestyle', nutrition: 'lifestyle', medical: 'infrastructure',
+    gifts: 'experience', events: 'experience',
+  };
+  const NEW_CATEGORIES = new Set([
+    'asset', 'tool', 'infrastructure', 'growth', 'experience',
+    'lifestyle', 'status', 'dopamine', 'waste',
+  ]);
+  const rows = db.prepare('SELECT id, bucket, category, cost FROM items').all();
+  const upd = db.prepare('UPDATE items SET bucket=?, category=?, band=? WHERE id=?');
+  const run = db.transaction(() => {
+    for (const r of rows) {
+      const category = NEW_CATEGORIES.has(r.category)
+        ? r.category
+        : (OLD_CATEGORY_TO_NEW[r.category] || 'lifestyle');
+      const layer = OLD_BUCKET_TO_LAYER[r.bucket] || layerForCategory(category);
+      upd.run(layer, category, bandForCost(r.cost), r.id);
+    }
+  });
+  run();
+}
 
 // ---- settings helpers ----
 const getSettingStmt = db.prepare('SELECT value FROM settings WHERE key = ?');
@@ -72,12 +121,18 @@ export function setJSON(key, value) {
 
 // ---- item row <-> api object ----
 export function rowToItem(r) {
+  let scores = null;
+  try { scores = r.scores ? JSON.parse(r.scores) : null; } catch { scores = null; }
   return {
     id: r.id,
     title: r.title,
     cost: r.cost,
     category: r.category,
-    bucket: r.bucket,
+    layer: r.bucket,
+    bucket: r.bucket, // обратная совместимость
+    band: r.band,
+    scoreType: r.score_type,
+    scores,
     priority: r.priority,
     type: r.type,
     deadline: r.deadline,
