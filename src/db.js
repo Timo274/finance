@@ -61,6 +61,7 @@ const hadBand = itemColumns().includes('band');
 ensureColumn('band', "TEXT NOT NULL DEFAULT 'small'");
 ensureColumn('score_type', "TEXT NOT NULL DEFAULT 'none'");
 ensureColumn('scores', 'TEXT');
+ensureColumn('saved_amount', 'REAL NOT NULL DEFAULT 0');
 
 if (!hadBand) {
   // Перенос старых значений в новую таксономию (слой капитала + категория покупки).
@@ -133,6 +134,7 @@ export function rowToItem(r) {
     band: r.band,
     scoreType: r.score_type,
     scores,
+    savedAmount: r.saved_amount || 0,
     priority: r.priority,
     type: r.type,
     deadline: r.deadline,

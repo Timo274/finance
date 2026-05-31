@@ -26,6 +26,11 @@ app.use(cookieParser());
 
 // Разумные дефолты под жизнь с родителями и доход ~25k грн.
 const DEFAULTS = { salary: 25000, survivalCost: 6000, buffer: 3000 };
+const SETTINGS = {
+  investments: 'investments',
+  monthlyWallets: 'monthly_wallets',
+  manualPlan: 'manual_plan',
+};
 
 // ---------- prepared statements ----------
 const stmt = {
@@ -52,6 +57,7 @@ const stmt = {
     trajectory=@trajectory, notes=@notes, updated_at=datetime('now') WHERE id=@id`),
   setItemStatus: db.prepare("UPDATE items SET status=@status, updated_at=datetime('now') WHERE id=@id"),
   deleteItem: db.prepare('DELETE FROM items WHERE id = ?'),
+  updateItemSavings: db.prepare('UPDATE items SET saved_amount=@savedAmount, updated_at=datetime(\'now\') WHERE id=@id'),
 };
 
 function getActivePlan() {
@@ -59,6 +65,33 @@ function getActivePlan() {
 }
 function getActiveItems() {
   return stmt.activeItems.all().map(rowToItem);
+}
+function getInvestments() {
+  return getJSON(SETTINGS.investments, []);
+}
+function getWallets() {
+  return getJSON(SETTINGS.monthlyWallets, []);
+}
+function getManualPlan() {
+  return getJSON(SETTINGS.manualPlan, null);
+}
+function sanitizeEntries(entries, fields) {
+  if (!Array.isArray(entries)) return [];
+  return entries.map((entry) => {
+    const out = { id: String(entry.id || Date.now() + Math.random()) };
+    for (const field of fields) {
+      if (field.type === 'number') out[field.key] = Math.max(0, Number(entry[field.key]) || 0);
+      else out[field.key] = String(entry[field.key] || '').trim();
+    }
+    return out;
+  }).filter((entry) => fields.some((field) => field.type === 'number' ? entry[field.key] > 0 : entry[field.key]));
+}
+function sanitizeManualPlan(entries) {
+  if (!Array.isArray(entries)) return [];
+  return entries.map((entry) => ({
+    itemId: Number(entry.itemId),
+    amount: Math.max(0, Number(entry.amount) || 0),
+  })).filter((entry) => entry.itemId && entry.amount > 0);
 }
 
 const VALID_CATEGORIES = new Set(CATEGORIES.map((c) => c.id));
@@ -223,6 +256,13 @@ app.post('/api/items/:id/status', requireAuth, (req, res) => {
   res.json({ item: rowToItem(stmt.itemById.get(id)) });
 });
 
+app.post('/api/items/:id/savings', requireAuth, (req, res) => {
+  const id = Number(req.params.id);
+  if (!stmt.itemById.get(id)) return res.status(404).json({ error: 'not_found' });
+  stmt.updateItemSavings.run({ id, savedAmount: Math.max(0, Number(req.body?.savedAmount) || 0) });
+  res.json({ item: rowToItem(stmt.itemById.get(id)) });
+});
+
 app.delete('/api/items/:id', requireAuth, (req, res) => {
   stmt.deleteItem.run(Number(req.params.id));
   res.json({ ok: true });
@@ -259,6 +299,41 @@ app.post('/api/custom-scenario', requireAuth, (req, res) => {
   res.json({ includeIds: ids });
 });
 
+app.get('/api/investments', requireAuth, (req, res) => {
+  res.json({ investments: getInvestments() });
+});
+app.post('/api/investments', requireAuth, (req, res) => {
+  const investments = sanitizeEntries(req.body?.investments, [
+    { key: 'name', type: 'text' },
+    { key: 'amount', type: 'number' },
+    { key: 'date', type: 'text' },
+  ]);
+  setJSON(SETTINGS.investments, investments);
+  res.json({ investments });
+});
+
+app.get('/api/wallets', requireAuth, (req, res) => {
+  res.json({ wallets: getWallets() });
+});
+app.post('/api/wallets', requireAuth, (req, res) => {
+  const wallets = sanitizeEntries(req.body?.wallets, [
+    { key: 'name', type: 'text' },
+    { key: 'purpose', type: 'text' },
+    { key: 'amount', type: 'number' },
+  ]);
+  setJSON(SETTINGS.monthlyWallets, wallets);
+  res.json({ wallets });
+});
+
+app.get('/api/manual-plan', requireAuth, (req, res) => {
+  res.json({ manualPlan: getManualPlan() || [] });
+});
+app.post('/api/manual-plan', requireAuth, (req, res) => {
+  const manualPlan = sanitizeManualPlan(req.body?.manualPlan);
+  setJSON(SETTINGS.manualPlan, manualPlan);
+  res.json({ manualPlan });
+});
+
 app.get('/api/tradeoff/:id', requireAuth, (req, res) => {
   const plan = getActivePlan();
   if (!plan) return res.status(400).json({ error: 'no_active_plan' });
@@ -291,6 +366,9 @@ app.get('/api/state', requireAuth, (req, res) => {
     scenarios: plan ? scenarioSummaries(plan, items, customIds()) : [],
     history: stmt.closedPlans.all().map(rowToPlan),
     meta: metaPayload(),
+    investments: getInvestments(),
+    wallets: getWallets(),
+    manualPlan: getManualPlan() || [],
   });
 });
 

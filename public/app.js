@@ -30,9 +30,13 @@ const state = {
   allocation: null,
   scenarios: [],
   history: [],
+  investments: [],
+  wallets: [],
+  manualPlan: [],
   view: 'dashboard',
   scenario: 'balanced',
   customInclude: [],
+  queueFilters: { q: '', layer: 'all', type: 'all', status: 'all' },
 };
 
 // ---------- helpers ----------
@@ -61,6 +65,7 @@ function bandLabel(id) { const b = state.meta?.bands?.find((x) => x.id === id); 
 const TYPE_LABELS = { must: 'Must', should: 'Should', nice: 'Nice' };
 const STATUS_LABELS = { safe: 'Безопасно', tight: 'Впритык', overallocated: 'Перерасход' };
 const VERDICT_LABELS = { keep: 'Брать', reconsider: 'Подумать', drop: 'Отказаться' };
+const queueStatusLabel = { all: 'Все', funded: 'Копится', complete: 'Накоплено', planned: 'В плане' };
 
 // ---------- charts (vanilla canvas, без библиотек) ----------
 function cssVar(name, fallback = '#888') {
@@ -152,6 +157,24 @@ function drawLine(canvas, points) {
     ctx.strokeStyle = cssVar('--panel', '#fff'); ctx.lineWidth = 1.5; ctx.stroke();
   });
 }
+function drawBars(canvas, segments) {
+  const { ctx, w, h } = setupCanvas(canvas);
+  const maxV = Math.max(...segments.map((s) => s.value), 1);
+  const pad = 18;
+  const gap = 10;
+  const barW = (w - pad * 2 - gap * (segments.length - 1)) / Math.max(segments.length, 1);
+  segments.forEach((seg, i) => {
+    const x = pad + i * (barW + gap);
+    const bh = ((h - 44) * seg.value) / maxV;
+    const y = h - 26 - bh;
+    ctx.fillStyle = seg.color || cssVar('--accent', '#2f6bff');
+    ctx.fillRect(x, y, Math.max(8, barW), bh);
+    ctx.fillStyle = cssVar('--muted', '#888');
+    ctx.textAlign = 'center';
+    ctx.font = '600 10px Inter, sans-serif';
+    ctx.fillText(seg.label, x + barW / 2, h - 8);
+  });
+}
 function drawCharts() {
   const donut = $('#donutAlloc');
   if (donut && state.allocation) {
@@ -168,6 +191,10 @@ function drawCharts() {
     const pts = [{ value: t.salary - t.survival }];
     state.allocation.timeline.forEach((n) => pts.push({ value: n.balanceAfter }));
     drawLine(line, pts);
+  }
+  const inv = $('#investBars');
+  if (inv) {
+    drawBars(inv, investmentMonthlyTotals().map((x) => ({ label: x.label, value: x.value, color: cssVar('--green', '#16a34a') })));
   }
 }
 
@@ -195,6 +222,36 @@ function prioDots(p) {
   let s = '<span class="prio">';
   for (let i = 1; i <= 5; i++) s += `<i class="${i <= p ? 'on' : ''}"></i>`;
   return s + '</span>';
+}
+function goalProgress(item) {
+  const cost = Number(item.cost) || 0;
+  const saved = Math.min(cost, Math.max(0, Number(item.savedAmount) || 0));
+  return {
+    saved,
+    cost,
+    left: Math.max(0, cost - saved),
+    pct: cost > 0 ? Math.min(100, Math.round((saved / cost) * 100)) : 0,
+  };
+}
+function investmentMonthlyTotals() {
+  const byMonth = new Map();
+  state.investments.forEach((it) => {
+    const key = it.date ? String(it.date).slice(0, 7) : 'без даты';
+    byMonth.set(key, (byMonth.get(key) || 0) + Number(it.amount || 0));
+  });
+  return [...byMonth.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-6)
+    .map(([key, value]) => ({ label: key === 'без даты' ? '—' : key.slice(5), value }));
+}
+function walletTotal() {
+  return state.wallets.reduce((sum, w) => sum + Number(w.amount || 0), 0);
+}
+function manualPlanTotal() {
+  return state.manualPlan.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+}
+function manualAmountFor(itemId) {
+  return state.manualPlan.find((p) => p.itemId === itemId)?.amount || 0;
 }
 
 // ---------- theme ----------
@@ -276,6 +333,9 @@ async function loadAndRender() {
   state.allocation = data.allocation;
   state.scenarios = data.scenarios;
   state.history = data.history;
+  state.investments = data.investments || [];
+  state.wallets = data.wallets || [];
+  state.manualPlan = data.manualPlan || [];
   try { state.customInclude = (await api.get('/api/custom-scenario')).includeIds || []; } catch {}
   $('#app').classList.remove('hidden');
   renderTopbar();
@@ -289,6 +349,9 @@ async function refresh() {
   state.allocation = data.allocation;
   state.scenarios = data.scenarios;
   state.history = data.history;
+  state.investments = data.investments || [];
+  state.wallets = data.wallets || [];
+  state.manualPlan = data.manualPlan || [];
   renderTopbar();
   renderView();
 }
@@ -325,8 +388,9 @@ function renderView() {
   const v = state.view;
   if (v === 'dashboard') root.innerHTML = viewDashboard();
   else if (v === 'queue') root.innerHTML = viewQueue();
+  else if (v === 'wallets') root.innerHTML = viewWallets();
+  else if (v === 'investments') root.innerHTML = viewInvestments();
   else if (v === 'plan') root.innerHTML = viewPlan();
-  else if (v === 'timeline') root.innerHTML = viewTimeline();
   else if (v === 'scenarios') root.innerHTML = viewScenarios();
   else if (v === 'history') root.innerHTML = viewHistory();
   else if (v === 'assistant') { root.innerHTML = viewAssistant(); initAssistant(); }
@@ -362,10 +426,10 @@ function viewDashboard() {
   <div class="grid cards">
     <div class="card"><div class="stat-label">Зарплата</div><div class="stat-value">${fmt(t.salary)}</div><div class="stat-sub">${fmtDate(state.plan.payday)}</div></div>
     <div class="card"><div class="stat-label">Обязательные расходы</div><div class="stat-value sm">${fmt(t.survival)}</div><div class="stat-sub">списываются первыми</div></div>
-    <div class="card"><div class="stat-label">Защищённый буфер</div><div class="stat-value sm accent-num">${fmt(t.buffer)}</div><div class="stat-sub">не трогаем</div></div>
+    <div class="card"><div class="stat-label">Страховка / чёрный день</div><div class="stat-value sm accent-num">${fmt(t.reserve)}</div><div class="stat-sub">2–5%+ от зп, не трогаем</div></div>
     <div class="card"><div class="stat-label">Доступно распределить</div><div class="stat-value accent-num">${fmt(t.availableToAllocate)}</div></div>
     <div class="card"><div class="stat-label">Распределено</div><div class="stat-value sm">${fmt(t.allocated)}</div><div class="stat-sub">${state.allocation.approved.length} покупок одобрено</div></div>
-    <div class="card"><div class="stat-label">Останется</div><div class="stat-value ${t.freeAfterBuffer < 0 ? 'red-num' : 'green-num'}">${fmt(t.remaining)}</div><div class="stat-sub">сверх буфера: ${fmt(t.freeAfterBuffer)}</div></div>
+    <div class="card"><div class="stat-label">Останется</div><div class="stat-value ${t.freeAfterReserve < 0 ? 'red-num' : 'green-num'}">${fmt(t.remaining)}</div><div class="stat-sub">сверх резерва: ${fmt(t.freeAfterReserve)}</div></div>
   </div>
 
   <div class="chart-cols" style="margin-top:16px">
@@ -383,12 +447,12 @@ function viewDashboard() {
       <div class="alloc-bar" style="margin-top:16px">
         <div class="alloc-seg" style="width:${survW}%;background:#64708f"></div>${segs}
       </div>
-      ${t.status === 'overallocated' ? `<div class="tradeoff" style="background:color-mix(in srgb,var(--red) 10%,transparent);border-color:var(--red)"><b style="color:var(--red)">Перерасход.</b> Часть покупок не помещается без нарушения буфера — посмотрите «План распределения», что перенести.</div>` : ''}
+      ${t.status === 'overallocated' ? `<div class="tradeoff" style="background:color-mix(in srgb,var(--red) 10%,transparent);border-color:var(--red)"><b style="color:var(--red)">Перерасход.</b> Часть покупок не помещается без нарушения резерва — посмотрите «План распределения», что перенести.</div>` : ''}
     </div>
     <div class="card pad-lg">
       <div class="stat-label">Остаток после каждой покупки</div>
       ${state.allocation.timeline.length ? `<canvas id="lineBalance" class="chart-line"></canvas>
-      <div class="row-between small muted" style="margin-top:6px"><span>старт ${fmtShort(t.salary - t.survival)}</span><span>буфер ${fmtShort(t.buffer)}</span></div>`
+      <div class="row-between small muted" style="margin-top:6px"><span>старт ${fmtShort(t.salary - t.survival)}</span><span>резерв ${fmtShort(t.reserve)}</span></div>`
       : '<div class="chart-empty muted">Добавьте покупки в план, чтобы увидеть график остатка.</div>'}
     </div>
   </div>
@@ -409,11 +473,13 @@ function verdictChip(item) {
 
 function queueItemRow(item, extra = '', reason = '') {
   const layer = item.layer || item.bucket;
+  const gp = goalProgress(item);
   return `<div class="queue-item">
     <div class="qi-main">
       <div class="qi-title"><span class="dot" style="background:${layerColor(layer)}"></span>${escapeHtml(item.title)}
         <span class="tag tag-${item.type}">${TYPE_LABELS[item.type]}</span>${verdictChip(item)}</div>
       <div class="qi-meta">${layerLabel(layer)} · ${catLabelShort(item.category)} · ${bandLabel(item.band)} · приоритет ${item.priority}/5 · траектория ${item.trajectory}/5${item.deadline ? ' · дедлайн ' + fmtDate(item.deadline) : ''}</div>
+      ${gp.saved > 0 ? `<div class="goal-mini"><div style="width:${gp.pct}%"></div></div><div class="qi-meta">Накоплено ${fmt(gp.saved)} из ${fmt(gp.cost)} · осталось ${fmt(gp.left)}</div>` : ''}
       ${reason ? `<div class="reason">↪ ${reason}</div>` : ''}
       ${extra ? `<div class="qi-meta">${extra}</div>` : ''}
     </div>
@@ -422,12 +488,27 @@ function queueItemRow(item, extra = '', reason = '') {
 }
 
 function viewQueue() {
-  const rows = state.items.map((it) => {
+  const q = state.queueFilters;
+  const filtered = state.items.filter((it) => {
+    const gp = goalProgress(it);
+    const inPlan = state.allocation?.approved.some((a) => a.item.id === it.id);
+    const textOk = !q.q || `${it.title} ${it.notes || ''}`.toLowerCase().includes(q.q.toLowerCase());
+    const layerOk = q.layer === 'all' || (it.layer || it.bucket) === q.layer;
+    const typeOk = q.type === 'all' || it.type === q.type;
+    const statusOk = q.status === 'all'
+      || (q.status === 'funded' && gp.saved > 0 && gp.pct < 100)
+      || (q.status === 'complete' && gp.pct >= 100)
+      || (q.status === 'planned' && inPlan);
+    return textOk && layerOk && typeOk && statusOk;
+  });
+  const rows = filtered.map((it) => {
     const inPlan = state.allocation?.approved.some((a) => a.item.id === it.id);
     const layer = it.layer || it.bucket;
+    const gp = goalProgress(it);
     return `<tr data-id="${it.id}">
       <td><span class="dot" style="background:${layerColor(layer)}"></span>${escapeHtml(it.title)}${verdictChip(it)}</td>
       <td>${fmt(it.cost)}</td>
+      <td><div class="goal-cell"><b>${gp.pct}%</b><div class="goal-mini"><div style="width:${gp.pct}%"></div></div><span>${fmtShort(gp.saved)} / ${fmtShort(gp.cost)}</span></div></td>
       <td>${layerLabel(layer)}</td>
       <td>${catLabelShort(it.category)}</td>
       <td><span class="band">${bandLabel(it.band)}</span></td>
@@ -437,6 +518,7 @@ function viewQueue() {
       <td>${inPlan ? '<span class="green-num">в плане</span>' : '<span class="muted">позже</span>'}</td>
       <td style="text-align:right">
         <button class="btn btn-sm btn-ghost" data-act="tradeoff" data-id="${it.id}">Trade-off</button>
+        <button class="btn btn-sm btn-outline" data-act="save-goal" data-id="${it.id}">Копить</button>
         <button class="btn btn-sm btn-outline" data-act="edit" data-id="${it.id}">✎</button>
         <button class="btn btn-sm btn-ghost" data-act="bought" data-id="${it.id}" title="Отметить купленным">✓</button>
       </td>
@@ -448,25 +530,106 @@ function viewQueue() {
     <div><h1>Очередь желаний</h1><p>Единый список желаний — переносится из месяца в месяц. Купленное архивируется.</p></div>
     <button class="btn btn-primary" data-act="add-item">+ Добавить желание</button>
   </div>
-  ${state.items.length ? `<div class="table-wrap"><table>
-    <thead><tr><th>Желание</th><th>Стоимость</th><th>Слой</th><th>Категория</th><th>Band</th><th>Тип</th><th>Приоритет</th><th>Дедлайн</th><th>Статус</th><th></th></tr></thead>
+  <div class="filters card">
+    <input data-filter="q" placeholder="Поиск по желаниям..." value="${escapeAttr(q.q)}" />
+    <select data-filter="layer"><option value="all">Все слои</option>${Object.entries(state.meta.layers).map(([k, v]) => `<option value="${k}" ${q.layer === k ? 'selected' : ''}>${v.ru}</option>`).join('')}</select>
+    <select data-filter="type"><option value="all">Все типы</option>${Object.entries(TYPE_LABELS).map(([k, v]) => `<option value="${k}" ${q.type === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
+    <select data-filter="status">${Object.entries(queueStatusLabel).map(([k, v]) => `<option value="${k}" ${q.status === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
+  </div>
+  ${state.items.length && filtered.length ? `<div class="table-wrap"><table>
+    <thead><tr><th>Желание</th><th>Стоимость</th><th>Накоплено</th><th>Слой</th><th>Категория</th><th>Band</th><th>Тип</th><th>Приоритет</th><th>Дедлайн</th><th>Статус</th><th></th></tr></thead>
     <tbody>${rows}</tbody></table></div>`
     : `<div class="empty"><div class="big">≡</div><p>Очередь пуста. Добавьте первое желание.</p>
        <button class="btn btn-primary" data-act="add-item">+ Добавить желание</button></div>`}
+  ${state.items.length && !filtered.length ? '<div class="empty"><p>По фильтрам ничего не найдено.</p></div>' : ''}
   <div id="tradeoffBox"></div>`;
+}
+
+function viewInvestments() {
+  const total = state.investments.reduce((sum, it) => sum + Number(it.amount || 0), 0);
+  const byName = new Map();
+  state.investments.forEach((it) => byName.set(it.name || 'Без названия', (byName.get(it.name || 'Без названия') || 0) + Number(it.amount || 0)));
+  const proportions = [...byName.entries()].sort((a, b) => b[1] - a[1]);
+  const rows = state.investments.map((it) => `<div class="wallet-row">
+    <div><b>${escapeHtml(it.name || 'Инвестиция')}</b><div class="muted small">${it.date ? fmtDate(it.date) : 'без даты'}</div></div>
+    <div class="stat-value sm">${fmt(it.amount)}</div>
+  </div>`).join('');
+  return `<div class="view-head row-between">
+    <div><h1>Инвестиции</h1><p>Отдельный журнал: раз в месяц вписывайте, куда и сколько вложили.</p></div>
+    <button class="btn btn-primary" data-act="add-investment">+ Добавить</button>
+  </div>
+  <div class="grid cards">
+    <div class="card"><div class="stat-label">Всего инвестировано</div><div class="stat-value">${fmt(total)}</div></div>
+    <div class="card"><div class="stat-label">Записей</div><div class="stat-value sm">${state.investments.length}</div></div>
+  </div>
+  <div class="chart-cols" style="margin-top:16px">
+    <div class="card pad-lg"><div class="stat-label">График по месяцам</div>${state.investments.length ? '<canvas id="investBars" class="chart-line"></canvas>' : '<div class="chart-empty muted">Добавьте первый monthly update.</div>'}</div>
+    <div class="card pad-lg"><div class="stat-label">Пропорции</div>
+      ${proportions.length ? proportions.map(([name, amount]) => `<div class="prop-row"><div class="row-between small"><b>${escapeHtml(name)}</b><span>${Math.round((amount / total) * 100)}%</span></div><div class="goal-mini"><div style="width:${(amount / total) * 100}%"></div></div><div class="muted small">${fmt(amount)}</div></div>`).join('') : '<p class="muted">Пока нет инвестиций.</p>'}
+    </div>
+  </div>
+  <div class="section-title">История апдейтов</div>
+  ${rows || '<p class="muted">Пока нет записей.</p>'}`;
+}
+
+function viewWallets() {
+  const total = walletTotal();
+  const available = state.allocation?.totals?.availableToAllocate || 0;
+  const rows = state.wallets.map((w) => `<div class="wallet-row">
+    <div><b>${escapeHtml(w.name || 'Кошелёк')}</b><div class="muted small">${escapeHtml(w.purpose || 'на этот месяц')}</div></div>
+    <div style="min-width:170px"><div class="row-between small"><span>${fmt(w.amount)}</span><b>${total ? Math.round((w.amount / total) * 100) : 0}%</b></div><div class="goal-mini"><div style="width:${total ? (w.amount / total) * 100 : 0}%"></div></div></div>
+  </div>`).join('');
+  const goals = state.items.filter((it) => goalProgress(it).saved > 0 || goalProgress(it).left > 0)
+    .sort((a, b) => goalProgress(b).pct - goalProgress(a).pct)
+    .slice(0, 6)
+    .map((it) => {
+      const gp = goalProgress(it);
+      return `<div class="wallet-row"><div><b>${escapeHtml(it.title)}</b><div class="muted small">желание на ${fmt(it.cost)}</div></div><div style="min-width:180px"><div class="row-between small"><span>${fmt(gp.saved)}</span><b>${gp.pct}%</b></div><div class="goal-mini"><div style="width:${gp.pct}%"></div></div></div></div>`;
+    }).join('');
+  return `<div class="view-head row-between">
+    <div><h1>Кошельки месяца</h1><p>Карманы с суммой и назначением именно на текущий месяц.</p></div>
+    <button class="btn btn-primary" data-act="add-wallet">+ Кошелёк</button>
+  </div>
+  <div class="grid cards">
+    <div class="card"><div class="stat-label">В кошельках</div><div class="stat-value">${fmt(total)}</div><div class="stat-sub">${state.wallets.length} карманов</div></div>
+    <div class="card"><div class="stat-label">Доступно из зарплаты</div><div class="stat-value sm">${fmt(available)}</div><div class="stat-sub">${total > available ? 'кошельки выше доступного' : 'в пределах доступного'}</div></div>
+  </div>
+  <div class="chart-cols" style="margin-top:16px">
+    <div class="card pad-lg"><div class="section-title" style="margin-top:0">Карманы</div>${rows || '<p class="muted">Создайте карманы: еда, транспорт, желание, инвестиции...</p>'}</div>
+    <div class="card pad-lg"><div class="section-title" style="margin-top:0">Накопления на желания</div>${goals || '<p class="muted">Нажмите «Копить» в желаниях, чтобы видеть прогресс.</p>'}</div>
+  </div>`;
 }
 
 function viewPlan() {
   if (!state.allocation) return `<div class="view-head"><h1>План распределения</h1></div>${noPlanBlock()}`;
   const a = state.allocation;
+  const available = a.totals.availableToAllocate;
+  const planned = manualPlanTotal();
+  const manualRows = state.items.map((it) => {
+    const amount = manualAmountFor(it.id);
+    const gp = goalProgress(it);
+    return `<div class="manual-row">
+      <div><b>${escapeHtml(it.title)}</b><div class="muted small">${fmt(it.cost)} · накоплено ${fmt(gp.saved)}</div></div>
+      <input type="number" min="0" value="${amount || ''}" placeholder="0" data-manual="${it.id}" />
+    </div>`;
+  }).join('');
   return `
   <div class="view-head row-between">
-    <div><h1>План распределения</h1><p>Авто-распределение: сначала обязательное и дедлайны, потом приоритет и долгосрочная ценность.</p></div>
+    <div><h1>План распределения</h1><p>Сначала решаете сами, куда перекинуть деньги; авто-план остаётся подсказкой рядом.</p></div>
     <button class="btn btn-outline" data-act="close-month">Закрыть месяц</button>
+  </div>
+  <div class="card pad-lg" style="margin-bottom:16px">
+    <div class="row-between"><div><div class="section-title" style="margin:0">Ручной план</div><p class="muted small" style="margin:4px 0 0">Введите, сколько отправить на каждое желание в этом месяце.</p></div>
+      <div><div class="stat-value sm ${planned > available ? 'red-num' : 'green-num'}">${fmt(planned)}</div><div class="muted small">из ${fmt(available)}</div></div></div>
+    <div class="manual-list">${manualRows || '<p class="muted">Добавьте желания, чтобы распределять вручную.</p>'}</div>
+    <div class="row-between" style="margin-top:12px">
+      <span class="${planned > available ? 'red-num' : 'muted'}">${planned > available ? 'План выше доступного бюджета' : `Свободно ещё ${fmt(available - planned)}`}</span>
+      <button class="btn btn-primary" data-act="save-manual-plan">Сохранить ручной план</button>
+    </div>
   </div>
   <div class="plan-cols">
     <div>
-      <div class="section-title green-num">Одобрено в этой зарплате · ${a.approved.length}</div>
+      <div class="section-title green-num">Авто-подсказка · поместится ${a.approved.length}</div>
       ${a.approved.length ? a.approved.map((x) => queueItemRow(x.item, `Остаток после покупки: ${fmt(x.balanceAfter)}`)).join('') : '<p class="muted">Ничего не одобрено.</p>'}
     </div>
     <div>
@@ -476,45 +639,24 @@ function viewPlan() {
   </div>`;
 }
 
-function viewTimeline() {
-  if (!state.allocation) return `<div class="view-head"><h1>Таймлайн</h1></div>${noPlanBlock()}`;
-  const tl = state.allocation.timeline;
-  return `
-  <div class="view-head"><h1>Таймлайн покупок</h1><p>План по датам после зарплаты с остатком на счёте после каждой покупки.</p></div>
-  ${tl.length ? `<div class="card pad-lg" style="margin-bottom:16px">
-    <div class="stat-label">График остатка</div>
-    <canvas id="lineBalance" class="chart-line"></canvas>
-  </div>` : ''}
-  <div class="card pad-lg">
-    <div class="row-between"><div class="stat-label">Старт — зарплата ${fmtDate(state.plan.payday)}</div>
-      <div class="stat-value sm">${fmt(state.allocation.totals.salary - state.allocation.totals.survival)} <span class="muted small">после обязательных</span></div></div>
-    ${tl.length ? `<div class="timeline" style="margin-top:18px">
-      ${tl.map((n) => `<div class="tl-node">
-        <div class="tl-date">${fmtDate(n.date)}</div>
-        <div class="tl-card"><div><b>${escapeHtml(n.item.title)}</b> <span class="muted small">${fmt(n.item.cost)}</span></div>
-          <div class="tl-bal">остаток ${fmt(n.balanceAfter)}</div></div>
-      </div>`).join('')}
-      <div class="tl-node"><div class="tl-date">Итог</div>
-        <div class="tl-card"><div><b>Защищённый буфер</b></div><div class="tl-bal accent-num">${fmt(state.allocation.totals.buffer)}</div></div></div>
-    </div>` : '<p class="muted" style="margin-top:14px">Нет запланированных покупок.</p>'}
-  </div>`;
-}
-
 function viewScenarios() {
   if (!state.scenarios.length) return `<div class="view-head"><h1>Сценарии</h1></div>${noPlanBlock()}`;
   const cards = state.scenarios.map((s) => {
-    const total = s.allocated + s.remaining || 1;
+    const total = state.allocation?.totals?.availableToAllocate || (s.allocated + s.remaining || 1);
     const bars = Object.entries(s.buckets).filter(([, v]) => v > 0)
       .map(([k, v]) => `<div style="width:${(v / total) * 100}%;background:${bucketColor(k)}"></div>`).join('');
+    const weights = s.weights ? Object.entries(s.weights).map(([k, v]) => `<span class="muted">${layerLabel(k)} ${v}%</span>`).join('') : '<span class="muted">ручной выбор покупок</span>';
     return `<div class="card scn-card ${s.key === state.scenario ? 'active' : ''}" data-act="pick-scenario" data-key="${s.key}">
       <div class="row-between"><div class="scn-name">${s.label}</div>
         <span class="status-badge status-${s.status}">${STATUS_LABELS[s.status]}</span></div>
       <div class="bucket-bar">${bars}<div style="flex:1;background:#142244"></div></div>
       <div class="legend small">
         <span class="muted">Карьера: ${fmtShort(s.career)}</span>
+        <span class="muted">Инвест: ${fmtShort(s.investment)}</span>
         <span class="muted">Жизнь: ${fmtShort(s.quality)}</span>
-        <span class="muted">Буфер: ${fmtShort(s.buffer)}</span>
+        <span class="muted">Резерв: ${fmtShort(s.reserve)}</span>
       </div>
+      <div class="legend small scenario-weights">${weights}</div>
       <div style="margin-top:10px;display:flex;justify-content:space-between">
         <span class="muted small">Включено ${s.includedCount} · позже ${s.excludedCount}</span>
         <b class="green-num">${fmt(s.remaining)}</b>
@@ -523,7 +665,7 @@ function viewScenarios() {
   }).join('');
 
   return `
-  <div class="view-head"><h1>Сценарии месяца</h1><p>Сравните стратегии распределения и выберите ту, что выглядит сбалансированной. Выбранный сценарий применяется ко всем экранам.</p></div>
+  <div class="view-head"><h1>Сценарии месяца</h1><p>Сравнение стратегий по резерву, инвестициям, карьере и качеству жизни. Математика считается от доступного бюджета после обязательных расходов и резерва.</p></div>
   <div class="grid scn-grid">${cards}</div>
   ${state.scenario === 'custom' ? customScenarioEditor() : ''}`;
 }
@@ -617,6 +759,10 @@ function bindViewEvents() {
       const id = Number(el.dataset.id);
       if (act === 'open-plan') openPlanModal();
       else if (act === 'add-item') openItemModal();
+      else if (act === 'save-goal') openSavingsModal(state.items.find((i) => i.id === id));
+      else if (act === 'add-investment') openInvestmentModal();
+      else if (act === 'add-wallet') openWalletModal();
+      else if (act === 'save-manual-plan') saveManualPlan();
       else if (act === 'edit') openItemModal(state.items.find((i) => i.id === id));
       else if (act === 'bought') await markBought(id);
       else if (act === 'tradeoff') await showTradeoff(id);
@@ -625,6 +771,10 @@ function bindViewEvents() {
     });
   });
   $$('[data-cust]').forEach((cb) => cb.addEventListener('change', saveCustomScenario));
+  $$('[data-filter]').forEach((el) => el.addEventListener('input', () => {
+    state.queueFilters[el.dataset.filter] = el.value;
+    renderView();
+  }));
 }
 
 async function markBought(id) {
@@ -642,11 +792,18 @@ async function showTradeoff(id) {
     html = `<b>${escapeHtml(item.title)}</b> уже в плане. Если отказаться — освободится <b>${fmt(t.freedIfRemoved)}</b>, останется <b>${fmt(t.remainingIfRemoved)}</b>.`;
   } else {
     html = `Если купить <b>${escapeHtml(item.title)}</b> (${fmt(item.cost)}) — останется <b>${fmt(t.remainingIfAdded)}</b>.`;
-    if (t.belowBuffer) html += ` ⚠️ Буфер опустится ниже безопасного уровня.`;
+    if (t.belowReserve || t.belowBuffer) html += ` ⚠️ Резерв опустится ниже безопасного уровня.`;
     if (t.displaces?.length) html += `<br>Это вытеснит: ${t.displaces.map((d) => escapeHtml(d.title)).join(', ')}.`;
   }
   box.innerHTML = `<div class="tradeoff">${html}</div>`;
   box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+async function saveManualPlan() {
+  const manualPlan = $$('[data-manual]').map((el) => ({ itemId: Number(el.dataset.manual), amount: Number(el.value) || 0 }));
+  await api.post('/api/manual-plan', { manualPlan });
+  toast('Ручной план сохранён');
+  await refresh();
 }
 
 async function closeMonth() {
@@ -679,6 +836,7 @@ function closeModal() { $('#modalRoot').innerHTML = ''; }
 
 function openPlanModal() {
   const p = state.plan || { name: 'Зарплата', payday: new Date().toISOString().slice(0, 10), ...state.meta.defaults };
+  const reservePct = p.salary ? Math.round((Number(p.buffer || 0) / Number(p.salary)) * 100) : 0;
   openModal(`<div class="modal">
     <div class="modal-head"><h2>Будущая зарплата</h2><button class="close-x" onclick="document.getElementById('modalRoot').innerHTML=''">×</button></div>
     <form id="planForm" class="form-grid">
@@ -687,8 +845,8 @@ function openPlanModal() {
       <div class="field"><label>Сумма зарплаты, грн</label><input type="number" name="salary" value="${p.salary}" min="0" /></div>
       <div class="field"><label>Обязательные расходы, грн</label><input type="number" name="survivalCost" value="${p.survivalCost}" min="0" />
         <span class="muted small">по умолчанию для жизни с родителями</span></div>
-      <div class="field"><label>Защищённый буфер, грн</label><input type="number" name="buffer" value="${p.buffer}" min="0" />
-        <span class="muted small">минимальный остаток, который нельзя трогать</span></div>
+      <div class="field"><label>Страховка / чёрный день, грн</label><input type="number" name="buffer" value="${p.buffer}" min="0" />
+        <span class="muted small">деньги, которые отложил и не трогаешь. Сейчас ~${reservePct}% от зп; спокойная цель 2–5%+</span></div>
       <div class="modal-foot field full" style="flex-direction:row">
         <button type="button" class="btn btn-ghost" onclick="document.getElementById('modalRoot').innerHTML=''">Отмена</button>
         <button type="submit" class="btn btn-primary">Сохранить</button>
@@ -702,6 +860,71 @@ function openPlanModal() {
       salary: +f.get('salary'), survivalCost: +f.get('survivalCost'), buffer: +f.get('buffer'),
     });
     closeModal(); toast('Зарплата сохранена'); await refresh();
+  });
+}
+
+function openSavingsModal(item) {
+  if (!item) return;
+  const gp = goalProgress(item);
+  openModal(`<div class="modal narrow">
+    <div class="modal-head"><h2>Копить на желание</h2><button class="close-x" onclick="document.getElementById('modalRoot').innerHTML=''">×</button></div>
+    <form id="savingsForm" class="form-grid">
+      <div class="field full"><label>Желание</label><input value="${escapeAttr(item.title)}" disabled /></div>
+      <div class="field"><label>Цена</label><input value="${fmt(item.cost)}" disabled /></div>
+      <div class="field"><label>Уже накоплено, грн</label><input type="number" name="savedAmount" min="0" value="${gp.saved}" /></div>
+      <div class="field full"><div class="goal-mini big"><div style="width:${gp.pct}%"></div></div><span class="muted small">${gp.pct}% · осталось ${fmt(gp.left)}</span></div>
+      <div class="modal-foot field full" style="flex-direction:row">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modalRoot').innerHTML=''">Отмена</button>
+        <button type="submit" class="btn btn-primary">Сохранить</button>
+      </div>
+    </form></div>`);
+  $('#savingsForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    await api.post(`/api/items/${item.id}/savings`, { savedAmount: +f.get('savedAmount') });
+    closeModal(); toast('Накопление обновлено'); await refresh();
+  });
+}
+
+function openInvestmentModal() {
+  openModal(`<div class="modal narrow">
+    <div class="modal-head"><h2>Добавить инвестицию</h2><button class="close-x" onclick="document.getElementById('modalRoot').innerHTML=''">×</button></div>
+    <form id="investmentForm" class="form-grid">
+      <div class="field full"><label>Куда вложил</label><input name="name" placeholder="ETF, депозит, крипта..." required /></div>
+      <div class="field"><label>Сумма, грн</label><input type="number" name="amount" min="0" required /></div>
+      <div class="field"><label>Дата апдейта</label><input type="date" name="date" value="${new Date().toISOString().slice(0, 10)}" /></div>
+      <div class="modal-foot field full" style="flex-direction:row">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modalRoot').innerHTML=''">Отмена</button>
+        <button type="submit" class="btn btn-primary">Сохранить</button>
+      </div>
+    </form></div>`);
+  $('#investmentForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    const investments = [{ id: Date.now(), name: f.get('name'), amount: +f.get('amount'), date: f.get('date') }, ...state.investments];
+    await api.post('/api/investments', { investments });
+    closeModal(); toast('Инвестиция добавлена'); await refresh();
+  });
+}
+
+function openWalletModal() {
+  openModal(`<div class="modal narrow">
+    <div class="modal-head"><h2>Новый кошелёк месяца</h2><button class="close-x" onclick="document.getElementById('modalRoot').innerHTML=''">×</button></div>
+    <form id="walletForm" class="form-grid">
+      <div class="field full"><label>Название кармана</label><input name="name" placeholder="На AirPods / еда / транспорт" required /></div>
+      <div class="field"><label>Сумма, грн</label><input type="number" name="amount" min="0" required /></div>
+      <div class="field"><label>На что пойдёт</label><input name="purpose" placeholder="цель на этот месяц" /></div>
+      <div class="modal-foot field full" style="flex-direction:row">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modalRoot').innerHTML=''">Отмена</button>
+        <button type="submit" class="btn btn-primary">Сохранить</button>
+      </div>
+    </form></div>`);
+  $('#walletForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    const wallets = [{ id: Date.now(), name: f.get('name'), purpose: f.get('purpose'), amount: +f.get('amount') }, ...state.wallets];
+    await api.post('/api/wallets', { wallets });
+    closeModal(); toast('Кошелёк добавлен'); await refresh();
   });
 }
 

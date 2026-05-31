@@ -5,13 +5,13 @@ import { LAYERS, SCORE_CRITERIA } from './categories.js';
 
 const TYPE_WEIGHT = { must: 1000, should: 500, nice: 0 };
 
-// Сценарии меняют только веса ранжирования и целевой буфер.
+// Сценарии меняют веса ранжирования, целевой резерв и доли по слоям.
 export const SCENARIOS = {
-  balanced: { label: 'Сбалансированный', bufferMultiplier: 1, boost: {} },
-  save_more: { label: 'Больше копить', bufferMultiplier: 1.6, boost: { stability: 320, investment: 260 } },
-  career: { label: 'Карьерный капитал', bufferMultiplier: 1, boost: { career: 450, investment: 120 } },
-  enjoy: { label: 'Наслаждаться жизнью', bufferMultiplier: 0.85, boost: { quality: 350 } },
-  custom: { label: 'Свой сценарий', bufferMultiplier: 1, boost: {} },
+  balanced: { label: 'Сбалансированный', reserveMultiplier: 1, boost: {}, weights: { stability: 25, career: 25, investment: 20, quality: 25, leakage: 5 } },
+  save_more: { label: 'Больше копить', reserveMultiplier: 1.35, boost: { stability: 280, investment: 300 }, weights: { stability: 30, career: 15, investment: 35, quality: 15, leakage: 5 } },
+  career: { label: 'Карьерный капитал', reserveMultiplier: 1, boost: { career: 450, investment: 120 }, weights: { stability: 18, career: 45, investment: 20, quality: 12, leakage: 5 } },
+  enjoy: { label: 'Наслаждаться жизнью', reserveMultiplier: 0.8, boost: { quality: 350 }, weights: { stability: 15, career: 15, investment: 15, quality: 50, leakage: 5 } },
+  custom: { label: 'Свой сценарий', reserveMultiplier: 1, boost: {}, weights: null },
 };
 
 // Оценка спорной покупки (Quick/Full). Возвращает 0–100 и вердикт.
@@ -91,10 +91,10 @@ export function allocate(plan, items, options = {}) {
 
   const salary = Number(plan.salary) || 0;
   const survival = Number(plan.survivalCost) || 0;
-  const baseBuffer = Number(plan.buffer) || 0;
-  const effectiveBuffer = Math.round(baseBuffer * scenario.bufferMultiplier);
+  const baseReserve = Number(plan.buffer) || 0;
+  const effectiveReserve = Math.round(baseReserve * scenario.reserveMultiplier);
 
-  const availableToAllocate = Math.max(0, salary - survival - effectiveBuffer);
+  const availableToAllocate = Math.max(0, salary - survival - effectiveReserve);
 
   const ranked = items
     .map((it) => ({ item: it, score: scoreItem(it, plan.payday, scenario.boost) }))
@@ -124,17 +124,17 @@ export function allocate(plan, items, options = {}) {
     } else if (!item.canDefer) {
       deferred.push({ item, reason: 'Не помещается, хотя помечено как неоткладываемое — нужно увеличить бюджет' });
     } else {
-      deferred.push({ item, reason: 'Не помещается без нарушения буфера — перенесено на потом' });
+      deferred.push({ item, reason: 'Не помещается без нарушения резерва — перенесено на потом' });
     }
   }
 
   const allocated = spent;
-  const remaining = salary - survival - allocated; // включает буфер
-  const freeAfterBuffer = remaining - effectiveBuffer;
+  const remaining = salary - survival - allocated; // включает резерв
+  const freeAfterReserve = remaining - effectiveReserve;
 
   let status = 'safe';
-  if (remaining < effectiveBuffer || mustDeferredForMoney) status = 'overallocated';
-  else if (remaining < effectiveBuffer * 1.25 || deferred.length > 0) status = 'tight';
+  if (remaining < effectiveReserve || mustDeferredForMoney) status = 'overallocated';
+  else if (remaining < effectiveReserve * 1.25 || deferred.length > 0) status = 'tight';
 
   // Таймлайн: дата = max(payday, earliestDate). Running balance после каждой покупки.
   const timeline = [];
@@ -159,14 +159,17 @@ export function allocate(plan, items, options = {}) {
     totals: {
       salary,
       survival,
-      buffer: effectiveBuffer,
-      baseBuffer,
+      buffer: effectiveReserve,
+      reserve: effectiveReserve,
+      baseReserve,
       availableToAllocate,
       allocated,
       remaining,
-      freeAfterBuffer,
+      freeAfterBuffer: freeAfterReserve,
+      freeAfterReserve,
       status,
     },
+    weights: scenario.weights,
     buckets,
     approved,
     deferred,
@@ -184,7 +187,7 @@ export function tradeoff(targetId, plan, items, options = {}) {
 
   const isApproved = result.approved.some((a) => a.item.id === targetId);
   const remaining = result.totals.remaining;
-  const buffer = result.totals.buffer;
+  const reserve = result.totals.reserve;
 
   if (isApproved) {
     // Уже в плане: показываем, что освободится, если отказаться.
@@ -199,12 +202,12 @@ export function tradeoff(targetId, plan, items, options = {}) {
 
   // Не в плане: сколько останется, если впихнуть, и кого это вытеснит.
   const remainingAfter = remaining - target.cost;
-  const belowBuffer = remainingAfter < buffer;
+  const belowReserve = remainingAfter < reserve;
 
   // Кого пришлось бы убрать, чтобы поместить (от наименее ценных).
   const displaces = [];
-  if (target.cost > result.totals.remaining - buffer) {
-    let need = target.cost - (result.totals.remaining - buffer);
+  if (target.cost > result.totals.remaining - reserve) {
+    let need = target.cost - (result.totals.remaining - reserve);
     const removable = [...result.approved].sort(
       (a, b) => (a.item.priority || 1) - (b.item.priority || 1)
     );
@@ -219,7 +222,8 @@ export function tradeoff(targetId, plan, items, options = {}) {
     itemId: targetId,
     approved: false,
     remainingIfAdded: remainingAfter,
-    belowBuffer,
+    belowBuffer: belowReserve,
+    belowReserve,
     displaces,
   };
 }
@@ -238,11 +242,14 @@ export function scenarioSummaries(plan, items, customIncludeIds = null) {
       label: SCENARIOS[key].label,
       buckets: r.buckets,
       survival: r.totals.survival,
-      buffer: r.totals.buffer,
+      buffer: r.totals.reserve,
+      reserve: r.totals.reserve,
       career: r.buckets.career || 0,
       quality: r.buckets.quality || 0,
+      investment: r.buckets.investment || 0,
       allocated: r.totals.allocated,
       remaining: r.totals.remaining,
+      weights: r.weights,
       status: r.totals.status,
       includedCount: r.approved.length,
       excludedCount: r.deferred.length,
