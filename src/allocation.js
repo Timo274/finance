@@ -22,20 +22,19 @@ export function scoreVerdict(item) {
   const crit = type === 'full'
     ? [...SCORE_CRITERIA.quick, ...SCORE_CRITERIA.full]
     : SCORE_CRITERIA.quick;
-  let pos = 0; let posMax = 0; let neg = 0; let negMax = 0;
+  // Каждый критерий приводим «к лучшему»: для negative инвертируем (6 - v).
+  let sum = 0; let count = 0;
   for (const c of crit) {
     const v = Number(scores[c.id]);
     if (!v) continue;
-    if (c.dir === 'pos') { pos += v; posMax += 5; }
-    else { neg += v; negMax += 5; }
+    sum += c.dir === 'neg' ? (6 - v) : v;
+    count += 1;
   }
-  if (posMax === 0 && negMax === 0) return null;
-  const posPart = posMax ? pos / posMax : 0.5;
-  const negPart = negMax ? neg / negMax : 0;
-  const score = Math.round(Math.max(0, Math.min(1, posPart - negPart * 0.6)) * 100);
+  if (count === 0) return null;
+  const score = Math.round((sum / count / 5) * 100); // нейтральные тройки → ~60
   let verdict = 'reconsider';
-  if (score >= 62) verdict = 'keep';
-  else if (score < 38) verdict = 'drop';
+  if (score >= 68) verdict = 'keep';
+  else if (score < 45) verdict = 'drop';
   return { score, verdict, type };
 }
 

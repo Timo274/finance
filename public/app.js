@@ -68,18 +68,17 @@ function clientVerdict(scoreType, scores) {
   const crit = scoreType === 'full'
     ? [...(state.meta.scoreCriteria.quick), ...(state.meta.scoreCriteria.full)]
     : state.meta.scoreCriteria.quick;
-  let pos = 0; let posMax = 0; let neg = 0; let negMax = 0;
+  let sum = 0; let count = 0;
   for (const c of crit) {
     const v = Number(scores[c.id]);
     if (!v) continue;
-    if (c.dir === 'pos') { pos += v; posMax += 5; } else { neg += v; negMax += 5; }
+    sum += c.dir === 'neg' ? (6 - v) : v;
+    count += 1;
   }
-  if (posMax === 0 && negMax === 0) return null;
-  const posPart = posMax ? pos / posMax : 0.5;
-  const negPart = negMax ? neg / negMax : 0;
-  const score = Math.round(Math.max(0, Math.min(1, posPart - negPart * 0.6)) * 100);
+  if (count === 0) return null;
+  const score = Math.round((sum / count / 5) * 100);
   let verdict = 'reconsider';
-  if (score >= 62) verdict = 'keep'; else if (score < 38) verdict = 'drop';
+  if (score >= 68) verdict = 'keep'; else if (score < 45) verdict = 'drop';
   return { score, verdict };
 }
 
@@ -649,7 +648,8 @@ function openItemModal(item) {
   const catSelect = $('#catSelect');
   const layerSelect = $('#layerSelect');
   const scoreTypeSel = $('#scoreType');
-  let layerTouched = !!item; // у нового желания слой следует за категорией
+  let layerTouched = !!(item && (item.layer || item.bucket)); // слой следует за категорией, пока его не трогали
+  if (!layerTouched) { const c0 = catObj(catSelect.value); if (c0) layerSelect.value = c0.layer; }
 
   function collectScores() {
     const s = {};
