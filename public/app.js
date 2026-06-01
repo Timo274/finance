@@ -188,9 +188,10 @@ function drawCharts() {
       { value: t.reserve, color: cssVar('--accent', '#2f6bff') },
       { value: t.fixedInvestment, color: cssVar('--green', '#16a34a') },
     ];
-    Object.entries(state.allocation.buckets).filter(([, v]) => v > 0)
+    Object.entries(committedBuckets()).filter(([, v]) => v > 0)
       .forEach(([k, v]) => segs.push({ value: v, color: layerColor(k) }));
-    if (t.remaining > 0) segs.push({ value: t.remaining, color: cssVar('--border', '#ccd') });
+    const rem = remainingSurplus();
+    if (rem > 0) segs.push({ value: rem, color: cssVar('--border', '#ccd') });
     drawDonut(donut, segs);
   }
   const line = $('#lineBalance');
@@ -265,6 +266,29 @@ function manualPlanTotal() {
 }
 function manualAmountFor(itemId) {
   return state.manualPlan.find((p) => p.itemId === itemId)?.amount || 0;
+}
+// Единый источник «распределено / останется» для всех вкладок.
+// Если пользователь заполнил ручной план — он главный; иначе берём авто-распределение.
+function hasManualPlan() { return manualPlanTotal() > 0; }
+function committedTotal() {
+  return hasManualPlan() ? manualPlanTotal() : (state.allocation?.totals?.allocated || 0);
+}
+function remainingSurplus() {
+  const avail = state.allocation?.totals?.availableToAllocate || 0;
+  return avail - committedTotal();
+}
+// Разбивка распределённого по слоям капитала — из ручного плана либо из авто.
+function committedBuckets() {
+  if (!hasManualPlan()) return state.allocation?.buckets || {};
+  const b = {};
+  for (const p of state.manualPlan) {
+    const amt = Number(p.amount) || 0;
+    if (amt <= 0) continue;
+    const it = state.items.find((i) => i.id === p.itemId);
+    const layer = (it && (it.layer || it.bucket)) || 'quality';
+    b[layer] = (b[layer] || 0) + amt;
+  }
+  return b;
 }
 function sortValue(item, key) {
   const layer = item.layer || item.bucket;
@@ -463,7 +487,7 @@ function viewDashboard() {
   const whatSalary = state.whatIf?.plan?.salary ?? state.plan.salary;
   const whatTotals = state.whatIf?.allocation?.totals;
   const stablePct = (value) => (t.salary ? (value / t.salary) * 100 : 0);
-  const segs = Object.entries(state.allocation.buckets)
+  const segs = Object.entries(committedBuckets())
     .filter(([, v]) => v > 0)
     .map(([k, v]) => `<div class="alloc-seg" style="width:${(v / t.salary) * 100}%;background:${bucketColor(k)}" title="${bucketLabel(k)}: ${fmt(v)}"></div>`)
     .join('');
@@ -474,7 +498,7 @@ function viewDashboard() {
     <div class="card pad-lg">
       <div class="row-between"><div><div class="stat-label">Что-если зарплата</div><p class="muted small" style="margin:4px 0 0">Двигается без записи в БД, можно применить.</p></div><b>${fmt(whatSalary)}</b></div>
       <input id="whatIfSalary" type="range" min="${Math.round(state.plan.salary * 0.6)}" max="${Math.round(state.plan.salary * 1.4)}" value="${whatSalary}" step="500" style="width:100%;margin-top:12px">
-      <div class="row-between small muted"><span>Излишки: ${fmt(whatTotals?.availableToAllocate ?? t.availableToAllocate)}</span><span>Останется: ${fmt(whatTotals?.remaining ?? t.remaining)}</span></div>
+      <div class="row-between small muted"><span>Излишки: ${fmt(whatTotals?.availableToAllocate ?? t.availableToAllocate)}</span><span>Останется: ${fmt(whatTotals?.remaining ?? remainingSurplus())}</span></div>
       <button class="btn btn-outline btn-sm" data-act="apply-whatif" style="margin-top:10px">Применить зарплату</button>
     </div>
     <div class="card pad-lg">
@@ -488,8 +512,8 @@ function viewDashboard() {
     <div class="card"><div class="stat-label">Страховка</div><div class="stat-value sm accent-num">${fmt(t.reserve)}</div><div class="stat-sub">чёрный день, не трогаем</div></div>
     <div class="card"><div class="stat-label">Инвестиции</div><div class="stat-value sm green-num">${fmt(t.fixedInvestment)}</div><div class="stat-sub">стабильно отложить</div></div>
     <div class="card"><div class="stat-label">Излишки на желания</div><div class="stat-value accent-num">${fmt(t.availableToAllocate)}</div><div class="stat-sub">после стабильных пунктов</div></div>
-    <div class="card"><div class="stat-label">Распределено</div><div class="stat-value sm">${fmt(t.allocated)}</div><div class="stat-sub">${state.allocation.approved.length} покупок одобрено</div></div>
-    <div class="card"><div class="stat-label">Останется из излишков</div><div class="stat-value ${t.remaining < 0 ? 'red-num' : 'green-num'}">${fmt(t.remaining)}</div></div>
+    <div class="card"><div class="stat-label">Распределено</div><div class="stat-value sm">${fmt(committedTotal())}</div><div class="stat-sub">${hasManualPlan() ? 'ручной план распределения' : `${state.allocation.approved.length} покупок одобрено`}</div></div>
+    <div class="card"><div class="stat-label">Останется из излишков</div><div class="stat-value ${remainingSurplus() < 0 ? 'red-num' : 'green-num'}">${fmt(remainingSurplus())}</div><div class="stat-sub">${hasManualPlan() ? 'по ручному плану' : 'по авто-распределению'}</div></div>
   </div>
 
   ${deadlines.length ? `<div class="card pad-lg" style="margin-top:16px"><div class="section-title" style="margin-top:0">Ближайшие дедлайны</div>${deadlines.map((it) => `<div class="wallet-row"><div><b>${escapeHtml(it.title)}</b><div class="muted small">${fmtDate(it.deadline)} · ${fmt(it.cost)}</div></div><span class="tag tag-${it.type}">${TYPE_LABELS[it.type]}</span></div>`).join('')}</div>` : ''}
@@ -504,8 +528,8 @@ function viewDashboard() {
           <span><span class="dot" style="background:#64708f"></span>Обязательные <b>${fmt(t.survival)}</b></span>
           <span><span class="dot" style="background:var(--accent)"></span>Страховка <b>${fmt(t.reserve)}</b></span>
           <span><span class="dot" style="background:var(--green)"></span>Инвестиции <b>${fmt(t.fixedInvestment)}</b></span>
-          ${Object.entries(state.allocation.buckets).filter(([, v]) => v > 0).map(([k, v]) => `<span><span class="dot" style="background:${bucketColor(k)}"></span>${bucketLabel(k)} <b>${fmt(v)}</b></span>`).join('')}
-          <span><span class="dot" style="background:var(--border)"></span>Останется <b>${fmt(t.remaining)}</b></span>
+          ${Object.entries(committedBuckets()).filter(([, v]) => v > 0).map(([k, v]) => `<span><span class="dot" style="background:${bucketColor(k)}"></span>${bucketLabel(k)} <b>${fmt(v)}</b></span>`).join('')}
+          <span><span class="dot" style="background:var(--border)"></span>Останется <b>${fmt(remainingSurplus())}</b></span>
         </div>
       </div>
       <div class="alloc-bar" style="margin-top:16px">
