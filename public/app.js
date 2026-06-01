@@ -1041,6 +1041,7 @@ async function closeMonth() {
 
 async function pickScenario(key) {
   state.scenario = key;
+  state.whatIf = null;
   await refresh();
 }
 

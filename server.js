@@ -346,7 +346,7 @@ app.post('/api/items/:id/savings', requireAuth, (req, res) => {
     itemId: id,
     targetAmount: Number(item.cost) || 0,
     savedAmount,
-    monthlyContribution: Math.max(0, Number(req.body?.monthlyContribution) || existingGoal?.monthly_contribution || 0),
+    monthlyContribution: Math.max(0, Number(req.body?.monthlyContribution ?? existingGoal?.monthly_contribution ?? 0)),
     deadline: req.body?.deadline || existingGoal?.deadline || item.deadline,
     status: savedAmount >= (Number(item.cost) || 0) ? 'complete' : 'active',
   };
