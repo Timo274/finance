@@ -25,6 +25,18 @@ const app = express();
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 
+// ---------- live data version ----------
+// Любая успешная мутация (POST/PUT/DELETE) поднимает версию данных.
+// Фронтенд опрашивает /api/version и обновляет все вкладки/устройства.
+let dataVersion = Date.now();
+app.use((req, res, next) => {
+  const m = req.method.toUpperCase();
+  if (m !== 'GET' && m !== 'HEAD' && m !== 'OPTIONS') {
+    res.on('finish', () => { if (res.statusCode < 400) dataVersion = Date.now(); });
+  }
+  next();
+});
+
 // Разумные дефолты под жизнь с родителями и доход ~25k грн.
 const DEFAULTS = { salary: 25000, survivalCost: 6000, buffer: 1000, investmentFixed: 2000 };
 const SETTINGS = {
@@ -601,6 +613,9 @@ app.get('/api/history', requireAuth, (req, res) => {
 });
 
 // ================= AGGREGATE STATE =================
+// Лёгкий эндпоинт для синхронизации между вкладками/устройствами.
+app.get('/api/version', requireAuth, (req, res) => res.json({ version: dataVersion }));
+
 app.get('/api/state', requireAuth, (req, res) => {
   const plan = getActivePlan();
   const items = getActiveItems();

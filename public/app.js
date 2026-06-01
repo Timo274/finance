@@ -14,6 +14,7 @@ const api = {
     if (res.status === 401) { showAuthGate(); throw new Error('unauthorized'); }
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || res.statusText);
+    if (method !== 'GET') notifyDataChanged();
     return data;
   },
   get: (u) => api.req('GET', u),
@@ -1352,5 +1353,65 @@ $('#installBtn')?.addEventListener('click', async () => {
   $('#installBtn')?.classList.add('hidden');
 });
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+
+// ============================================================
+// СИНХРОНИЗАЦИЯ ДАННЫХ МЕЖДУ ВКЛАДКАМИ И УСТРОЙСТВАМИ
+// ------------------------------------------------------------
+// Любое изменение в одной вкладке мгновенно подхватывается другими
+// вкладками этого браузера (BroadcastChannel + событие storage),
+// а вкладки на других устройствах догоняют опросом /api/version.
+// Перерисовку откладываем, пока открыта модалка или пользователь
+// печатает, чтобы не сбить ввод.
+// ============================================================
+const SYNC_CHANNEL = (() => { try { return new BroadcastChannel('cq-sync'); } catch { return null; } })();
+let lastKnownVersion = null;
+let lastLocalChange = 0;
+let syncing = false;
+let pendingSync = false;
+
+function appIsActive() {
+  const app = $('#app');
+  return app && !app.classList.contains('hidden');
+}
+
+function syncIsSafe() {
+  if ($('#modalRoot')?.firstChild) return false; // открыта модалка
+  const ae = document.activeElement;
+  if (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return false; // идёт ввод
+  return true;
+}
+
+function notifyDataChanged() {
+  lastLocalChange = Date.now();
+  try { SYNC_CHANNEL?.postMessage({ t: 'changed', at: lastLocalChange }); } catch {}
+  try { localStorage.setItem('cq-sync', String(lastLocalChange)); } catch {}
+}
+
+async function syncFromRemote() {
+  if (syncing || !appIsActive()) return;
+  if (!syncIsSafe()) { pendingSync = true; return; }
+  pendingSync = false;
+  syncing = true;
+  try { await refresh(); } catch {} finally { syncing = false; }
+}
+
+async function pollVersion() {
+  if (document.hidden || !appIsActive()) return;
+  let version;
+  try { ({ version } = await api.get('/api/version')); } catch { return; }
+  if (lastKnownVersion === null) { lastKnownVersion = version; return; }
+  if (version === lastKnownVersion) return;
+  lastKnownVersion = version;
+  // Своё же изменение уже отрисовано локально — не дёргаем повторно.
+  if (Date.now() - lastLocalChange < 6000) return;
+  await syncFromRemote();
+}
+
+if (SYNC_CHANNEL) SYNC_CHANNEL.onmessage = (e) => { if (e?.data?.t === 'changed') syncFromRemote(); };
+window.addEventListener('storage', (e) => { if (e.key === 'cq-sync') syncFromRemote(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) pollVersion(); });
+// Когда закрывается модалка / уходит фокус — досинхронизируем отложенное.
+document.addEventListener('click', () => { if (pendingSync && syncIsSafe()) syncFromRemote(); });
+setInterval(pollVersion, 5000);
 
 bootstrap().catch((e) => console.error(e));
