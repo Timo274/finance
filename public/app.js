@@ -987,18 +987,22 @@ async function refreshPrices() {
 }
 
 async function downloadCSV(type) {
+  console.log('downloadCSV called', type);
   try {
     const resp = await fetch(`/api/export/csv/${type}`);
+    console.log('CSV response status', resp.status);
     if (!resp.ok) return toast('Ошибка загрузки CSV');
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = `${type}.csv`;
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
     toast('CSV скачан');
   } catch (e) {
+    console.error('CSV error', e);
     toast('Ошибка: ' + e.message);
   }
 }
