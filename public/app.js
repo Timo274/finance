@@ -840,7 +840,7 @@ function bindViewEvents() {
       else if (act === 'delete') await deleteItem(id);
       else if (act === 'delete-wallet') await deleteWallet(el.dataset.id);
       else if (act === 'refresh-prices') await refreshPrices();
-      else if (act === 'csv-export') downloadCSV(el.dataset.csvType);
+      else if (act === 'csv-export') await downloadCSV(el.dataset.csvType);
       else if (act === 'save-rate') {
         const rate = +$('#currencyRateInput').value;
         if (rate < 1) return toast('Некорректный курс');
@@ -994,8 +994,21 @@ async function refreshPrices() {
   }
 }
 
-function downloadCSV(type) {
-  window.open(`/api/export/csv/${type}`, '_blank');
+async function downloadCSV(type) {
+  try {
+    const resp = await fetch(`/api/export/csv/${type}`);
+    if (!resp.ok) return toast('Ошибка загрузки CSV');
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${type}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('CSV скачан');
+  } catch (e) {
+    toast('Ошибка: ' + e.message);
+  }
 }
 
 // ============================================================
