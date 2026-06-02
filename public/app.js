@@ -1115,7 +1115,11 @@ async function sendChat(e) {
     );
   } catch (ex) {
     $("#pending").outerHTML =
-      `<div class="msg bot">❌ ${escapeHtml(ex.message)}<br><button class="chip" onclick="document.getElementById('chatForm').requestSubmit()">↻ Повторить</button></div>`;
+      `<div class="msg bot">❌ ${escapeHtml(ex.message)}<br><button class="chip" data-retry-chat="${escapeAttr(text)}">↻ Повторить</button></div>`;
+    $("[data-retry-chat]")?.addEventListener("click", (event) => {
+      $("#chatInput").value = event.currentTarget.dataset.retryChat || text;
+      $("#chatForm").requestSubmit();
+    });
   }
   $("#chatLog").scrollTop = $("#chatLog").scrollHeight;
 }
@@ -1352,10 +1356,8 @@ async function refreshPrices() {
 }
 
 async function downloadCSV(type) {
-  console.log("downloadCSV called", type);
   try {
     const resp = await fetch(`/api/export/csv/${type}`);
-    console.log("CSV response status", resp.status);
     if (resp.status === 401) {
       showAuthGate();
       return toast("Сессия истекла");
@@ -1388,6 +1390,9 @@ function openModal(html) {
   $("#ov").addEventListener("click", (e) => {
     if (e.target.id === "ov") closeModal();
   });
+  $$("[data-close-modal]").forEach((el) =>
+    el.addEventListener("click", closeModal),
+  );
 }
 function closeModal() {
   $("#modalRoot").innerHTML = "";
@@ -1395,12 +1400,12 @@ function closeModal() {
 
 function openQuickItemModal() {
   openModal(`<div class="modal narrow">
-    <div class="modal-head"><h2>Быстро добавить желание</h2><button class="close-x" onclick="document.getElementById('modalRoot').innerHTML=''">×</button></div>
+    <div class="modal-head"><h2>Быстро добавить желание</h2><button class="close-x" data-close-modal>×</button></div>
     <form id="quickItemForm" class="form-grid">
       <div class="field full"><label>Название</label><input name="title" required /></div>
       <div class="field"><label>Сумма</label><input name="cost" type="number" min="0" required /></div>
       <div class="field"><label>Тип</label><select name="type"><option value="should">Should</option><option value="must">Must</option><option value="nice">Nice</option></select></div>
-      <div class="modal-foot field full" style="flex-direction:row"><button type="button" class="btn btn-ghost" onclick="document.getElementById('modalRoot').innerHTML=''">Отмена</button><button class="btn btn-primary">Добавить</button></div>
+      <div class="modal-foot field full" style="flex-direction:row"><button type="button" class="btn btn-ghost" data-close-modal>Отмена</button><button class="btn btn-primary">Добавить</button></div>
     </form></div>`);
   $("#quickItemForm").addEventListener("submit", quickAddItem);
 }
@@ -1414,7 +1419,7 @@ function openDataModal() {
     })
     .join("");
   openModal(`<div class="modal">
-    <div class="modal-head"><h2>Данные и цели</h2><button class="close-x" onclick="document.getElementById('modalRoot').innerHTML=''">×</button></div>
+    <div class="modal-head"><h2>Данные и цели</h2><button class="close-x" data-close-modal>×</button></div>
     <div class="grid cards">
       <button class="btn btn-primary" id="exportBtn" type="button">Экспорт JSON</button>
       <label class="btn btn-outline" style="text-align:center">Импорт JSON<input id="importFile" type="file" accept="application/json" hidden></label>
@@ -1460,7 +1465,7 @@ function openPlanModal() {
     ? Math.round((Number(p.investmentFixed || 0) / Number(p.salary)) * 100)
     : 0;
   openModal(`<div class="modal">
-    <div class="modal-head"><h2>Стабильные пункты зарплаты</h2><button class="close-x" onclick="document.getElementById('modalRoot').innerHTML=''">×</button></div>
+    <div class="modal-head"><h2>Стабильные пункты зарплаты</h2><button class="close-x" data-close-modal>×</button></div>
     <form id="planForm" class="form-grid">
       <div class="field full"><label>Название (например, «Зарплата июнь»)</label><input name="name" value="${escapeAttr(p.name)}" /></div>
       <div class="field"><label>Дата зарплаты</label><input type="date" name="payday" value="${p.payday}" /></div>
@@ -1473,7 +1478,7 @@ function openPlanModal() {
         <span class="muted small">стабильно отложить с зарплаты. Сейчас ~${investPct}% от зп</span></div>
       <div class="field full"><span class="muted small">Излишки после этих пунктов пойдут в желания, кошельки и ручной план распределения.</span></div>
       <div class="modal-foot field full" style="flex-direction:row">
-        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modalRoot').innerHTML=''">Отмена</button>
+        <button type="button" class="btn btn-ghost" data-close-modal>Отмена</button>
         <button type="submit" class="btn btn-primary">Сохранить</button>
       </div>
     </form></div>`);
@@ -1498,7 +1503,7 @@ function openSavingsModal(item) {
   if (!item) return;
   const gp = goalProgress(item);
   openModal(`<div class="modal narrow">
-    <div class="modal-head"><h2>Копить на желание</h2><button class="close-x" onclick="document.getElementById('modalRoot').innerHTML=''">×</button></div>
+    <div class="modal-head"><h2>Копить на желание</h2><button class="close-x" data-close-modal>×</button></div>
     <form id="savingsForm" class="form-grid">
       <div class="field full"><label>Желание</label><input value="${escapeAttr(item.title)}" disabled /></div>
       <div class="field"><label>Цена</label><input value="${fmt(item.cost)}" disabled /></div>
@@ -1506,7 +1511,7 @@ function openSavingsModal(item) {
       <div class="field"><label>Откладывать в месяц, грн</label><input type="number" name="monthlyContribution" min="0" value="${gp.monthly || 0}" /></div>
       <div class="field full"><div class="goal-mini big"><div style="width:${gp.pct}%"></div></div><span class="muted small">${gp.pct}% · осталось ${fmt(gp.left)}</span></div>
       <div class="modal-foot field full" style="flex-direction:row">
-        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modalRoot').innerHTML=''">Отмена</button>
+        <button type="button" class="btn btn-ghost" data-close-modal>Отмена</button>
         <button type="submit" class="btn btn-primary">Сохранить</button>
       </div>
     </form></div>`);
@@ -1525,7 +1530,7 @@ function openSavingsModal(item) {
 
 function openAssetModal() {
   openModal(`<div class="modal narrow">
-    <div class="modal-head"><h2>Добавить актив</h2><button class="close-x" onclick="document.getElementById('modalRoot').innerHTML=''">×</button></div>
+    <div class="modal-head"><h2>Добавить актив</h2><button class="close-x" data-close-modal>×</button></div>
     <form id="assetForm" class="form-grid">
       <div class="field full"><label>Название</label><input name="name" placeholder="BTC, ETF, депозит..." required /></div>
       <div class="field"><label>Тип</label><select name="type"><option value="crypto">Крипто</option><option value="stock">Акция</option><option value="etf">ETF</option><option value="bond">Облигация</option><option value="deposit">Депозит</option><option value="other">Другое</option></select></div>
@@ -1533,7 +1538,7 @@ function openAssetModal() {
       <div class="field full"><label>Валюта автоцен</label><select name="currency"><option value="USD">USD — внешние цены конвертировать в грн</option><option value="UAH">UAH — цена уже в гривне</option></select>
         <span class="hint">Покупки и ручные оценки вводите в гривнах; поле нужно для автообновления цен.</span></div>
       <div class="modal-foot field full" style="flex-direction:row">
-        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modalRoot').innerHTML=''">Отмена</button>
+        <button type="button" class="btn btn-ghost" data-close-modal>Отмена</button>
         <button type="submit" class="btn btn-primary">Сохранить</button>
       </div>
     </form></div>`);
@@ -1557,7 +1562,7 @@ function openTxModal() {
     .map((a) => `<option value="${a.id}">${escapeHtml(a.name)}</option>`)
     .join("");
   openModal(`<div class="modal narrow">
-    <div class="modal-head"><h2>Операция покупки/продажи</h2><button class="close-x" onclick="document.getElementById('modalRoot').innerHTML=''">×</button></div>
+    <div class="modal-head"><h2>Операция покупки/продажи</h2><button class="close-x" data-close-modal>×</button></div>
     <form id="txForm" class="form-grid">
       <div class="field full"><label>Актив</label><select name="assetId" required>${assetOpts || "<option>Сначала добавьте актив</option>"}</select></div>
       <div class="field"><label>Тип</label><select name="type"><option value="buy">Покупка</option><option value="sell">Продажа</option></select></div>
@@ -1567,7 +1572,7 @@ function openTxModal() {
       <div class="field"><label>Комиссия</label><input type="number" name="fee" min="0" step="any" value="0" /></div>
       <div class="field full"><label>Заметка</label><input name="note" /></div>
       <div class="modal-foot field full" style="flex-direction:row">
-        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modalRoot').innerHTML=''">Отмена</button>
+        <button type="button" class="btn btn-ghost" data-close-modal>Отмена</button>
         <button type="submit" class="btn btn-primary">Сохранить</button>
       </div>
     </form></div>`);
@@ -1594,14 +1599,14 @@ function openValuationModal() {
     .map((a) => `<option value="${a.id}">${escapeHtml(a.name)}</option>`)
     .join("");
   openModal(`<div class="modal narrow">
-    <div class="modal-head"><h2>Ежемесячная оценка</h2><button class="close-x" onclick="document.getElementById('modalRoot').innerHTML=''">×</button></div>
+    <div class="modal-head"><h2>Ежемесячная оценка</h2><button class="close-x" data-close-modal>×</button></div>
     <form id="valForm" class="form-grid">
       <div class="field full"><label>Актив</label><select name="assetId" required>${assetOpts || "<option>Сначала добавьте актив</option>"}</select></div>
       <div class="field"><label>Дата</label><input type="date" name="date" value="${new Date().toISOString().slice(0, 10)}" /></div>
       <div class="field"><label>Текущая стоимость</label><input type="number" name="value" min="0" required /></div>
       <div class="field full"><label>Заметка</label><input name="note" /></div>
       <div class="modal-foot field full" style="flex-direction:row">
-        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modalRoot').innerHTML=''">Отмена</button>
+        <button type="button" class="btn btn-ghost" data-close-modal>Отмена</button>
         <button type="submit" class="btn btn-primary">Сохранить</button>
       </div>
     </form></div>`);
@@ -1622,13 +1627,13 @@ function openValuationModal() {
 
 function openWalletModal() {
   openModal(`<div class="modal narrow">
-    <div class="modal-head"><h2>Новый кошелёк месяца</h2><button class="close-x" onclick="document.getElementById('modalRoot').innerHTML=''">×</button></div>
+    <div class="modal-head"><h2>Новый кошелёк месяца</h2><button class="close-x" data-close-modal>×</button></div>
     <form id="walletForm" class="form-grid">
       <div class="field full"><label>Название кармана</label><input name="name" placeholder="На AirPods / еда / транспорт" required /></div>
       <div class="field"><label>Сумма, грн</label><input type="number" name="amount" min="0" required /></div>
       <div class="field"><label>На что пойдёт</label><input name="purpose" placeholder="цель на этот месяц" /></div>
       <div class="modal-foot field full" style="flex-direction:row">
-        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modalRoot').innerHTML=''">Отмена</button>
+        <button type="button" class="btn btn-ghost" data-close-modal>Отмена</button>
         <button type="submit" class="btn btn-primary">Сохранить</button>
       </div>
     </form></div>`);
@@ -1705,7 +1710,7 @@ function openItemModal(item) {
   const fullRows = state.meta.scoreCriteria.full.map(critRow).join("");
 
   openModal(`<div class="modal">
-    <div class="modal-head"><h2>${item ? "Редактировать желание" : "Новое желание"}</h2><button class="close-x" onclick="document.getElementById('modalRoot').innerHTML=''">×</button></div>
+    <div class="modal-head"><h2>${item ? "Редактировать желание" : "Новое желание"}</h2><button class="close-x" data-close-modal>×</button></div>
     <form id="itemForm" class="form-grid">
       <div class="field full"><label>Название</label><input name="title" value="${escapeAttr(i.title)}" required /></div>
       <div class="field"><label>Стоимость, грн</label><input type="number" id="costInput" name="cost" value="${i.cost}" min="0" required /></div>
@@ -1739,7 +1744,7 @@ function openItemModal(item) {
       <div class="modal-foot field full" style="flex-direction:row;justify-content:space-between">
         <div>${item ? `<button type="button" class="btn btn-danger" id="delItem">Удалить</button>` : ""}</div>
         <div style="display:flex;gap:10px">
-          <button type="button" class="btn btn-ghost" onclick="document.getElementById('modalRoot').innerHTML=''">Отмена</button>
+          <button type="button" class="btn btn-ghost" data-close-modal>Отмена</button>
           <button type="submit" class="btn btn-primary">Сохранить</button>
         </div>
       </div>
