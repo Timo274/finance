@@ -139,24 +139,35 @@ function drawLine(canvas, points) {
     ctx.beginPath(); ctx.moveTo(padL, y(0)); ctx.lineTo(w - padR, y(0)); ctx.stroke();
     ctx.setLineDash([]);
   }
+  // smooth curve helper
+  const pts = points.map((p, i) => ({ x: x(i), y: y(p.value) }));
+  function smoothPath(ctx, pts) {
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length - 1; i++) {
+      const cx = (pts[i].x + pts[i + 1].x) / 2;
+      const cy = (pts[i].y + pts[i + 1].y) / 2;
+      ctx.quadraticCurveTo(pts[i].x, pts[i].y, cx, cy);
+    }
+    ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+  }
   // заливка под линией
   const grad = ctx.createLinearGradient(0, padT, 0, padT + innerH);
   grad.addColorStop(0, accent + '55');
   grad.addColorStop(1, accent + '00');
   ctx.beginPath();
-  ctx.moveTo(x(0), y(points[0].value));
-  points.forEach((p, i) => ctx.lineTo(x(i), y(p.value)));
-  ctx.lineTo(x(points.length - 1), padT + innerH);
-  ctx.lineTo(x(0), padT + innerH);
+  smoothPath(ctx, pts);
+  ctx.lineTo(pts[pts.length - 1].x, padT + innerH);
+  ctx.lineTo(pts[0].x, padT + innerH);
   ctx.closePath(); ctx.fillStyle = grad; ctx.fill();
   // линия
   ctx.beginPath();
-  points.forEach((p, i) => (i ? ctx.lineTo(x(i), y(p.value)) : ctx.moveTo(x(i), y(p.value))));
+  smoothPath(ctx, pts);
   ctx.strokeStyle = accent; ctx.lineWidth = 2.5; ctx.lineJoin = 'round'; ctx.stroke();
   // точки
-  points.forEach((p, i) => {
-    ctx.beginPath(); ctx.arc(x(i), y(p.value), 3.2, 0, Math.PI * 2);
-    ctx.fillStyle = p.value < 0 ? cssVar('--red', '#e44') : accent;
+  pts.forEach((p, i) => {
+    ctx.beginPath(); ctx.arc(p.x, p.y, 3.2, 0, Math.PI * 2);
+    ctx.fillStyle = points[i].value < 0 ? cssVar('--red', '#e44') : accent;
     ctx.fill();
     ctx.strokeStyle = cssVar('--panel', '#fff'); ctx.lineWidth = 1.5; ctx.stroke();
   });
@@ -474,16 +485,22 @@ function viewDashboard() {
     .map(([k, v]) => `<div class="alloc-seg" style="width:${(v / t.salary) * 100}%;background:${bucketColor(k)}" title="${bucketLabel(k)}: ${fmt(v)}"></div>`)
     .join('');
 
+  const pf = state.portfolio;
+  const pfValue = pf?.totalValue || 0;
+  const pfPL = pf?.totalPL || 0;
+  const pfPLpct = pf?.totalValue && pf?.costBasis ? ((pf.totalValue - pf.costBasis) / pf.costBasis * 100).toFixed(1) : null;
+
   return `
   <div class="view-head"><h1>Кабинет</h1><p>Как разложить зарплату заранее — до того, как деньги пришли.</p></div>
   <div class="grid cards">
-    <div class="card"><div class="stat-label">Зарплата</div><div class="stat-value">${fmt(t.salary)}</div><div class="stat-sub">${fmtDate(state.plan.payday)} ${fmtUsd(t.salary)}</div></div>
-    <div class="card"><div class="stat-label">Обязательные расходы</div><div class="stat-value sm">${fmt(t.survival)}</div><div class="stat-sub">${fmtUsd(t.survival)} стабильный расходник</div></div>
-    <div class="card"><div class="stat-label">Страховка</div><div class="stat-value sm accent-num">${fmt(t.reserve)}</div><div class="stat-sub">${fmtUsd(t.reserve)} чёрный день</div></div>
-    <div class="card"><div class="stat-label">Инвестиции</div><div class="stat-value sm green-num">${fmt(t.fixedInvestment)}</div><div class="stat-sub">${fmtUsd(t.fixedInvestment)} стабильно отложить</div></div>
-    <div class="card"><div class="stat-label">Излишки на желания</div><div class="stat-value accent-num">${fmt(t.availableToAllocate)}</div><div class="stat-sub">${fmtUsd(t.availableToAllocate)} после стабильных пунктов</div></div>
-    <div class="card"><div class="stat-label">Распределено</div><div class="stat-value sm">${fmt(committedTotal())}</div><div class="stat-sub">${fmtUsd(committedTotal())} ${hasManualPlan() ? 'ручной план' : `${state.allocation.approved.length} покупок`}</div></div>
-    <div class="card"><div class="stat-label">Останется из излишков</div><div class="stat-value ${remainingSurplus() < 0 ? 'red-num' : 'green-num'}">${fmt(remainingSurplus())}</div><div class="stat-sub">${fmtUsd(remainingSurplus())} ${hasManualPlan() ? 'по ручному плану' : 'по авто-распределению'}</div></div>
+    <div class="card"><div class="stat-label"><span class="stat-ico">💰</span> Зарплата</div><div class="stat-value">${fmt(t.salary)}</div><div class="stat-sub">${fmtDate(state.plan.payday)} ${fmtUsd(t.salary)}</div></div>
+    <div class="card"><div class="stat-label"><span class="stat-ico">🛡️</span> Обязательные расходы</div><div class="stat-value sm">${fmt(t.survival)}</div><div class="stat-sub">${fmtUsd(t.survival)} стабильный расходник</div></div>
+    <div class="card"><div class="stat-label"><span class="stat-ico">🏦</span> Страховка</div><div class="stat-value sm accent-num">${fmt(t.reserve)}</div><div class="stat-sub">${fmtUsd(t.reserve)} чёрный день</div></div>
+    <div class="card"><div class="stat-label"><span class="stat-ico">📈</span> Инвестиции</div><div class="stat-value sm green-num">${fmt(t.fixedInvestment)}</div><div class="stat-sub">${fmtUsd(t.fixedInvestment)} стабильно отложить</div></div>
+    <div class="card"><div class="stat-label"><span class="stat-ico">🎯</span> Излишки на желания</div><div class="stat-value accent-num">${fmt(t.availableToAllocate)}</div><div class="stat-sub">${fmtUsd(t.availableToAllocate)} после стабильных пунктов</div></div>
+    <div class="card"><div class="stat-label"><span class="stat-ico">📋</span> Распределено</div><div class="stat-value sm">${fmt(committedTotal())}</div><div class="stat-sub">${fmtUsd(committedTotal())} ${hasManualPlan() ? 'ручной план' : `${state.allocation.approved.length} покупок`}</div></div>
+    <div class="card"><div class="stat-label"><span class="stat-ico">${remainingSurplus() < 0 ? '⚠️' : '✅'}</span> Останется из излишков</div><div class="stat-value ${remainingSurplus() < 0 ? 'red-num' : 'green-num'}">${fmt(remainingSurplus())}</div><div class="stat-sub">${fmtUsd(remainingSurplus())} ${hasManualPlan() ? 'по ручному плану' : 'по авто-распределению'}</div></div>
+    ${pfValue > 0 ? `<div class="card"><div class="stat-label"><span class="stat-ico">💼</span> Портфель</div><div class="stat-value sm">${fmt(pfValue)}</div><div class="stat-sub">${fmtUsd(pfValue)} ${pfPLpct ? `<span style="color:${pfPL >= 0 ? 'var(--green)' : 'var(--red)'};font-weight:700">${pfPL >= 0 ? '+' : ''}${pfPLpct}%</span>` : ''}</div></div>` : ''}
   </div>
 
   <div class="card pad-lg" style="margin-top:16px">
@@ -630,12 +647,14 @@ function investOverview(p) {
   const total = p.totals;
   const allocations = p.assets.map(a => `<div class="prop-row"><div class="row-between small"><b>${escapeHtml(a.name)}</b><span>${total.totalValue ? Math.round((a.currentValue / total.totalValue) * 100) : 0}%</span></div><div class="goal-mini"><div style="width:${total.totalValue ? (a.currentValue / total.totalValue) * 100 : 0}%"></div></div><div class="muted small">${fmt(a.currentValue)} ${fmtUsd(a.currentValue)} · ${a.type}</div></div>`).join('');
   const pnlClass = total.totalPnL >= 0 ? 'green-num' : 'red-num';
+  const pnlPct = total.totalInvested > 0 ? ((total.totalPnL / total.totalInvested) * 100).toFixed(1) : null;
+  const pnlBadge = pnlPct != null ? `<span style="color:${total.totalPnL >= 0 ? 'var(--green)' : 'var(--red)'};font-size:14px;font-weight:700">${total.totalPnL >= 0 ? '+' : ''}${pnlPct}%</span>` : '';
   const chartHtml = `<div class="card pad-lg" style="margin-top:16px"><div class="stat-label">Динамика портфеля по месяцам</div><canvas id="portChart" class="chart-line"></canvas></div>`;
   return `
   <div class="grid cards">
-    <div class="card"><div class="stat-label">Стоимость портфеля</div><div class="stat-value">${fmt(total.totalValue)}</div><div class="stat-sub">${fmtUsd(total.totalValue)}</div></div>
-    <div class="card"><div class="stat-label">Вложено</div><div class="stat-value sm">${fmt(total.totalInvested)}</div><div class="stat-sub">${fmtUsd(total.totalInvested)}</div></div>
-    <div class="card"><div class="stat-label">Прибыль / Убыток</div><div class="stat-value sm ${pnlClass}">${fmt(total.totalPnL)}</div><div class="stat-sub">${fmtUsd(total.totalPnL)}</div></div>
+    <div class="card"><div class="stat-label"><span class="stat-ico">💼</span> Стоимость портфеля</div><div class="stat-value">${fmt(total.totalValue)}</div><div class="stat-sub">${fmtUsd(total.totalValue)}</div></div>
+    <div class="card"><div class="stat-label"><span class="stat-ico">💸</span> Вложено</div><div class="stat-value sm">${fmt(total.totalInvested)}</div><div class="stat-sub">${fmtUsd(total.totalInvested)}</div></div>
+    <div class="card"><div class="stat-label"><span class="stat-ico">📊</span> Прибыль / Убыток</div><div class="stat-value sm ${pnlClass}">${fmt(total.totalPnL)}</div><div class="stat-sub">${fmtUsd(total.totalPnL)} ${pnlBadge}</div></div>
   </div>
   <div class="card pad-lg" style="margin-top:16px">
     <div class="row-between"><div class="stat-label">Распределение портфеля</div>

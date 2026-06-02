@@ -238,7 +238,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .cards .card:first-child .stat-label,
 .cards .card:first-child .stat-sub { color: rgba(255,255,255,.82); }
 .cards .card:first-child .stat-value { color: #fff; }
-.stat-label { color: var(--muted); font-size: 12.5px; font-weight: 500; }
+.stat-label { color: var(--muted); font-size: 12.5px; font-weight: 500; display: flex; align-items: center; gap: 6px; }
+.stat-ico { font-size: 16px; line-height: 1; }
 .stat-value { font-size: 26px; font-weight: 800; margin-top: 6px; letter-spacing: -.02em; }
 .stat-value.sm { font-size: 20px; }
 .stat-sub { color: var(--muted-2); font-size: 12px; margin-top: 4px; }
@@ -251,8 +252,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .row-between { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 
 /* progress / available bar */
-.alloc-bar { height: 14px; border-radius: 999px; background: var(--bg-2); overflow: hidden; display: flex; }
-.alloc-seg { height: 100%; }
+.alloc-bar { height: 14px; border-radius: 999px; background: var(--bg-2); overflow: hidden; display: flex; transition: opacity .3s ease; }
+.alloc-bar:hover { opacity: .85; }
+.alloc-seg { height: 100%; transition: width .4s ease; }
 
 /* ---------- charts ---------- */
 .chart-cols { display: grid; grid-template-columns: 1.1fr 1fr; gap: 16px; }
@@ -330,12 +332,16 @@ tbody tr:last-child td { border-bottom: none; }
 .modal-overlay {
   position: fixed; inset: 0; background: var(--overlay);
   display: grid; place-items: center; padding: 20px; z-index: 50; backdrop-filter: blur(4px);
+  animation: fadeIn .2s ease;
 }
+@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
 .modal {
   width: 100%; max-width: 640px; max-height: 92vh; overflow-y: auto;
   background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
   padding: 24px; box-shadow: var(--shadow); -webkit-overflow-scrolling: touch;
+  animation: slideUp .25s ease both;
 }
+@keyframes slideUp { from { opacity: 0; transform: translateY(24px) scale(.97) } to { opacity: 1; transform: translateY(0) scale(1) } }
 .modal.narrow { max-width: 460px; }
 .modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
 .modal-head h2 { margin: 0; font-size: 19px; }
@@ -390,7 +396,22 @@ tbody tr:last-child td { border-bottom: none; }
   color: #fff; font-size: 30px; box-shadow: var(--shadow); z-index: 35;
 }
 
+/* ---------- animations ---------- */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.card { animation: fadeUp .35s ease both; }
+.cards .card:nth-child(1) { animation-delay: 0s; }
+.cards .card:nth-child(2) { animation-delay: .06s; }
+.cards .card:nth-child(3) { animation-delay: .12s; }
+.cards .card:nth-child(4) { animation-delay: .18s; }
+.cards .card:nth-child(5) { animation-delay: .24s; }
+.cards .card:nth-child(6) { animation-delay: .30s; }
+.cards .card:nth-child(7) { animation-delay: .36s; }
+
 @media (prefers-reduced-motion: reduce) {
+  .card { animation: none; }
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
 
