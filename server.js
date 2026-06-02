@@ -650,47 +650,85 @@ app.post('/api/investments', requireAuth, (req, res) => {
   res.json(getPortfolio());
 });
 
-// CoinGecko price refresh
+// Price refresh for all asset types
 const CG_MAP = {
   btc: 'bitcoin', eth: 'ethereum', sol: 'solana', xrp: 'ripple',
   ada: 'cardano', dot: 'polkadot', avax: 'avalanche-2', matic: 'matic-network',
   link: 'chainlink', atom: 'cosmos', uni: 'uniswap', ltc: 'litecoin',
   bch: 'bitcoin-cash', near: 'near', trx: 'tron', fil: 'filecoin',
   apt: 'aptos', arb: 'arbitrum', op: 'optimism', inj: 'injective',
+  doge: 'dogecoin', pepe: 'pepe', sui: 'sui', sei: 'sei-network',
 };
+
+async function fetchYahooPrice(ticker) {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d`;
+  const resp = await fetch(url, {
+    headers: { 'User-Agent': 'Mozilla/5.0' },
+    signal: AbortSignal.timeout(6000),
+  });
+  if (!resp.ok) return null;
+  const data = await resp.json();
+  return data?.chart?.result?.[0]?.meta?.regularMarketPrice || null;
+}
+
+async function fetchCgPrice(cgId) {
+  const url = `https://api.coingecko.com/api/v3/simple/price?ids=${cgId}&vs_currencies=usd`;
+  const resp = await fetch(url, {
+    headers: { Accept: 'application/json' },
+    signal: AbortSignal.timeout(6000),
+  });
+  if (!resp.ok) return null;
+  const data = await resp.json();
+  return data?.[cgId]?.usd || null;
+}
+
+async function valuationForAsset(asset, priceUsd) {
+  if (!priceUsd || priceUsd <= 0) return;
+  const txs = stmt.transactionsByAsset.all(asset.id);
+  const qty = txs.reduce((s, t) => s + (t.type === 'buy' ? t.quantity : -t.quantity), 0);
+  if (qty <= 0) return;
+  stmt.insertValuation.run({
+    id: String(Date.now() + '-' + Math.random().toString(36).slice(2, 8)),
+    asset_id: asset.id,
+    date: todayISO(),
+    value: qty * priceUsd,
+    quantity: qty,
+    note: 'PriceFeed auto',
+  });
+}
+
 app.post('/api/investments/refresh-prices', requireAuth, async (req, res) => {
-  const assets = stmt.allAssets.all();
-  const cgIds = assets
-    .map(a => ({ asset: a, cgId: CG_MAP[(a.ticker || '').toLowerCase()] }))
-    .filter(x => x.cgId);
-  if (!cgIds.length) return res.json(getPortfolio());
-  try {
-    const ids = cgIds.map(x => x.cgId).join(',');
-    const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`;
-    const resp = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(8000) });
-    if (!resp.ok) return res.status(502).json({ error: 'coingecko_failed' });
-    const prices = await resp.json();
-    const today = todayISO();
-    for (const { asset, cgId } of cgIds) {
-      const priceUsd = prices[cgId]?.usd;
-      if (!priceUsd) continue;
-      const latestTx = stmt.transactionsByAsset.all(asset.id);
-      const qty = latestTx.reduce((s, t) => s + (t.type === 'buy' ? t.quantity : -t.quantity), 0);
-      if (qty <= 0) continue;
-      const value = qty * priceUsd;
-      stmt.insertValuation.run({
-        id: String(Date.now() + '-' + Math.random().toString(36).slice(2, 8)),
-        asset_id: asset.id,
-        date: today,
-        value,
-        quantity: qty,
-        note: 'CoinGecko auto',
-      });
+  const assets = stmt.allAssets.all().filter(a => a.ticker);
+  let updated = 0;
+  const errors = [];
+
+  for (const asset of assets) {
+    try {
+      const ticker = asset.ticker.trim().toUpperCase();
+      const type = (asset.type || '').toLowerCase();
+      let price = null;
+
+      if (type === 'crypto') {
+        const cgId = CG_MAP[ticker.toLowerCase()];
+        if (cgId) price = await fetchCgPrice(cgId);
+      } else {
+        // stock, etf, bond, other — через Yahoo Finance
+        price = await fetchYahooPrice(ticker);
+      }
+
+      if (price != null && price > 0) {
+        await valuationForAsset(asset, price);
+        updated++;
+      }
+    } catch (e) {
+      errors.push(asset.ticker + ': ' + e.message);
     }
-  } catch (e) {
-    console.error('CoinGecko error:', e.message);
   }
-  res.json(getPortfolio());
+
+  if (errors.length) console.error('Price refresh errors:', errors.join('; '));
+  const result = getPortfolio();
+  result._meta = { updated, errors: errors.length };
+  res.json(result);
 });
 
 app.get('/api/wallets', requireAuth, (req, res) => {
