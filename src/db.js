@@ -365,3 +365,11 @@ export function rowToAllocationDecision(r) {
 }
 
 export default db;
+
+export function currencyRate() {
+  const v = getSetting('currency_rate');
+  return v ? parseFloat(v) : 43.5;
+}
+export function setCurrencyRate(rate) {
+  setSetting('currency_rate', String(Math.max(1, Number(rate) || 43.5)));
+}

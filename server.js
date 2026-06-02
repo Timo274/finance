@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import db, {
   getJSON, setJSON, rowToItem, rowToPlan, rowToWallet, rowToGoal,
   rowToInvestmentUpdate, rowToAllocationDecision,
+  currencyRate, setCurrencyRate,
 } from './src/db.js';
 import {
   pinIsSet, setPin, verifyPin, issueToken, clearToken, isAuthed, requireAuth,
@@ -422,6 +423,16 @@ app.post('/api/plan/close', requireAuth, (req, res) => {
   res.json({ ok: true, snapshot });
 });
 
+// ================= CURRENCY =================
+app.get('/api/currency', requireAuth, (req, res) => {
+  res.json({ rate: currencyRate() });
+});
+app.post('/api/currency', requireAuth, (req, res) => {
+  const rate = Math.max(1, Number(req.body?.rate) || 43.5);
+  setCurrencyRate(rate);
+  res.json({ rate: currencyRate() });
+});
+
 // ================= ITEMS (master wishlist) =================
 app.get('/api/items', requireAuth, (req, res) => {
   const rows = req.query.all ? stmt.allItems.all() : stmt.activeItems.all();
@@ -639,6 +650,49 @@ app.post('/api/investments', requireAuth, (req, res) => {
   res.json(getPortfolio());
 });
 
+// CoinGecko price refresh
+const CG_MAP = {
+  btc: 'bitcoin', eth: 'ethereum', sol: 'solana', xrp: 'ripple',
+  ada: 'cardano', dot: 'polkadot', avax: 'avalanche-2', matic: 'matic-network',
+  link: 'chainlink', atom: 'cosmos', uni: 'uniswap', ltc: 'litecoin',
+  bch: 'bitcoin-cash', near: 'near', trx: 'tron', fil: 'filecoin',
+  apt: 'aptos', arb: 'arbitrum', op: 'optimism', inj: 'injective',
+};
+app.post('/api/investments/refresh-prices', requireAuth, async (req, res) => {
+  const assets = stmt.allAssets.all();
+  const cgIds = assets
+    .map(a => ({ asset: a, cgId: CG_MAP[(a.ticker || '').toLowerCase()] }))
+    .filter(x => x.cgId);
+  if (!cgIds.length) return res.json(getPortfolio());
+  try {
+    const ids = cgIds.map(x => x.cgId).join(',');
+    const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`;
+    const resp = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(8000) });
+    if (!resp.ok) return res.status(502).json({ error: 'coingecko_failed' });
+    const prices = await resp.json();
+    const today = todayISO();
+    for (const { asset, cgId } of cgIds) {
+      const priceUsd = prices[cgId]?.usd;
+      if (!priceUsd) continue;
+      const latestTx = stmt.transactionsByAsset.all(asset.id);
+      const qty = latestTx.reduce((s, t) => s + (t.type === 'buy' ? t.quantity : -t.quantity), 0);
+      if (qty <= 0) continue;
+      const value = qty * priceUsd;
+      stmt.insertValuation.run({
+        id: String(Date.now() + '-' + Math.random().toString(36).slice(2, 8)),
+        asset_id: asset.id,
+        date: today,
+        value,
+        quantity: qty,
+        note: 'CoinGecko auto',
+      });
+    }
+  } catch (e) {
+    console.error('CoinGecko error:', e.message);
+  }
+  res.json(getPortfolio());
+});
+
 app.get('/api/wallets', requireAuth, (req, res) => {
   res.json({ wallets: getWallets() });
 });
@@ -791,7 +845,28 @@ app.get('/api/state', requireAuth, (req, res) => {
     wallets: getWallets(),
     manualPlan: getManualPlan() || [],
     goals: getGoals(),
+    currencyRate: currencyRate(),
   });
+});
+
+// ================= CSV EXPORT =================
+app.get('/api/export/csv/:type', requireAuth, (req, res) => {
+  const type = req.params.type;
+  let rows, headers;
+  if (type === 'items') {
+    headers = 'id,title,cost,category,layer,band,priority,type,status,deadline';
+    rows = stmt.allItems.all().map(r => `${r.id},"${r.title}",${r.cost},${r.category},${r.bucket},${r.band},${r.priority},${r.type},${r.status},${r.deadline || ''}`);
+  } else if (type === 'transactions') {
+    headers = 'id,asset_id,type,date,quantity,price,fee,total_amount,note';
+    rows = stmt.allTransactions.all().map(r => `${r.id},${r.asset_id},${r.type},${r.date},${r.quantity},${r.price},${r.fee},${r.total_amount},"${r.note || ''}"`);
+  } else if (type === 'valuations') {
+    headers = 'id,asset_id,date,value,quantity,note';
+    rows = stmt.allValuations.all().map(r => `${r.id},${r.asset_id},${r.date},${r.value},${r.quantity || ''},"${r.note || ''}"`);
+  } else return res.status(400).json({ error: 'unknown_type' });
+  const csv = '\uFEFF' + headers + '\n' + rows.join('\n');
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${type}-${todayISO()}.csv"`);
+  res.send(csv);
 });
 
 // ================= AI =================

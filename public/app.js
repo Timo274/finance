@@ -39,11 +39,13 @@ const state = {
   queueFilters: { q: '', layer: 'all', type: 'all', band: 'all', status: 'all' },
   queueSort: { key: 'priority', dir: 'desc' },
   invTab: 'overview',
+  currencyRate: 43.5,
 };
 
 // ---------- helpers ----------
 const fmt = (n) => (Math.round(Number(n) || 0)).toLocaleString('ru-RU') + ' грн';
 const fmtShort = (n) => (Math.round(Number(n) || 0)).toLocaleString('ru-RU');
+const fmtUsd = (n) => state.currencyRate > 0 ? `(~$${((Number(n) || 0) / state.currencyRate).toLocaleString('ru-RU', { maximumFractionDigits: 0 })})` : '';
 function fmtDate(d) {
   if (!d) return '—';
   const dt = new Date(d);
@@ -192,12 +194,15 @@ function drawCharts() {
     if (rem > 0) segs.push({ value: rem, color: cssVar('--border', '#ccd') });
     drawDonut(donut, segs);
   }
-  const inv = $('#investBars');
-  if (inv) {
-    const assets = state.portfolio?.assets || [];
-    if (assets.length) {
-      drawBars(inv, assets.map((a) => ({ label: a.name.slice(0, 8), value: a.currentValue, color: cssVar('--green', '#16a34a') })));
-    }
+  const portChart = $('#portChart');
+  if (portChart && state.portfolio && state.portfolio.valuations.length) {
+    const byMonth = new Map();
+    state.portfolio.valuations.forEach(v => {
+      const m = v.date.slice(0, 7);
+      byMonth.set(m, (byMonth.get(m) || 0) + v.value);
+    });
+    const months = [...byMonth.entries()].sort(([a], [b]) => a.localeCompare(b));
+    drawLine(portChart, months.map(([, value]) => ({ value })));
   }
 }
 
@@ -381,6 +386,7 @@ async function loadAndRender() {
   state.wallets = data.wallets || [];
   state.manualPlan = data.manualPlan || [];
   state.goals = data.goals || [];
+  state.currencyRate = data.currencyRate || 43.5;
   $('#app').classList.remove('hidden');
   renderTopbar();
   renderView();
@@ -397,6 +403,7 @@ async function refresh() {
   state.wallets = data.wallets || [];
   state.manualPlan = data.manualPlan || [];
   state.goals = data.goals || [];
+  state.currencyRate = data.currencyRate || 43.5;
   renderTopbar();
   renderView();
 }
@@ -470,13 +477,13 @@ function viewDashboard() {
   return `
   <div class="view-head"><h1>Кабинет</h1><p>Как разложить зарплату заранее — до того, как деньги пришли.</p></div>
   <div class="grid cards">
-    <div class="card"><div class="stat-label">Зарплата</div><div class="stat-value">${fmt(t.salary)}</div><div class="stat-sub">${fmtDate(state.plan.payday)}</div></div>
-    <div class="card"><div class="stat-label">Обязательные расходы</div><div class="stat-value sm">${fmt(t.survival)}</div><div class="stat-sub">стабильный расходник</div></div>
-    <div class="card"><div class="stat-label">Страховка</div><div class="stat-value sm accent-num">${fmt(t.reserve)}</div><div class="stat-sub">чёрный день, не трогаем</div></div>
-    <div class="card"><div class="stat-label">Инвестиции</div><div class="stat-value sm green-num">${fmt(t.fixedInvestment)}</div><div class="stat-sub">стабильно отложить</div></div>
-    <div class="card"><div class="stat-label">Излишки на желания</div><div class="stat-value accent-num">${fmt(t.availableToAllocate)}</div><div class="stat-sub">после стабильных пунктов</div></div>
-    <div class="card"><div class="stat-label">Распределено</div><div class="stat-value sm">${fmt(committedTotal())}</div><div class="stat-sub">${hasManualPlan() ? 'ручной план распределения' : `${state.allocation.approved.length} покупок одобрено`}</div></div>
-    <div class="card"><div class="stat-label">Останется из излишков</div><div class="stat-value ${remainingSurplus() < 0 ? 'red-num' : 'green-num'}">${fmt(remainingSurplus())}</div><div class="stat-sub">${hasManualPlan() ? 'по ручному плану' : 'по авто-распределению'}</div></div>
+    <div class="card"><div class="stat-label">Зарплата</div><div class="stat-value">${fmt(t.salary)}</div><div class="stat-sub">${fmtDate(state.plan.payday)} ${fmtUsd(t.salary)}</div></div>
+    <div class="card"><div class="stat-label">Обязательные расходы</div><div class="stat-value sm">${fmt(t.survival)}</div><div class="stat-sub">${fmtUsd(t.survival)} стабильный расходник</div></div>
+    <div class="card"><div class="stat-label">Страховка</div><div class="stat-value sm accent-num">${fmt(t.reserve)}</div><div class="stat-sub">${fmtUsd(t.reserve)} чёрный день</div></div>
+    <div class="card"><div class="stat-label">Инвестиции</div><div class="stat-value sm green-num">${fmt(t.fixedInvestment)}</div><div class="stat-sub">${fmtUsd(t.fixedInvestment)} стабильно отложить</div></div>
+    <div class="card"><div class="stat-label">Излишки на желания</div><div class="stat-value accent-num">${fmt(t.availableToAllocate)}</div><div class="stat-sub">${fmtUsd(t.availableToAllocate)} после стабильных пунктов</div></div>
+    <div class="card"><div class="stat-label">Распределено</div><div class="stat-value sm">${fmt(committedTotal())}</div><div class="stat-sub">${fmtUsd(committedTotal())} ${hasManualPlan() ? 'ручной план' : `${state.allocation.approved.length} покупок`}</div></div>
+    <div class="card"><div class="stat-label">Останется из излишков</div><div class="stat-value ${remainingSurplus() < 0 ? 'red-num' : 'green-num'}">${fmt(remainingSurplus())}</div><div class="stat-sub">${fmtUsd(remainingSurplus())} ${hasManualPlan() ? 'по ручному плану' : 'по авто-распределению'}</div></div>
   </div>
 
   <div class="card pad-lg" style="margin-top:16px">
@@ -621,20 +628,21 @@ function viewInvestments() {
 function investOverview(p) {
   if (!p || !p.assets.length) return '<div class="empty"><div class="big">↗</div><p>Добавьте первый актив, чтобы увидеть портфель.</p></div>';
   const total = p.totals;
-  const allocations = p.assets.map(a => `<div class="prop-row"><div class="row-between small"><b>${escapeHtml(a.name)}</b><span>${total.totalValue ? Math.round((a.currentValue / total.totalValue) * 100) : 0}%</span></div><div class="goal-mini"><div style="width:${total.totalValue ? (a.currentValue / total.totalValue) * 100 : 0}%"></div></div><div class="muted small">${fmt(a.currentValue)} · ${a.type}</div></div>`).join('');
+  const allocations = p.assets.map(a => `<div class="prop-row"><div class="row-between small"><b>${escapeHtml(a.name)}</b><span>${total.totalValue ? Math.round((a.currentValue / total.totalValue) * 100) : 0}%</span></div><div class="goal-mini"><div style="width:${total.totalValue ? (a.currentValue / total.totalValue) * 100 : 0}%"></div></div><div class="muted small">${fmt(a.currentValue)} ${fmtUsd(a.currentValue)} · ${a.type}</div></div>`).join('');
+  const pnlClass = total.totalPnL >= 0 ? 'green-num' : 'red-num';
+  const chartHtml = `<div class="card pad-lg" style="margin-top:16px"><div class="stat-label">Динамика портфеля по месяцам</div><canvas id="portChart" class="chart-line"></canvas></div>`;
   return `
   <div class="grid cards">
-    <div class="card"><div class="stat-label">Стоимость портфеля</div><div class="stat-value">${fmt(total.totalValue)}</div></div>
-    <div class="card"><div class="stat-label">Вложено</div><div class="stat-value sm">${fmt(total.totalInvested)}</div></div>
-    <div class="card"><div class="stat-label">Прибыль / Убыток</div><div class="stat-value sm ${total.totalPnL >= 0 ? 'green-num' : 'red-num'}">${fmt(total.totalPnL)}</div></div>
+    <div class="card"><div class="stat-label">Стоимость портфеля</div><div class="stat-value">${fmt(total.totalValue)}</div><div class="stat-sub">${fmtUsd(total.totalValue)}</div></div>
+    <div class="card"><div class="stat-label">Вложено</div><div class="stat-value sm">${fmt(total.totalInvested)}</div><div class="stat-sub">${fmtUsd(total.totalInvested)}</div></div>
+    <div class="card"><div class="stat-label">Прибыль / Убыток</div><div class="stat-value sm ${pnlClass}">${fmt(total.totalPnL)}</div><div class="stat-sub">${fmtUsd(total.totalPnL)}</div></div>
   </div>
   <div class="card pad-lg" style="margin-top:16px">
-    <div class="row-between"><div class="stat-label">Распределение портфеля</div></div>
+    <div class="row-between"><div class="stat-label">Распределение портфеля</div>
+      <button class="btn btn-sm btn-outline" data-act="refresh-prices">🔄 Обновить цены</button></div>
     <div style="margin-top:14px">${allocations}</div>
-    <div class="chart-cols" style="margin-top:16px">
-      <div><canvas id="investBars" class="chart-line"></canvas></div>
-    </div>
-  </div>`;
+  </div>
+  ${chartHtml}`;
 }
 function investAssets(p) {
   const rows = p ? p.assets.map(a => `<div class="wallet-row">
@@ -831,6 +839,7 @@ function bindViewEvents() {
       else if (act === 'ai-explain') await explainItem(id);
       else if (act === 'delete') await deleteItem(id);
       else if (act === 'delete-wallet') await deleteWallet(el.dataset.id);
+      else if (act === 'refresh-prices') await refreshPrices();
     });
   });
   $$('.queue-swipe').forEach((row) => bindSwipe(row));
@@ -966,6 +975,21 @@ async function deleteWallet(id) {
   await refresh();
 }
 
+async function refreshPrices() {
+  toast('Обновление цен...');
+  try {
+    await api.post('/api/investments/refresh-prices');
+    toast('Цены обновлены');
+    await refresh();
+  } catch (ex) {
+    toast('Ошибка: ' + ex.message);
+  }
+}
+
+function downloadCSV(type) {
+  window.open(`/api/export/csv/${type}`, '_blank');
+}
+
 // ============================================================
 // MODALS
 // ============================================================
@@ -998,12 +1022,27 @@ function openDataModal() {
     <div class="grid cards">
       <button class="btn btn-primary" id="exportBtn" type="button">Экспорт JSON</button>
       <label class="btn btn-outline" style="text-align:center">Импорт JSON<input id="importFile" type="file" accept="application/json" hidden></label>
+      <button class="btn btn-outline" onclick="downloadCSV('items')">CSV желания</button>
+      <button class="btn btn-outline" onclick="downloadCSV('transactions')">CSV операции</button>
+      <button class="btn btn-outline" onclick="downloadCSV('valuations')">CSV оценки</button>
+    </div>
+    <div class="section-title">Курс USD</div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <input type="number" id="currencyRateInput" value="${state.currencyRate}" min="1" step="0.1" style="width:120px;background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;color:var(--text);font-size:14px" />
+      <button class="btn btn-primary btn-sm" id="saveRateBtn">Сохранить курс</button>
     </div>
     <div class="section-title">Цели-накопления</div>
     <div>${goalRows || '<p class="muted">Пока нет желаний.</p>'}</div>
   </div>`);
   $('#exportBtn').addEventListener('click', exportData);
   $('#importFile').addEventListener('change', importData);
+  $('#saveRateBtn').addEventListener('click', async () => {
+    const rate = +$('#currencyRateInput').value;
+    if (rate < 1) return toast('Некорректный курс');
+    await api.post('/api/currency', { rate });
+    state.currencyRate = rate;
+    closeModal(); toast('Курс сохранён'); await refresh();
+  });
   bindViewEvents();
 }
 
