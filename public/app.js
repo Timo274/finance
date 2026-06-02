@@ -1023,6 +1023,7 @@ function viewAssistant() {
   const enabled = state.meta?.ai?.enabled;
   return `<div class="view-head"><h1>AI-ассистент</h1><p>Советует, что купить первым, что отложить и поясняет trade-off на основе твоего плана.</p></div>
   ${!enabled ? `<div class="tradeoff" style="background:rgba(245,177,61,.1);border-color:var(--amber)"><b style="color:var(--amber)">AI выключен.</b> Добавьте AI_PROVIDER и AI_API_KEY в окружение сервера, чтобы включить ассистента. Остальное приложение работает без него.</div>` : ""}
+  ${enabled ? `<div class="tradeoff"><b>Приватность:</b> вопросы и краткий контекст плана (суммы, покупки, кошельки, портфель) отправляются выбранному AI-провайдеру. Не пишите PIN, ключи или другие секреты.</div>` : ""}
   <div class="chat" id="assistantRoot">
     <div class="chip-row">
       <button class="chip" data-q="Что мне купить в первую очередь в этом месяце?">Что купить первым?</button>
