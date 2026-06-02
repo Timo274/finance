@@ -840,6 +840,14 @@ function bindViewEvents() {
       else if (act === 'delete') await deleteItem(id);
       else if (act === 'delete-wallet') await deleteWallet(el.dataset.id);
       else if (act === 'refresh-prices') await refreshPrices();
+      else if (act === 'csv-export') downloadCSV(el.dataset.csvType);
+      else if (act === 'save-rate') {
+        const rate = +$('#currencyRateInput').value;
+        if (rate < 1) return toast('Некорректный курс');
+        await api.post('/api/currency', { rate });
+        state.currencyRate = rate;
+        closeModal(); toast('Курс сохранён'); await refresh();
+      }
     });
   });
   $$('.queue-swipe').forEach((row) => bindSwipe(row));
@@ -1022,27 +1030,21 @@ function openDataModal() {
     <div class="grid cards">
       <button class="btn btn-primary" id="exportBtn" type="button">Экспорт JSON</button>
       <label class="btn btn-outline" style="text-align:center">Импорт JSON<input id="importFile" type="file" accept="application/json" hidden></label>
-      <button class="btn btn-outline" onclick="downloadCSV('items')">CSV желания</button>
-      <button class="btn btn-outline" onclick="downloadCSV('transactions')">CSV операции</button>
-      <button class="btn btn-outline" onclick="downloadCSV('valuations')">CSV оценки</button>
+      <button class="btn btn-outline" data-act="csv-export" data-csv-type="items">CSV желания</button>
+      <button class="btn btn-outline" data-act="csv-export" data-csv-type="transactions">CSV операции</button>
+      <button class="btn btn-outline" data-act="csv-export" data-csv-type="valuations">CSV оценки</button>
     </div>
     <div class="section-title">Курс USD</div>
     <div style="display:flex;gap:10px;align-items:center">
       <input type="number" id="currencyRateInput" value="${state.currencyRate}" min="1" step="0.1" style="width:120px;background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;color:var(--text);font-size:14px" />
-      <button class="btn btn-primary btn-sm" id="saveRateBtn">Сохранить курс</button>
+      <button class="btn btn-primary btn-sm" data-act="save-rate">Сохранить курс</button>
     </div>
     <div class="section-title">Цели-накопления</div>
     <div>${goalRows || '<p class="muted">Пока нет желаний.</p>'}</div>
   </div>`);
   $('#exportBtn').addEventListener('click', exportData);
   $('#importFile').addEventListener('change', importData);
-  $('#saveRateBtn').addEventListener('click', async () => {
-    const rate = +$('#currencyRateInput').value;
-    if (rate < 1) return toast('Некорректный курс');
-    await api.post('/api/currency', { rate });
-    state.currencyRate = rate;
-    closeModal(); toast('Курс сохранён'); await refresh();
-  });
+
   bindViewEvents();
 }
 
