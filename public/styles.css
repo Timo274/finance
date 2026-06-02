@@ -357,13 +357,6 @@ tbody tr:last-child td { border-bottom: none; }
 .reason { color: var(--amber); font-size: 12px; margin-top: 3px; }
 .mobile-queue { display: none; }
 
-/* scenarios */
-.scn-grid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
-.scn-card { cursor: pointer; transition: border-color .15s, box-shadow .15s; }
-.scn-card:hover { border-color: var(--accent); }
-.scn-card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-.scn-name { font-weight: 700; font-size: 15px; }
-.bucket-bar { height: 10px; border-radius: 999px; overflow: hidden; display: flex; margin: 12px 0; background: var(--bg-2); }
 .legend { display: flex; flex-wrap: wrap; gap: 10px 16px; font-size: 12px; color: var(--muted); margin-top: 8px; }
 .legend span { display: inline-flex; align-items: center; }
 

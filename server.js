@@ -116,6 +116,28 @@ const stmt = {
   allWallets: db.prepare('SELECT * FROM wallets ORDER BY created_at DESC'),
   allDecisions: db.prepare('SELECT * FROM allocation_decisions ORDER BY updated_at DESC'),
   allInvestmentAccounts: db.prepare('SELECT * FROM investment_accounts ORDER BY name'),
+  deleteWalletById: db.prepare('DELETE FROM wallets WHERE id = ?'),
+
+  // New investment model
+  allAssets: db.prepare('SELECT * FROM investment_assets ORDER BY name'),
+  assetById: db.prepare('SELECT * FROM investment_assets WHERE id = ?'),
+  insertAsset: db.prepare(`INSERT INTO investment_assets (id, name, type, ticker, currency)
+    VALUES (@id, @name, @type, @ticker, @currency)
+    ON CONFLICT(id) DO UPDATE SET name=excluded.name, type=excluded.type,
+      ticker=excluded.ticker, currency=excluded.currency, updated_at=datetime('now')`),
+  deleteAsset: db.prepare('DELETE FROM investment_assets WHERE id = ?'),
+
+  transactionsByAsset: db.prepare('SELECT * FROM asset_transactions WHERE asset_id = ? ORDER BY date DESC, created_at DESC'),
+  allTransactions: db.prepare('SELECT * FROM asset_transactions ORDER BY date DESC, created_at DESC'),
+  insertTransaction: db.prepare(`INSERT INTO asset_transactions (id, asset_id, type, date, quantity, price, fee, total_amount, note)
+    VALUES (@id, @asset_id, @type, @date, @quantity, @price, @fee, @total_amount, @note)`),
+  deleteTransaction: db.prepare('DELETE FROM asset_transactions WHERE id = ?'),
+
+  valuationsByAsset: db.prepare('SELECT * FROM asset_valuations WHERE asset_id = ? ORDER BY date DESC, created_at DESC'),
+  allValuations: db.prepare('SELECT * FROM asset_valuations ORDER BY date DESC, created_at DESC'),
+  insertValuation: db.prepare(`INSERT INTO asset_valuations (id, asset_id, date, value, quantity, note)
+    VALUES (@id, @asset_id, @date, @value, @quantity, @note)`),
+  deleteValuation: db.prepare('DELETE FROM asset_valuations WHERE id = ?'),
 };
 
 function getActivePlan() {
@@ -131,6 +153,79 @@ function getInvestments() {
   const rows = stmt.investmentUpdates.all().map(rowToInvestmentUpdate);
   if (rows.length) return rows;
   return getJSON(SETTINGS.investments, []);
+}
+function getPortfolio() {
+  const assets = stmt.allAssets.all();
+  const allTx = stmt.allTransactions.all();
+  const allVal = stmt.allValuations.all();
+
+  const assetData = assets.map(a => {
+    const txs = allTx.filter(t => t.asset_id === a.id);
+    const vals = allVal.filter(v => v.asset_id === a.id);
+
+    let quantityHeld = 0;
+    let totalInvested = 0;
+    let realizedPnL = 0;
+
+    for (const tx of txs) {
+      if (tx.type === 'buy') {
+        quantityHeld += tx.quantity;
+        totalInvested += tx.total_amount + tx.fee;
+      } else if (tx.type === 'sell') {
+        const sellProceeds = tx.total_amount - tx.fee;
+        realizedPnL += sellProceeds - (tx.quantity * (totalInvested / Math.max(quantityHeld, 1)));
+        quantityHeld -= tx.quantity;
+        totalInvested -= tx.quantity * (totalInvested / Math.max(quantityHeld + tx.quantity, 1));
+      }
+    }
+
+    quantityHeld = Math.max(0, quantityHeld);
+    totalInvested = Math.max(0, totalInvested);
+
+    const latestVal = vals.length > 0 ? vals[0] : null;
+    const currentValue = latestVal ? latestVal.value : (quantityHeld > 0 ? totalInvested : 0);
+
+    const remainingCostBasis = quantityHeld > 0 && totalInvested > 0
+      ? (quantityHeld / (quantityHeld + (txs.filter(t => t.type === 'sell').reduce((s, t) => s + t.quantity, 0) || 0))) * totalInvested
+      : totalInvested;
+    const unrealizedPnL = currentValue - remainingCostBasis;
+
+    return {
+      id: a.id,
+      name: a.name,
+      type: a.type,
+      ticker: a.ticker,
+      currency: a.currency,
+      currentValue,
+      quantityHeld,
+      totalInvested,
+      realizedPnL: Math.round(realizedPnL * 100) / 100,
+      unrealizedPnL: Math.round(unrealizedPnL * 100) / 100,
+      totalPnL: Math.round((realizedPnL + unrealizedPnL) * 100) / 100,
+    };
+  });
+
+  const totalValue = assetData.reduce((s, a) => s + a.currentValue, 0);
+  const totalInvestedAll = assetData.reduce((s, a) => s + a.totalInvested, 0);
+  const totalPnL = assetData.reduce((s, a) => s + a.totalPnL, 0);
+
+  return {
+    assets: assetData,
+    transactions: allTx.map(t => ({
+      id: t.id, assetId: t.asset_id, type: t.type, date: t.date,
+      quantity: t.quantity, price: t.price, fee: t.fee,
+      totalAmount: t.total_amount, note: t.note, createdAt: t.created_at,
+    })),
+    valuations: allVal.map(v => ({
+      id: v.id, assetId: v.asset_id, date: v.date,
+      value: v.value, quantity: v.quantity, note: v.note, createdAt: v.created_at,
+    })),
+    totals: {
+      totalValue,
+      totalInvested: totalInvestedAll,
+      totalPnL: Math.round(totalPnL * 100) / 100,
+    },
+  };
 }
 function getWallets() {
   const plan = getActivePlan();
@@ -151,6 +246,7 @@ function buildAIContext(scenario = 'balanced') {
   const plan = getActivePlan();
   const items = getActiveItems();
   const allocation = plan ? allocate(plan, items, { scenario, includeIds: scenario === 'custom' ? customIds() : null }) : null;
+  const portfolio = getPortfolio();
   return {
     plan,
     allocation: allocation && {
@@ -162,6 +258,13 @@ function buildAIContext(scenario = 'balanced') {
     goals: getGoals(),
     wallets: getWallets(),
     investments: getInvestments(),
+    portfolio: {
+      totalValue: portfolio.totals.totalValue,
+      totalInvested: portfolio.totals.totalInvested,
+      totalPnL: portfolio.totals.totalPnL,
+      assets: portfolio.assets.map(a => ({ name: a.name, type: a.type, value: a.currentValue })),
+    },
+    manualPlan: getManualPlan() || [],
     itemsCount: items.length,
   };
 }
@@ -427,20 +530,6 @@ app.get('/api/scenarios', requireAuth, (req, res) => {
   res.json({ scenarios: scenarioSummaries(plan, getActiveItems(), customIds()) });
 });
 
-app.post('/api/whatif', requireAuth, (req, res) => {
-  const plan = getActivePlan();
-  if (!plan) return res.status(400).json({ error: 'no_active_plan' });
-  const draft = {
-    ...plan,
-    salary: Math.max(0, Number(req.body?.salary ?? plan.salary) || 0),
-    survivalCost: Math.max(0, Number(req.body?.survivalCost ?? plan.survivalCost) || 0),
-    buffer: Math.max(0, Number(req.body?.buffer ?? plan.buffer) || 0),
-    investmentFixed: Math.max(0, Number(req.body?.investmentFixed ?? plan.investmentFixed) || 0),
-  };
-  const scenario = req.body?.scenario || req.query.scenario || 'balanced';
-  res.json({ plan: draft, allocation: allocate(draft, getActiveItems(), { scenario }) });
-});
-
 app.get('/api/custom-scenario', requireAuth, (req, res) => {
   res.json({ includeIds: customIds() || [] });
 });
@@ -450,9 +539,71 @@ app.post('/api/custom-scenario', requireAuth, (req, res) => {
   res.json({ includeIds: ids });
 });
 
+// ================= INVESTMENTS (new model) =================
 app.get('/api/investments', requireAuth, (req, res) => {
-  res.json({ investments: getInvestments() });
+  res.json(getPortfolio());
 });
+app.post('/api/investments/assets', requireAuth, (req, res) => {
+  const { id, name, type, ticker, currency } = req.body || {};
+  const assetId = String(id || Date.now() + '-' + Math.random().toString(36).slice(2, 8));
+  const assetName = String(name || '').trim() || 'Актив';
+  stmt.insertAsset.run({
+    id: assetId,
+    name: assetName,
+    type: String(type || 'other').trim(),
+    ticker: ticker ? String(ticker).trim() : null,
+    currency: currency ? String(currency).trim() : null,
+  });
+  res.json(getPortfolio());
+});
+app.delete('/api/investments/assets/:id', requireAuth, (req, res) => {
+  stmt.deleteAsset.run(String(req.params.id));
+  res.json(getPortfolio());
+});
+app.post('/api/investments/transactions', requireAuth, (req, res) => {
+  const { assetId, type, date, quantity, price, fee, note } = req.body || {};
+  if (!assetId) return res.status(400).json({ error: 'assetId_required' });
+  const txType = ['buy', 'sell'].includes(type) ? type : 'buy';
+  const qty = Math.max(0, Number(quantity) || 0);
+  const px = Math.max(0, Number(price) || 0);
+  const txFee = Math.max(0, Number(fee) || 0);
+  const total = txType === 'buy' ? (qty * px + txFee) : (qty * px - txFee);
+  stmt.insertTransaction.run({
+    id: String(Date.now() + '-' + Math.random().toString(36).slice(2, 8)),
+    asset_id: String(assetId),
+    type: txType,
+    date: date || todayISO(),
+    quantity: qty,
+    price: px,
+    fee: txFee,
+    total_amount: Math.max(0, total),
+    note: note ? String(note) : '',
+  });
+  res.json(getPortfolio());
+});
+app.delete('/api/investments/transactions/:id', requireAuth, (req, res) => {
+  stmt.deleteTransaction.run(String(req.params.id));
+  res.json(getPortfolio());
+});
+app.post('/api/investments/valuations', requireAuth, (req, res) => {
+  const { assetId, date, value, quantity, note } = req.body || {};
+  if (!assetId) return res.status(400).json({ error: 'assetId_required' });
+  stmt.insertValuation.run({
+    id: String(Date.now() + '-' + Math.random().toString(36).slice(2, 8)),
+    asset_id: String(assetId),
+    date: date || todayISO(),
+    value: Math.max(0, Number(value) || 0),
+    quantity: quantity != null ? Math.max(0, Number(quantity) || 0) : null,
+    note: note ? String(note) : '',
+  });
+  res.json(getPortfolio());
+});
+app.delete('/api/investments/valuations/:id', requireAuth, (req, res) => {
+  stmt.deleteValuation.run(String(req.params.id));
+  res.json(getPortfolio());
+});
+
+// Legacy investment endpoints (backward compat)
 app.post('/api/investments', requireAuth, (req, res) => {
   const investments = sanitizeEntries(req.body?.investments, [
     { key: 'name', type: 'text' },
@@ -485,7 +636,7 @@ app.post('/api/investments', requireAuth, (req, res) => {
     stmt.deleteUnusedInvestmentAccounts.run();
   });
   save();
-  res.json({ investments: getInvestments() });
+  res.json(getPortfolio());
 });
 
 app.get('/api/wallets', requireAuth, (req, res) => {
@@ -514,6 +665,11 @@ app.post('/api/wallets', requireAuth, (req, res) => {
   save();
   res.json({ wallets: getWallets() });
 });
+app.delete('/api/wallets/:id', requireAuth, (req, res) => {
+  const id = String(req.params.id);
+  stmt.deleteWalletById.run(id);
+  res.json({ ok: true, wallets: getWallets() });
+});
 
 app.get('/api/manual-plan', requireAuth, (req, res) => {
   res.json({ manualPlan: getManualPlan() || [] });
@@ -536,13 +692,14 @@ app.post('/api/manual-plan', requireAuth, (req, res) => {
 
 app.get('/api/export', requireAuth, (req, res) => {
   const payload = {
-    version: 2,
+    version: 3,
     exportedAt: new Date().toISOString(),
     plans: db.prepare('SELECT * FROM plans ORDER BY id').all().map(rowToPlan),
     items: stmt.allItems.all().map(rowToItem),
     wallets: stmt.allWallets.all().map(rowToWallet),
     goals: stmt.allGoals.all().map(rowToGoal),
     investments: getInvestments(),
+    portfolio: getPortfolio(),
     allocationDecisions: stmt.allDecisions.all().map(rowToAllocationDecision),
   };
   res.json(payload);
@@ -627,10 +784,10 @@ app.get('/api/state', requireAuth, (req, res) => {
     plan,
     items,
     allocation,
-    scenarios: plan ? scenarioSummaries(plan, items, customIds()) : [],
     history: stmt.closedPlans.all().map(rowToPlan),
     meta: metaPayload(),
     investments: getInvestments(),
+    portfolio: getPortfolio(),
     wallets: getWallets(),
     manualPlan: getManualPlan() || [],
     goals: getGoals(),
@@ -639,16 +796,6 @@ app.get('/api/state', requireAuth, (req, res) => {
 
 // ================= AI =================
 app.get('/api/ai/status', requireAuth, (req, res) => res.json(aiStatus()));
-
-app.get('/api/ai/tip', requireAuth, async (req, res) => {
-  try {
-    const context = buildAIContext(req.query.scenario || 'balanced');
-    const out = await askAssistantText('Дай один короткий совет по текущему плану зарплаты: что сделать первым и чего избегать.', context);
-    res.json(out);
-  } catch (e) {
-    res.status(500).json({ error: 'ai_failed', detail: String(e.message || e) });
-  }
-});
 
 app.post('/api/ai/explain', requireAuth, async (req, res) => {
   try {

@@ -118,6 +118,41 @@ db.exec(`
     FOREIGN KEY(item_id) REFERENCES items(id) ON DELETE CASCADE,
     UNIQUE(plan_id, item_id, source)
   );
+
+  CREATE TABLE IF NOT EXISTS investment_assets (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL DEFAULT 'other',
+    ticker TEXT,
+    currency TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS asset_transactions (
+    id TEXT PRIMARY KEY,
+    asset_id TEXT NOT NULL,
+    type TEXT NOT NULL DEFAULT 'buy',
+    date TEXT NOT NULL,
+    quantity REAL NOT NULL DEFAULT 0,
+    price REAL NOT NULL DEFAULT 0,
+    fee REAL NOT NULL DEFAULT 0,
+    total_amount REAL NOT NULL DEFAULT 0,
+    note TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY(asset_id) REFERENCES investment_assets(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS asset_valuations (
+    id TEXT PRIMARY KEY,
+    asset_id TEXT NOT NULL,
+    date TEXT NOT NULL,
+    value REAL NOT NULL DEFAULT 0,
+    quantity REAL,
+    note TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY(asset_id) REFERENCES investment_assets(id) ON DELETE CASCADE
+  );
 `);
 
 // ---- Миграция к новой таксономии (band / score_type / scores + новые слои и категории) ----
@@ -175,6 +210,44 @@ if (!hadBand) {
   });
   run();
 }
+
+// ---- Миграция старых инвестиций в новую модель ----
+(function migrateInvestments() {
+  const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(r => r.name);
+  if (tables.includes('investment_updates') && tables.includes('investment_assets')) {
+    const assets = db.prepare('SELECT COUNT(*) as cnt FROM investment_assets').get();
+    if (assets.cnt === 0) {
+      const oldAccounts = db.prepare('SELECT * FROM investment_accounts').all();
+      const oldUpdates = db.prepare('SELECT * FROM investment_updates').all();
+      if (oldUpdates.length > 0) {
+        const insertAsset = db.prepare('INSERT OR IGNORE INTO investment_assets (id, name, type, created_at, updated_at) VALUES (@id, @name, @type, @created_at, @updated_at)');
+        const insertVal = db.prepare('INSERT INTO asset_valuations (id, asset_id, date, value, note, created_at) VALUES (@id, @asset_id, @date, @value, @note, @created_at)');
+        const migrate = db.transaction(() => {
+          for (const acc of oldAccounts) {
+            insertAsset.run({
+              id: acc.id,
+              name: acc.name,
+              type: acc.type || 'other',
+              created_at: acc.created_at || new Date().toISOString(),
+              updated_at: acc.updated_at || new Date().toISOString(),
+            });
+          }
+          for (const u of oldUpdates) {
+            insertVal.run({
+              id: 'mig-' + u.id,
+              asset_id: u.account_id,
+              date: u.date,
+              value: u.amount,
+              note: u.note || '',
+              created_at: u.created_at || new Date().toISOString(),
+            });
+          }
+        });
+        migrate();
+      }
+    }
+  }
+})();
 
 // ---- settings helpers ----
 const getSettingStmt = db.prepare('SELECT value FROM settings WHERE key = ?');

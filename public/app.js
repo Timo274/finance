@@ -29,18 +29,16 @@ const state = {
   plan: null,
   items: [],
   allocation: null,
-  scenarios: [],
   history: [],
   investments: [],
+  portfolio: null,
   wallets: [],
   manualPlan: [],
   goals: [],
   view: 'dashboard',
-  scenario: 'balanced',
-  customInclude: [],
   queueFilters: { q: '', layer: 'all', type: 'all', band: 'all', status: 'all' },
   queueSort: { key: 'priority', dir: 'desc' },
-  whatIf: null,
+  invTab: 'overview',
 };
 
 // ---------- helpers ----------
@@ -194,16 +192,12 @@ function drawCharts() {
     if (rem > 0) segs.push({ value: rem, color: cssVar('--border', '#ccd') });
     drawDonut(donut, segs);
   }
-  const line = $('#lineBalance');
-  if (line && state.allocation) {
-    const t = state.allocation.totals;
-    const pts = [{ value: t.availableToAllocate }];
-    state.allocation.timeline.forEach((n) => pts.push({ value: n.balanceAfter }));
-    drawLine(line, pts);
-  }
   const inv = $('#investBars');
   if (inv) {
-    drawBars(inv, investmentMonthlyTotals().map((x) => ({ label: x.label, value: x.value, color: cssVar('--green', '#16a34a') })));
+    const assets = state.portfolio?.assets || [];
+    if (assets.length) {
+      drawBars(inv, assets.map((a) => ({ label: a.name.slice(0, 8), value: a.currentValue, color: cssVar('--green', '#16a34a') })));
+    }
   }
 }
 
@@ -246,17 +240,6 @@ function goalProgress(item) {
     monthsLeft: monthly > 0 ? Math.ceil(left / monthly) : null,
     pct: cost > 0 ? Math.min(100, Math.round((saved / cost) * 100)) : 0,
   };
-}
-function investmentMonthlyTotals() {
-  const byMonth = new Map();
-  state.investments.forEach((it) => {
-    const key = it.date ? String(it.date).slice(0, 7) : 'без даты';
-    byMonth.set(key, (byMonth.get(key) || 0) + Number(it.amount || 0));
-  });
-  return [...byMonth.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .slice(-6)
-    .map(([key, value]) => ({ label: key === 'без даты' ? '—' : key.slice(5), value }));
 }
 function walletTotal() {
   return state.wallets.reduce((sum, w) => sum + Number(w.amount || 0), 0);
@@ -387,31 +370,30 @@ $('#logoutBtnMobile')?.addEventListener('click', doLogout);
 // LOAD + RENDER
 // ============================================================
 async function loadAndRender() {
-  const data = await api.get(`/api/state?scenario=${state.scenario}`);
+  const data = await api.get(`/api/state?scenario=balanced`);
   state.meta = data.meta;
   state.plan = data.plan;
   state.items = data.items;
   state.allocation = data.allocation;
-  state.scenarios = data.scenarios;
   state.history = data.history;
   state.investments = data.investments || [];
+  state.portfolio = data.portfolio || null;
   state.wallets = data.wallets || [];
   state.manualPlan = data.manualPlan || [];
   state.goals = data.goals || [];
-  try { state.customInclude = (await api.get('/api/custom-scenario')).includeIds || []; } catch {}
   $('#app').classList.remove('hidden');
   renderTopbar();
   renderView();
 }
 
 async function refresh() {
-  const data = await api.get(`/api/state?scenario=${state.scenario}`);
+  const data = await api.get(`/api/state?scenario=balanced`);
   state.plan = data.plan;
   state.items = data.items;
   state.allocation = data.allocation;
-  state.scenarios = data.scenarios;
   state.history = data.history;
   state.investments = data.investments || [];
+  state.portfolio = data.portfolio || null;
   state.wallets = data.wallets || [];
   state.manualPlan = data.manualPlan || [];
   state.goals = data.goals || [];
@@ -456,7 +438,6 @@ function renderView() {
   else if (v === 'wallets') root.innerHTML = viewWallets();
   else if (v === 'investments') root.innerHTML = viewInvestments();
   else if (v === 'plan') root.innerHTML = viewPlan();
-  else if (v === 'scenarios') root.innerHTML = viewScenarios();
   else if (v === 'history') root.innerHTML = viewHistory();
   else if (v === 'assistant') { root.innerHTML = viewAssistant(); initAssistant(); }
   bindViewEvents();
@@ -480,12 +461,6 @@ function viewDashboard() {
     return `<div class="view-head"><h1>Кабинет</h1><p>Обзор будущей зарплаты до её прихода.</p></div>${noPlanBlock()}`;
   }
   const t = state.allocation.totals;
-  const deadlines = state.items
-    .filter((it) => it.deadline)
-    .sort((a, b) => a.deadline.localeCompare(b.deadline))
-    .slice(0, 3);
-  const whatSalary = state.whatIf?.plan?.salary ?? state.plan.salary;
-  const whatTotals = state.whatIf?.allocation?.totals;
   const stablePct = (value) => (t.salary ? (value / t.salary) * 100 : 0);
   const segs = Object.entries(committedBuckets())
     .filter(([, v]) => v > 0)
@@ -494,18 +469,6 @@ function viewDashboard() {
 
   return `
   <div class="view-head"><h1>Кабинет</h1><p>Как разложить зарплату заранее — до того, как деньги пришли.</p></div>
-  <div class="chart-cols" style="margin-bottom:16px">
-    <div class="card pad-lg">
-      <div class="row-between"><div><div class="stat-label">Что-если зарплата</div><p class="muted small" style="margin:4px 0 0">Двигается без записи в БД, можно применить.</p></div><b>${fmt(whatSalary)}</b></div>
-      <input id="whatIfSalary" type="range" min="${Math.round(state.plan.salary * 0.6)}" max="${Math.round(state.plan.salary * 1.4)}" value="${whatSalary}" step="500" style="width:100%;margin-top:12px">
-      <div class="row-between small muted"><span>Излишки: ${fmt(whatTotals?.availableToAllocate ?? t.availableToAllocate)}</span><span>Останется: ${fmt(whatTotals?.remaining ?? remainingSurplus())}</span></div>
-      <button class="btn btn-outline btn-sm" data-act="apply-whatif" style="margin-top:10px">Применить зарплату</button>
-    </div>
-    <div class="card pad-lg">
-      <div class="row-between"><div class="stat-label">Совет от AI</div><button class="btn btn-sm btn-ghost" data-act="ai-tip">Обновить</button></div>
-      <div id="aiTipBox" class="muted small">Нажмите «Обновить», чтобы получить короткий совет по плану.</div>
-    </div>
-  </div>
   <div class="grid cards">
     <div class="card"><div class="stat-label">Зарплата</div><div class="stat-value">${fmt(t.salary)}</div><div class="stat-sub">${fmtDate(state.plan.payday)}</div></div>
     <div class="card"><div class="stat-label">Обязательные расходы</div><div class="stat-value sm">${fmt(t.survival)}</div><div class="stat-sub">стабильный расходник</div></div>
@@ -516,35 +479,25 @@ function viewDashboard() {
     <div class="card"><div class="stat-label">Останется из излишков</div><div class="stat-value ${remainingSurplus() < 0 ? 'red-num' : 'green-num'}">${fmt(remainingSurplus())}</div><div class="stat-sub">${hasManualPlan() ? 'по ручному плану' : 'по авто-распределению'}</div></div>
   </div>
 
-  ${deadlines.length ? `<div class="card pad-lg" style="margin-top:16px"><div class="section-title" style="margin-top:0">Ближайшие дедлайны</div>${deadlines.map((it) => `<div class="wallet-row"><div><b>${escapeHtml(it.title)}</b><div class="muted small">${fmtDate(it.deadline)} · ${fmt(it.cost)}</div></div><span class="tag tag-${it.type}">${TYPE_LABELS[it.type]}</span></div>`).join('')}</div>` : ''}
-
-  <div class="chart-cols" style="margin-top:16px">
-    <div class="card pad-lg">
-      <div class="row-between"><div class="stat-label">Распределение по слоям</div>
-        <span class="status-badge status-${t.status}">${STATUS_LABELS[t.status]}</span></div>
-      <div class="donut-wrap">
-        <canvas id="donutAlloc" class="chart-donut"></canvas>
-        <div class="legend legend-col">
-          <span><span class="dot" style="background:#64708f"></span>Обязательные <b>${fmt(t.survival)}</b></span>
-          <span><span class="dot" style="background:var(--accent)"></span>Страховка <b>${fmt(t.reserve)}</b></span>
-          <span><span class="dot" style="background:var(--green)"></span>Инвестиции <b>${fmt(t.fixedInvestment)}</b></span>
-          ${Object.entries(committedBuckets()).filter(([, v]) => v > 0).map(([k, v]) => `<span><span class="dot" style="background:${bucketColor(k)}"></span>${bucketLabel(k)} <b>${fmt(v)}</b></span>`).join('')}
-          <span><span class="dot" style="background:var(--border)"></span>Останется <b>${fmt(remainingSurplus())}</b></span>
-        </div>
+  <div class="card pad-lg" style="margin-top:16px">
+    <div class="row-between"><div class="stat-label">Распределение по слоям</div>
+      <span class="status-badge status-${t.status}">${STATUS_LABELS[t.status]}</span></div>
+    <div class="donut-wrap">
+      <canvas id="donutAlloc" class="chart-donut"></canvas>
+      <div class="legend legend-col">
+        <span><span class="dot" style="background:#64708f"></span>Обязательные <b>${fmt(t.survival)}</b></span>
+        <span><span class="dot" style="background:var(--accent)"></span>Страховка <b>${fmt(t.reserve)}</b></span>
+        <span><span class="dot" style="background:var(--green)"></span>Инвестиции <b>${fmt(t.fixedInvestment)}</b></span>
+        ${Object.entries(committedBuckets()).filter(([, v]) => v > 0).map(([k, v]) => `<span><span class="dot" style="background:${bucketColor(k)}"></span>${bucketLabel(k)} <b>${fmt(v)}</b></span>`).join('')}
+        <span><span class="dot" style="background:var(--border)"></span>Останется <b>${fmt(remainingSurplus())}</b></span>
       </div>
-      <div class="alloc-bar" style="margin-top:16px">
-        <div class="alloc-seg" style="width:${stablePct(t.survival)}%;background:#64708f" title="Обязательные"></div>
-        <div class="alloc-seg" style="width:${stablePct(t.reserve)}%;background:var(--accent)" title="Страховка"></div>
-        <div class="alloc-seg" style="width:${stablePct(t.fixedInvestment)}%;background:var(--green)" title="Инвестиции"></div>${segs}
-      </div>
-      ${t.status === 'overallocated' ? `<div class="tradeoff" style="background:color-mix(in srgb,var(--red) 10%,transparent);border-color:var(--red)"><b style="color:var(--red)">Перерасход.</b> Стабильные пункты и желания выше зарплаты — посмотрите «План распределения», что перенести.</div>` : ''}
     </div>
-    <div class="card pad-lg">
-      <div class="stat-label">Остаток после каждой покупки</div>
-      ${state.allocation.timeline.length ? `<canvas id="lineBalance" class="chart-line"></canvas>
-      <div class="row-between small muted" style="margin-top:6px"><span>излишки ${fmtShort(t.availableToAllocate)}</span><span>стабильно ${fmtShort(t.stableExpenses)}</span></div>`
-      : '<div class="chart-empty muted">Добавьте покупки в план, чтобы увидеть график остатка.</div>'}
+    <div class="alloc-bar" style="margin-top:16px">
+      <div class="alloc-seg" style="width:${stablePct(t.survival)}%;background:#64708f" title="Обязательные"></div>
+      <div class="alloc-seg" style="width:${stablePct(t.reserve)}%;background:var(--accent)" title="Страховка"></div>
+      <div class="alloc-seg" style="width:${stablePct(t.fixedInvestment)}%;background:var(--green)" title="Инвестиции"></div>${segs}
     </div>
+    ${t.status === 'overallocated' ? `<div class="tradeoff" style="background:color-mix(in srgb,var(--red) 10%,transparent);border-color:var(--red)"><b style="color:var(--red)">Перерасход.</b> Стабильные пункты и желания выше зарплаты — посмотрите «План распределения», что перенести.</div>` : ''}
   </div>
 
   <div class="section-title">Одобрено в этой зарплате · ${state.allocation.approved.length}</div>
@@ -650,30 +603,80 @@ function viewQueue() {
 }
 
 function viewInvestments() {
-  const total = state.investments.reduce((sum, it) => sum + Number(it.amount || 0), 0);
-  const byName = new Map();
-  state.investments.forEach((it) => byName.set(it.name || 'Без названия', (byName.get(it.name || 'Без названия') || 0) + Number(it.amount || 0)));
-  const proportions = [...byName.entries()].sort((a, b) => b[1] - a[1]);
-  const rows = state.investments.map((it) => `<div class="wallet-row">
-    <div><b>${escapeHtml(it.name || 'Инвестиция')}</b><div class="muted small">${it.date ? fmtDate(it.date) : 'без даты'}</div></div>
-    <div class="stat-value sm">${fmt(it.amount)}</div>
-  </div>`).join('');
+  const p = state.portfolio;
+  const tabs = [
+    { key: 'overview', label: 'Обзор' },
+    { key: 'assets', label: 'Активы' },
+    { key: 'transactions', label: 'Операции' },
+    { key: 'valuations', label: 'Оценки' },
+  ];
+  const tabBtns = tabs.map(t => `<button class="chip ${state.invTab === t.key ? 'active' : ''}" data-inv-tab="${t.key}">${t.label}</button>`).join('');
+
+  let content = '';
+  if (state.invTab === 'overview') content = investOverview(p);
+  else if (state.invTab === 'assets') content = investAssets(p);
+  else if (state.invTab === 'transactions') content = investTransactions(p);
+  else if (state.invTab === 'valuations') content = investValuations(p);
+
   return `<div class="view-head row-between">
-    <div><h1>Инвестиции</h1><p>Отдельный журнал: раз в месяц вписывайте, куда и сколько вложили.</p></div>
-    <button class="btn btn-primary" data-act="add-investment">+ Добавить</button>
+    <div><h1>Инвестиции</h1><p>Отслеживайте активы, покупки/продажи и рыночную стоимость.</p></div>
   </div>
+  <div class="chip-row" style="margin-bottom:14px">${tabBtns}</div>
+  <div id="investContent">${content}</div>`;
+}
+function investOverview(p) {
+  if (!p || !p.assets.length) return '<div class="empty"><div class="big">↗</div><p>Добавьте первый актив, чтобы увидеть портфель.</p></div>';
+  const total = p.totals;
+  const allocations = p.assets.map(a => `<div class="prop-row"><div class="row-between small"><b>${escapeHtml(a.name)}</b><span>${total.totalValue ? Math.round((a.currentValue / total.totalValue) * 100) : 0}%</span></div><div class="goal-mini"><div style="width:${total.totalValue ? (a.currentValue / total.totalValue) * 100 : 0}%"></div></div><div class="muted small">${fmt(a.currentValue)} · ${a.type}</div></div>`).join('');
+  return `
   <div class="grid cards">
-    <div class="card"><div class="stat-label">Всего инвестировано</div><div class="stat-value">${fmt(total)}</div></div>
-    <div class="card"><div class="stat-label">Записей</div><div class="stat-value sm">${state.investments.length}</div></div>
+    <div class="card"><div class="stat-label">Стоимость портфеля</div><div class="stat-value">${fmt(total.totalValue)}</div></div>
+    <div class="card"><div class="stat-label">Вложено</div><div class="stat-value sm">${fmt(total.totalInvested)}</div></div>
+    <div class="card"><div class="stat-label">Прибыль / Убыток</div><div class="stat-value sm ${total.totalPnL >= 0 ? 'green-num' : 'red-num'}">${fmt(total.totalPnL)}</div></div>
   </div>
-  <div class="chart-cols" style="margin-top:16px">
-    <div class="card pad-lg"><div class="stat-label">График по месяцам</div>${state.investments.length ? '<canvas id="investBars" class="chart-line"></canvas>' : '<div class="chart-empty muted">Добавьте первый monthly update.</div>'}</div>
-    <div class="card pad-lg"><div class="stat-label">Пропорции</div>
-      ${proportions.length ? proportions.map(([name, amount]) => `<div class="prop-row"><div class="row-between small"><b>${escapeHtml(name)}</b><span>${Math.round((amount / total) * 100)}%</span></div><div class="goal-mini"><div style="width:${(amount / total) * 100}%"></div></div><div class="muted small">${fmt(amount)}</div></div>`).join('') : '<p class="muted">Пока нет инвестиций.</p>'}
+  <div class="card pad-lg" style="margin-top:16px">
+    <div class="row-between"><div class="stat-label">Распределение портфеля</div></div>
+    <div style="margin-top:14px">${allocations}</div>
+    <div class="chart-cols" style="margin-top:16px">
+      <div><canvas id="investBars" class="chart-line"></canvas></div>
     </div>
-  </div>
-  <div class="section-title">История апдейтов</div>
-  ${rows || '<p class="muted">Пока нет записей.</p>'}`;
+  </div>`;
+}
+function investAssets(p) {
+  const rows = p ? p.assets.map(a => `<div class="wallet-row">
+    <div><b>${escapeHtml(a.name)}</b><div class="muted small">${a.type}${a.ticker ? ' · ' + a.ticker : ''}</div></div>
+    <div style="min-width:200px">
+      <div class="row-between small"><span>${fmt(a.currentValue)}</span><span class="${a.totalPnL >= 0 ? 'green-num' : 'red-num'}">${a.totalPnL >= 0 ? '+' : ''}${fmt(a.totalPnL)}</span></div>
+      <div class="muted small">кол-во: ${a.quantityHeld} · вложено: ${fmt(a.totalInvested)}</div>
+    </div>
+  </div>`).join('') : '';
+  return `<div class="card pad-lg"><div class="row-between"><div class="section-title" style="margin:0">Активы</div><button class="btn btn-primary btn-sm" data-act="add-asset">+ Актив</button></div>
+    <div style="margin-top:14px">${rows || '<p class="muted">Нет активов.</p>'}</div></div>`;
+}
+function investTransactions(p) {
+  const rows = p ? p.transactions.map(t => {
+    const asset = p.assets.find(a => a.id === t.assetId);
+    return `<div class="wallet-row">
+      <div><b>${escapeHtml(asset?.name || t.assetId)}</b><div class="muted small">${fmtDate(t.date)} · ${t.type === 'buy' ? 'Покупка' : 'Продажа'}</div></div>
+      <div style="min-width:180px">
+        <div class="row-between small"><span>${t.quantity} × ${fmt(t.price)}</span><span>${fmt(t.totalAmount)}</span></div>
+        <div class="muted small">комиссия: ${fmt(t.fee)}${t.note ? ' · ' + escapeHtml(t.note) : ''}</div>
+      </div>
+    </div>`;
+  }).join('') : '';
+  return `<div class="card pad-lg"><div class="row-between"><div class="section-title" style="margin:0">Операции покупки/продажи</div><button class="btn btn-primary btn-sm" data-act="add-tx">+ Операция</button></div>
+    <div style="margin-top:14px">${rows || '<p class="muted">Нет операций.</p>'}</div></div>`;
+}
+function investValuations(p) {
+  const rows = p ? p.valuations.map(v => {
+    const asset = p.assets.find(a => a.id === v.assetId);
+    return `<div class="wallet-row">
+      <div><b>${escapeHtml(asset?.name || v.assetId)}</b><div class="muted small">${fmtDate(v.date)}${v.note ? ' · ' + escapeHtml(v.note) : ''}</div></div>
+      <div class="stat-value sm">${fmt(v.value)}</div>
+    </div>`;
+  }).join('') : '';
+  return `<div class="card pad-lg"><div class="row-between"><div class="section-title" style="margin:0">Ежемесячные оценки</div><button class="btn btn-primary btn-sm" data-act="add-valuation">+ Оценка</button></div>
+    <div style="margin-top:14px">${rows || '<p class="muted">Добавьте оценку стоимости актива.</p>'}</div></div>`;
 }
 
 function viewWallets() {
@@ -682,14 +685,8 @@ function viewWallets() {
   const rows = state.wallets.map((w) => `<div class="wallet-row">
     <div><b>${escapeHtml(w.name || 'Кошелёк')}</b><div class="muted small">${escapeHtml(w.purpose || 'на этот месяц')}</div></div>
     <div style="min-width:170px"><div class="row-between small"><span>${fmt(w.amount)}</span><b>${total ? Math.round((w.amount / total) * 100) : 0}%</b></div><div class="goal-mini"><div style="width:${total ? (w.amount / total) * 100 : 0}%"></div></div></div>
+    <button class="btn btn-sm btn-danger" data-act="delete-wallet" data-id="${w.id}" title="Удалить">×</button>
   </div>`).join('');
-  const goals = state.items.filter((it) => goalProgress(it).saved > 0 || goalProgress(it).left > 0)
-    .sort((a, b) => goalProgress(b).pct - goalProgress(a).pct)
-    .slice(0, 6)
-    .map((it) => {
-      const gp = goalProgress(it);
-      return `<div class="wallet-row"><div><b>${escapeHtml(it.title)}</b><div class="muted small">желание на ${fmt(it.cost)}</div></div><div style="min-width:180px"><div class="row-between small"><span>${fmt(gp.saved)}</span><b>${gp.pct}%</b></div><div class="goal-mini"><div style="width:${gp.pct}%"></div></div></div></div>`;
-    }).join('');
   return `<div class="view-head row-between">
     <div><h1>Кошельки месяца</h1><p>Карманы с суммой и назначением именно на текущий месяц.</p></div>
     <button class="btn btn-primary" data-act="add-wallet">+ Кошелёк</button>
@@ -698,10 +695,7 @@ function viewWallets() {
     <div class="card"><div class="stat-label">В кошельках</div><div class="stat-value">${fmt(total)}</div><div class="stat-sub">${state.wallets.length} карманов</div></div>
     <div class="card"><div class="stat-label">Излишки после стабильных пунктов</div><div class="stat-value sm">${fmt(available)}</div><div class="stat-sub">${total > available ? 'кошельки выше излишков' : 'в пределах излишков'}</div></div>
   </div>
-  <div class="chart-cols" style="margin-top:16px">
-    <div class="card pad-lg"><div class="section-title" style="margin-top:0">Карманы</div>${rows || '<p class="muted">Создайте карманы: еда, транспорт, желание, инвестиции...</p>'}</div>
-    <div class="card pad-lg"><div class="section-title" style="margin-top:0">Накопления на желания</div>${goals || '<p class="muted">Нажмите «Копить» в желаниях, чтобы видеть прогресс.</p>'}</div>
-  </div>`;
+  <div class="card pad-lg" style="margin-top:16px"><div class="section-title" style="margin-top:0">Карманы</div>${rows || '<p class="muted">Создайте карманы: еда, транспорт, инвестиции...</p>'}</div>`;
 }
 
 function viewPlan() {
@@ -709,7 +703,8 @@ function viewPlan() {
   const a = state.allocation;
   const available = a.totals.availableToAllocate;
   const planned = manualPlanTotal();
-  const manualRows = state.items.map((it) => {
+  const sortedItems = [...state.items].sort((a, b) => (Number(b.cost) || 0) - (Number(a.cost) || 0));
+  const manualRows = sortedItems.map((it) => {
     const amount = manualAmountFor(it.id);
     const gp = goalProgress(it);
     return `<div class="manual-row">
@@ -741,59 +736,6 @@ function viewPlan() {
       ${a.deferred.length ? a.deferred.map((x) => queueItemRow(x.item, '', x.reason)).join('') : '<p class="muted">Всё помещается — отложенного нет.</p>'}
     </div>
   </div>`;
-}
-
-function viewScenarios() {
-  if (!state.scenarios.length) return `<div class="view-head"><h1>Сценарии</h1></div>${noPlanBlock()}`;
-  const compareRows = [
-    ['Карьера', (s) => fmtShort(s.career)],
-    ['Жизнь', (s) => fmtShort(s.quality)],
-    ['Буфер', (s) => fmtShort(s.reserve)],
-    ['Распределено', (s) => fmtShort(s.allocated)],
-    ['Останется', (s) => fmtShort(s.remaining)],
-    ['Одобрено', (s) => s.includedCount],
-    ['Отложено', (s) => s.excludedCount],
-  ];
-  const cards = state.scenarios.map((s) => {
-    const total = state.allocation?.totals?.availableToAllocate || (s.allocated + s.remaining || 1);
-    const bars = Object.entries(s.buckets).filter(([, v]) => v > 0)
-      .map(([k, v]) => `<div style="width:${(v / total) * 100}%;background:${bucketColor(k)}"></div>`).join('');
-    const weights = s.weights ? Object.entries(s.weights).map(([k, v]) => `<span class="muted">${layerLabel(k)} ${v}%</span>`).join('') : '<span class="muted">ручной выбор покупок</span>';
-    return `<div class="card scn-card ${s.key === state.scenario ? 'active' : ''}" data-act="pick-scenario" data-key="${s.key}">
-      <div class="row-between"><div class="scn-name">${s.label}</div>
-        <span class="status-badge status-${s.status}">${STATUS_LABELS[s.status]}</span></div>
-      <div class="bucket-bar">${bars}<div style="flex:1;background:#142244"></div></div>
-      <div class="legend small">
-        <span class="muted">Карьера: ${fmtShort(s.career)}</span>
-        <span class="muted">Желания-инвест: ${fmtShort(s.investment)}</span>
-        <span class="muted">Жизнь: ${fmtShort(s.quality)}</span>
-        <span class="muted">Резерв: ${fmtShort(s.reserve)}</span>
-        <span class="muted">Стабильные инвест: ${fmtShort(s.fixedInvestment || 0)}</span>
-      </div>
-      <div class="legend small scenario-weights">${weights}</div>
-      <div style="margin-top:10px;display:flex;justify-content:space-between">
-        <span class="muted small">Включено ${s.includedCount} · позже ${s.excludedCount}</span>
-        <b class="green-num">${fmt(s.remaining)}</b>
-      </div>
-    </div>`;
-  }).join('');
-
-  return `
-  <div class="view-head"><h1>Сценарии месяца</h1><p>Сравнение стратегий по излишкам после стабильных пунктов: обязательные расходы, страховка и инвестиции уже вычтены из зарплаты.</p></div>
-  <div class="grid scn-grid">${cards}</div>
-  <div class="section-title">Сравнение бок о бок</div>
-  <div class="table-wrap"><table class="scenario-compare"><thead><tr><th>Метрика</th>${state.scenarios.map((s) => `<th>${escapeHtml(s.label)}</th>`).join('')}</tr></thead>
-    <tbody>${compareRows.map(([label, fn]) => `<tr><td><b>${label}</b></td>${state.scenarios.map((s) => `<td>${fn(s)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
-  ${state.scenario === 'custom' ? customScenarioEditor() : ''}`;
-}
-
-function customScenarioEditor() {
-  const rows = state.items.map((it) => `<label class="queue-item" style="cursor:pointer">
-    <div class="qi-main"><div class="qi-title">${escapeHtml(it.title)} <span class="tag tag-${it.type}">${TYPE_LABELS[it.type]}</span></div>
-      <div class="qi-meta">${catLabel(it.category)} · ${fmt(it.cost)}</div></div>
-    <input type="checkbox" data-cust="${it.id}" ${state.customInclude.includes(it.id) ? 'checked' : ''} style="width:18px;height:18px;accent-color:var(--accent)">
-  </label>`).join('');
-  return `<div class="section-title">Свой сценарий — выберите покупки вручную</div>${rows || '<p class="muted">Добавьте желания в очередь.</p>'}`;
 }
 
 function viewHistory() {
@@ -893,22 +835,21 @@ function bindViewEvents() {
       if (act === 'open-plan') openPlanModal();
       else if (act === 'add-item') openItemModal();
       else if (act === 'save-goal') openSavingsModal(state.items.find((i) => i.id === id));
-      else if (act === 'add-investment') openInvestmentModal();
+      else if (act === 'add-asset') openAssetModal();
+      else if (act === 'add-tx') openTxModal();
+      else if (act === 'add-valuation') openValuationModal();
       else if (act === 'add-wallet') openWalletModal();
       else if (act === 'save-manual-plan') saveManualPlan();
       else if (act === 'edit') openItemModal(state.items.find((i) => i.id === id));
       else if (act === 'bought') await markBought(id);
       else if (act === 'tradeoff') await showTradeoff(id);
       else if (act === 'close-month') closeMonth();
-      else if (act === 'pick-scenario') pickScenario(el.dataset.key);
       else if (act === 'ai-explain') await explainItem(id);
-      else if (act === 'ai-tip') await loadAiTip();
-      else if (act === 'apply-whatif') await applyWhatIf();
       else if (act === 'delete') await deleteItem(id);
+      else if (act === 'delete-wallet') await deleteWallet(el.dataset.id);
     });
   });
   $$('.queue-swipe').forEach((row) => bindSwipe(row));
-  $('#whatIfSalary')?.addEventListener('input', updateWhatIf);
   $('#quickAddForm')?.addEventListener('submit', quickAddItem);
   $$('.th-sort').forEach((btn) => btn.addEventListener('click', () => {
     const key = btn.dataset.sort;
@@ -920,9 +861,12 @@ function bindViewEvents() {
     state.queueSort = { key, dir };
     renderView();
   });
-  $$('[data-cust]').forEach((cb) => cb.addEventListener('change', saveCustomScenario));
   $$('[data-filter]').forEach((el) => el.addEventListener('input', () => {
     state.queueFilters[el.dataset.filter] = el.value;
+    renderView();
+  }));
+  $$('[data-inv-tab]').forEach((btn) => btn.addEventListener('click', () => {
+    state.invTab = btn.dataset.invTab;
     renderView();
   }));
 }
@@ -943,39 +887,6 @@ async function quickAddItem(e) {
   });
   toast('Желание добавлено');
   await refresh();
-}
-
-async function updateWhatIf(e) {
-  const salary = +e.target.value;
-  state.whatIf = await api.post('/api/whatif', { salary, scenario: state.scenario });
-  renderView();
-}
-
-async function applyWhatIf() {
-  if (!state.whatIf?.plan) return;
-  const p = state.whatIf.plan;
-  await api.post('/api/plan', {
-    name: p.name,
-    payday: p.payday,
-    salary: p.salary,
-    survivalCost: p.survivalCost,
-    buffer: p.buffer,
-    investmentFixed: p.investmentFixed,
-  });
-  state.whatIf = null;
-  toast('Зарплата применена');
-  await refresh();
-}
-
-async function loadAiTip() {
-  const box = $('#aiTipBox');
-  box.textContent = 'AI думает…';
-  try {
-    const out = await api.get(`/api/ai/tip?scenario=${state.scenario}`);
-    box.textContent = out.reply || 'Нет ответа.';
-  } catch (ex) {
-    box.textContent = 'AI недоступен: ' + ex.message;
-  }
 }
 
 async function exportData() {
@@ -1024,7 +935,7 @@ function bindSwipe(row) {
 
 async function showTradeoff(id) {
   const box = $('#tradeoffBox');
-  const t = await api.get(`/api/tradeoff/${id}?scenario=${state.scenario}`);
+  const t = await api.get(`/api/tradeoff/${id}?scenario=balanced`);
   const item = state.items.find((i) => i.id === id);
   let html;
   if (t.approved) {
@@ -1042,7 +953,7 @@ async function explainItem(id) {
   const box = $('#tradeoffBox');
   box.innerHTML = '<div class="tradeoff">AI думает…</div>';
   try {
-    const out = await api.post('/api/ai/explain', { itemId: id, scenario: state.scenario });
+    const out = await api.post('/api/ai/explain', { itemId: id, scenario: 'balanced' });
     box.innerHTML = `<div class="tradeoff"><b>Почему так:</b><br>${escapeHtml(out.reply)}</div>`;
   } catch (ex) {
     box.innerHTML = `<div class="tradeoff">AI недоступен: ${escapeHtml(ex.message)}</div>`;
@@ -1059,22 +970,16 @@ async function saveManualPlan() {
 
 async function closeMonth() {
   if (!confirm('Закрыть месяц? Одобренные покупки уйдут в архив (купленные), отложенные останутся в очереди на следующую зарплату.')) return;
-  await api.post('/api/plan/close', { scenario: state.scenario });
+  await api.post('/api/plan/close', { scenario: 'balanced' });
   toast('Месяц закрыт и сохранён в истории');
   await refresh();
 }
 
-async function pickScenario(key) {
-  state.scenario = key;
-  state.whatIf = null;
+async function deleteWallet(id) {
+  if (!confirm('Удалить кошелёк?')) return;
+  await api.del(`/api/wallets/${id}`);
+  toast('Кошелёк удалён');
   await refresh();
-}
-
-async function saveCustomScenario() {
-  const ids = $$('[data-cust]').filter((c) => c.checked).map((c) => Number(c.dataset.cust));
-  state.customInclude = ids;
-  await api.post('/api/custom-scenario', { includeIds: ids });
-  if (state.scenario === 'custom') await refresh();
 }
 
 // ============================================================
@@ -1175,24 +1080,75 @@ function openSavingsModal(item) {
   });
 }
 
-function openInvestmentModal() {
+function openAssetModal() {
   openModal(`<div class="modal narrow">
-    <div class="modal-head"><h2>Добавить инвестицию</h2><button class="close-x" onclick="document.getElementById('modalRoot').innerHTML=''">×</button></div>
-    <form id="investmentForm" class="form-grid">
-      <div class="field full"><label>Куда вложил</label><input name="name" placeholder="ETF, депозит, крипта..." required /></div>
-      <div class="field"><label>Сумма, грн</label><input type="number" name="amount" min="0" required /></div>
-      <div class="field"><label>Дата апдейта</label><input type="date" name="date" value="${new Date().toISOString().slice(0, 10)}" /></div>
+    <div class="modal-head"><h2>Добавить актив</h2><button class="close-x" onclick="document.getElementById('modalRoot').innerHTML=''">×</button></div>
+    <form id="assetForm" class="form-grid">
+      <div class="field full"><label>Название</label><input name="name" placeholder="BTC, ETF, депозит..." required /></div>
+      <div class="field"><label>Тип</label><select name="type"><option value="crypto">Крипто</option><option value="stock">Акция</option><option value="etf">ETF</option><option value="bond">Облигация</option><option value="deposit">Депозит</option><option value="other">Другое</option></select></div>
+      <div class="field"><label>Тикер (опц.)</label><input name="ticker" placeholder="BTC, AAPL..." /></div>
       <div class="modal-foot field full" style="flex-direction:row">
         <button type="button" class="btn btn-ghost" onclick="document.getElementById('modalRoot').innerHTML=''">Отмена</button>
         <button type="submit" class="btn btn-primary">Сохранить</button>
       </div>
     </form></div>`);
-  $('#investmentForm').addEventListener('submit', async (e) => {
+  $('#assetForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
-    const investments = [{ id: Date.now(), name: f.get('name'), amount: +f.get('amount'), date: f.get('date') }, ...state.investments];
-    await api.post('/api/investments', { investments });
-    closeModal(); toast('Инвестиция добавлена'); await refresh();
+    await api.post('/api/investments/assets', { name: f.get('name'), type: f.get('type'), ticker: f.get('ticker') });
+    closeModal(); toast('Актив добавлен'); await refresh();
+  });
+}
+
+function openTxModal() {
+  const assetOpts = (state.portfolio?.assets || []).map(a => `<option value="${a.id}">${escapeHtml(a.name)}</option>`).join('');
+  openModal(`<div class="modal narrow">
+    <div class="modal-head"><h2>Операция покупки/продажи</h2><button class="close-x" onclick="document.getElementById('modalRoot').innerHTML=''">×</button></div>
+    <form id="txForm" class="form-grid">
+      <div class="field full"><label>Актив</label><select name="assetId" required>${assetOpts || '<option>Сначала добавьте актив</option>'}</select></div>
+      <div class="field"><label>Тип</label><select name="type"><option value="buy">Покупка</option><option value="sell">Продажа</option></select></div>
+      <div class="field"><label>Дата</label><input type="date" name="date" value="${new Date().toISOString().slice(0, 10)}" /></div>
+      <div class="field"><label>Количество</label><input type="number" name="quantity" min="0" step="any" required /></div>
+      <div class="field"><label>Цена за единицу</label><input type="number" name="price" min="0" step="any" required /></div>
+      <div class="field"><label>Комиссия</label><input type="number" name="fee" min="0" step="any" value="0" /></div>
+      <div class="field full"><label>Заметка</label><input name="note" /></div>
+      <div class="modal-foot field full" style="flex-direction:row">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modalRoot').innerHTML=''">Отмена</button>
+        <button type="submit" class="btn btn-primary">Сохранить</button>
+      </div>
+    </form></div>`);
+  $('#txForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    await api.post('/api/investments/transactions', {
+      assetId: f.get('assetId'), type: f.get('type'), date: f.get('date'),
+      quantity: +f.get('quantity'), price: +f.get('price'), fee: +f.get('fee'), note: f.get('note'),
+    });
+    closeModal(); toast('Операция сохранена'); await refresh();
+  });
+}
+
+function openValuationModal() {
+  const assetOpts = (state.portfolio?.assets || []).map(a => `<option value="${a.id}">${escapeHtml(a.name)}</option>`).join('');
+  openModal(`<div class="modal narrow">
+    <div class="modal-head"><h2>Ежемесячная оценка</h2><button class="close-x" onclick="document.getElementById('modalRoot').innerHTML=''">×</button></div>
+    <form id="valForm" class="form-grid">
+      <div class="field full"><label>Актив</label><select name="assetId" required>${assetOpts || '<option>Сначала добавьте актив</option>'}</select></div>
+      <div class="field"><label>Дата</label><input type="date" name="date" value="${new Date().toISOString().slice(0, 10)}" /></div>
+      <div class="field"><label>Текущая стоимость</label><input type="number" name="value" min="0" required /></div>
+      <div class="field full"><label>Заметка</label><input name="note" /></div>
+      <div class="modal-foot field full" style="flex-direction:row">
+        <button type="button" class="btn btn-ghost" onclick="document.getElementById('modalRoot').innerHTML=''">Отмена</button>
+        <button type="submit" class="btn btn-primary">Сохранить</button>
+      </div>
+    </form></div>`);
+  $('#valForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    await api.post('/api/investments/valuations', {
+      assetId: f.get('assetId'), date: f.get('date'), value: +f.get('value'), note: f.get('note'),
+    });
+    closeModal(); toast('Оценка сохранена'); await refresh();
   });
 }
 
