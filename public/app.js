@@ -499,12 +499,6 @@ function viewDashboard() {
     </div>
     ${t.status === 'overallocated' ? `<div class="tradeoff" style="background:color-mix(in srgb,var(--red) 10%,transparent);border-color:var(--red)"><b style="color:var(--red)">Перерасход.</b> Стабильные пункты и желания выше зарплаты — посмотрите «План распределения», что перенести.</div>` : ''}
   </div>
-
-  <div class="section-title">Одобрено в этой зарплате · ${state.allocation.approved.length}</div>
-  ${state.allocation.approved.length ? state.allocation.approved.map((a) => queueItemRow(a.item, `Остаток после: ${fmt(a.balanceAfter)}`)).join('') : '<p class="muted">Пока ничего не одобрено — добавьте желания в очередь.</p>'}
-
-  ${state.allocation.deferred.length ? `<div class="section-title">Перенести на потом · ${state.allocation.deferred.length}</div>
-    ${state.allocation.deferred.map((d) => queueItemRow(d.item, '', d.reason)).join('')}` : ''}
   `;
 }
 
@@ -724,16 +718,6 @@ function viewPlan() {
     <div class="row-between" style="margin-top:12px">
       <span class="${planned > available ? 'red-num' : 'muted'}">${planned > available ? 'План выше доступного бюджета' : `Свободно ещё ${fmt(available - planned)}`}</span>
       <button class="btn btn-primary" data-act="save-manual-plan">Сохранить ручной план</button>
-    </div>
-  </div>
-  <div class="plan-cols">
-    <div>
-      <div class="section-title green-num">Авто-подсказка · поместится ${a.approved.length}</div>
-      ${a.approved.length ? a.approved.map((x) => queueItemRow(x.item, `Остаток после покупки: ${fmt(x.balanceAfter)}`)).join('') : '<p class="muted">Ничего не одобрено.</p>'}
-    </div>
-    <div>
-      <div class="section-title amber-num">Перенести на потом · ${a.deferred.length}</div>
-      ${a.deferred.length ? a.deferred.map((x) => queueItemRow(x.item, '', x.reason)).join('') : '<p class="muted">Всё помещается — отложенного нет.</p>'}
     </div>
   </div>`;
 }
