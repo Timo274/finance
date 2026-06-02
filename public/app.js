@@ -867,7 +867,7 @@ function investAssets(p) {
     ? p.assets
         .map(
           (a) => `<div class="wallet-row">
-    <div><b>${escapeHtml(a.name)}</b><div class="muted small">${a.type}${a.ticker ? " · " + a.ticker : ""}</div></div>
+    <div><b>${escapeHtml(a.name)}</b><div class="muted small">${a.type}${a.ticker ? " · " + a.ticker : ""}${a.currency ? " · цены " + escapeHtml(a.currency) : ""}</div></div>
     <div style="min-width:200px">
       <div class="row-between small"><span>${fmt(a.currentValue)}</span><span class="${a.totalPnL >= 0 ? "green-num" : "red-num"}">${a.totalPnL >= 0 ? "+" : ""}${fmt(a.totalPnL)}</span></div>
       <div class="muted small">кол-во: ${a.quantityHeld} · вложено: ${fmt(a.totalInvested)}</div>
@@ -1225,6 +1225,14 @@ async function importData(e) {
     const file = e.target.files?.[0];
     if (!file) return;
     const data = JSON.parse(await file.text());
+    const isFullBackup = Array.isArray(data.plans) && Array.isArray(data.items);
+    if (
+      isFullBackup &&
+      !confirm(
+        "Это полный backup. Текущие планы, желания, кошельки и инвестиции будут заменены. Продолжить?",
+      )
+    )
+      return;
     const result = await api.post("/api/import", data);
     closeModal();
     toast(result.mode === "full" ? "Backup восстановлен" : "Импортировано");
@@ -1522,6 +1530,8 @@ function openAssetModal() {
       <div class="field full"><label>Название</label><input name="name" placeholder="BTC, ETF, депозит..." required /></div>
       <div class="field"><label>Тип</label><select name="type"><option value="crypto">Крипто</option><option value="stock">Акция</option><option value="etf">ETF</option><option value="bond">Облигация</option><option value="deposit">Депозит</option><option value="other">Другое</option></select></div>
       <div class="field"><label>Тикер (опц.)</label><input name="ticker" placeholder="BTC, AAPL..." /></div>
+      <div class="field full"><label>Валюта автоцен</label><select name="currency"><option value="USD">USD — внешние цены конвертировать в грн</option><option value="UAH">UAH — цена уже в гривне</option></select>
+        <span class="hint">Покупки и ручные оценки вводите в гривнах; поле нужно для автообновления цен.</span></div>
       <div class="modal-foot field full" style="flex-direction:row">
         <button type="button" class="btn btn-ghost" onclick="document.getElementById('modalRoot').innerHTML=''">Отмена</button>
         <button type="submit" class="btn btn-primary">Сохранить</button>
@@ -1534,6 +1544,7 @@ function openAssetModal() {
       name: f.get("name"),
       type: f.get("type"),
       ticker: f.get("ticker"),
+      currency: f.get("currency"),
     });
     closeModal();
     toast("Актив добавлен");

@@ -825,7 +825,9 @@ app.post("/api/investments/assets", requireAuth, (req, res) => {
     name: assetName,
     type: String(type || "other").trim(),
     ticker: ticker ? String(ticker).trim() : null,
-    currency: currency ? String(currency).trim() : null,
+    currency: ["USD", "UAH"].includes(String(currency || "USD").toUpperCase())
+      ? String(currency || "USD").toUpperCase()
+      : "USD",
   });
   res.json(getPortfolio());
 });
@@ -1262,7 +1264,11 @@ function restoreFullBackup(data) {
       name: String(asset.name || "Актив"),
       type: String(asset.type || "other"),
       ticker: asset.ticker ? String(asset.ticker) : null,
-      currency: asset.currency ? String(asset.currency) : null,
+      currency: ["USD", "UAH"].includes(
+        String(asset.currency || "USD").toUpperCase(),
+      )
+        ? String(asset.currency || "USD").toUpperCase()
+        : "USD",
     });
     assetIds.add(id);
   }

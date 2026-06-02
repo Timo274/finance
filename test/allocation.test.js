@@ -254,4 +254,23 @@ describe("tradeoff", () => {
     assert.equal(t.approved, true); // Must is protected, gets approved
     assert.equal(t.freedIfRemoved, 5000);
   });
+
+  it("uses remaining cost in tradeoff when savings exist", () => {
+    const items = [
+      makeItem({
+        id: 1,
+        title: "Saved must",
+        cost: 5000,
+        savedAmount: 3500,
+        type: "must",
+        priority: 5,
+        layer: "quality",
+      }),
+    ];
+    const t = tradeoff(1, basePlan, items, {});
+    assert.ok(t);
+    assert.equal(t.approved, true);
+    assert.equal(t.freedIfRemoved, 1500);
+    assert.equal(t.remainingIfRemoved, t.remainingIfKept + 1500);
+  });
 });
