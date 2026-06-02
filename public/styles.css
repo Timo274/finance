@@ -369,15 +369,21 @@ tbody tr:last-child td { border-bottom: none; }
 /* assistant */
 .chat { display: flex; flex-direction: column; height: calc(100vh - 210px); min-height: 360px; }
 .chat-log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 4px; }
-.msg { max-width: 80%; padding: 11px 14px; border-radius: 14px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
+.msg { max-width: 80%; padding: 11px 14px; border-radius: 14px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
 .msg.user { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
 .msg.bot { align-self: flex-start; background: var(--panel-2); border: 1px solid var(--border-soft); border-bottom-left-radius: 4px; }
+.msg code { background: rgba(0,0,0,.08); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+.msg b { font-weight: 700; }
+@keyframes blink { 0%, 100% { opacity: 1 } 50% { opacity: .3 } }
+.typing { font-size: 22px; line-height: 1; animation: blink .9s infinite; color: var(--muted); }
 .chat-input { display: flex; gap: 10px; margin-top: 14px; }
 .chat-input input { flex: 1; min-width: 0; background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px; color: var(--text); font-size: 14px; }
 .chat-input input:focus { outline: none; border-color: var(--accent); }
 .chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
-.chip { font-size: 12.5px; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel); color: var(--muted); }
+.chip { font-size: 12.5px; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel); color: var(--muted); cursor: pointer; }
 .chip:hover { border-color: var(--accent); color: var(--accent); }
+.chip-clear { color: var(--muted-2); font-size: 11px; opacity: .6; }
+.chip-clear:hover { opacity: 1; border-color: var(--red); color: var(--red); }
 
 /* empty state */
 .empty { text-align: center; padding: 50px 20px; color: var(--muted); }

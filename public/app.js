@@ -774,17 +774,37 @@ function viewHistory() {
 
 // ---------- assistant ----------
 let chatHistory = [];
+function loadChatHistory() {
+  try { const saved = localStorage.getItem('chatHistory'); if (saved) chatHistory = JSON.parse(saved); } catch {}
+}
+function saveChatHistory() {
+  try { localStorage.setItem('chatHistory', JSON.stringify(chatHistory.slice(-50))); } catch {}
+}
+loadChatHistory();
+
+function md(text) {
+  return escapeHtml(text)
+    .replace(/\*\*(.+?)\*\*/g, '<b>$1</b>')
+    .replace(/`(.+?)`/g, '<code>$1</code>')
+    .replace(/^- (.+)/gm, '• $1')
+    .replace(/\n/g, '<br>');
+}
+
 function viewAssistant() {
   const enabled = state.meta?.ai?.enabled;
   return `<div class="view-head"><h1>AI-ассистент</h1><p>Советует, что купить первым, что отложить и поясняет trade-off на основе твоего плана.</p></div>
   ${!enabled ? `<div class="tradeoff" style="background:rgba(245,177,61,.1);border-color:var(--amber)"><b style="color:var(--amber)">AI выключен.</b> Добавьте AI_PROVIDER и AI_API_KEY в окружение сервера, чтобы включить ассистента. Остальное приложение работает без него.</div>` : ''}
-  <div class="chat">
+  <div class="chat" id="assistantRoot">
     <div class="chip-row">
       <button class="chip" data-q="Что мне купить в первую очередь в этом месяце?">Что купить первым?</button>
       <button class="chip" data-q="Что лучше отложить на следующую зарплату и почему?">Что отложить?</button>
       <button class="chip" data-q="Мой план выглядит сбалансированным? Дай короткую оценку.">Оценка плана</button>
+      <button class="chip" data-q="Как дела у моего инвестиционного портфеля? Дай краткий анализ.">Портфель</button>
+      <button class="chip" data-q="Посмотри мои финансы в целом. Что советуешь улучшить?">Общий совет</button>
+      <button class="chip chip-clear" data-act="clear-chat">✕ Очистить</button>
     </div>
     <div class="chat-log" id="chatLog"></div>
+    <div class="chip-row" id="suggestions" style="margin-bottom:8px"></div>
     <form class="chat-input" id="chatForm">
       <input id="chatInput" placeholder="Спросите про свой план..." ${enabled ? '' : 'disabled'} autocomplete="off" />
       <button class="btn btn-primary" type="submit" ${enabled ? '' : 'disabled'}>Спросить</button>
@@ -793,9 +813,12 @@ function viewAssistant() {
 }
 function initAssistant() {
   const log = $('#chatLog');
-  log.innerHTML = chatHistory.map((m) => `<div class="msg ${m.role === 'user' ? 'user' : 'bot'}">${escapeHtml(m.content)}</div>`).join('');
+  log.innerHTML = chatHistory.map((m) => `<div class="msg ${m.role}">${md(m.content)}</div>`).join('');
   log.scrollTop = log.scrollHeight;
-  $$('.chip').forEach((c) => c.addEventListener('click', () => { $('#chatInput').value = c.dataset.q; $('#chatForm').requestSubmit(); }));
+  $$('#assistantRoot .chip').forEach((c) => {
+    if (c.dataset.act === 'clear-chat') return;
+    c.addEventListener('click', () => { $('#chatInput').value = c.dataset.q; $('#chatForm').requestSubmit(); });
+  });
   $('#chatForm')?.addEventListener('submit', sendChat);
 }
 async function sendChat(e) {
@@ -805,9 +828,11 @@ async function sendChat(e) {
   if (!text) return;
   input.value = '';
   chatHistory.push({ role: 'user', content: text });
+  saveChatHistory();
   const log = $('#chatLog');
-  log.innerHTML += `<div class="msg user">${escapeHtml(text)}</div><div class="msg bot" id="pending">…</div>`;
+  log.innerHTML += `<div class="msg user">${md(text)}</div><div class="msg bot" id="pending"><span class="typing">…</span></div>`;
   log.scrollTop = log.scrollHeight;
+  document.getElementById('suggestions').innerHTML = '';
   try {
     const res = await fetch('/api/ai/chat/stream', {
       method: 'POST',
@@ -823,13 +848,24 @@ async function sendChat(e) {
       const { value, done } = await reader.read();
       if (done) break;
       reply += dec.decode(value, { stream: true });
-      pending.textContent = reply;
+      pending.innerHTML = md(reply);
       log.scrollTop = log.scrollHeight;
     }
     chatHistory.push({ role: 'assistant', content: reply });
+    saveChatHistory();
     pending.removeAttribute('id');
+    // suggested follow-ups
+    const sug = document.getElementById('suggestions');
+    const followUps = [
+      'А что конкретно мне отложить?',
+      'Какие риски я не учёл?',
+      'Сколько останется после всего?',
+      'Посоветуй, что изменить в плане',
+    ];
+    sug.innerHTML = followUps.map(q => `<button class="chip" data-q="${escapeAttr(q)}">${escapeHtml(q)}</button>`).join('');
+    sug.querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => { $('#chatInput').value = b.dataset.q; $('#chatForm').requestSubmit(); }));
   } catch (ex) {
-    $('#pending').outerHTML = `<div class="msg bot">Ошибка ассистента: ${escapeHtml(ex.message)}</div>`;
+    $('#pending').outerHTML = `<div class="msg bot">❌ ${escapeHtml(ex.message)}<br><button class="chip" onclick="document.getElementById('chatForm').requestSubmit()">↻ Повторить</button></div>`;
   }
   $('#chatLog').scrollTop = $('#chatLog').scrollHeight;
 }
@@ -859,6 +895,12 @@ function bindViewEvents() {
       else if (act === 'delete') await deleteItem(id);
       else if (act === 'delete-wallet') await deleteWallet(el.dataset.id);
       else if (act === 'refresh-prices') await refreshPrices();
+      else if (act === 'clear-chat') {
+        chatHistory = [];
+        saveChatHistory();
+        $('#chatLog').innerHTML = '';
+        document.getElementById('suggestions').innerHTML = '';
+      }
     });
   });
   $$('.queue-swipe').forEach((row) => bindSwipe(row));

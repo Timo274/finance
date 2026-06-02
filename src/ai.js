@@ -19,18 +19,60 @@ export function aiStatus() {
 }
 
 function buildSystemPrompt(context) {
-  return [
-    'Ты — спокойный, прагматичный финансовый ассистент в приложении для планирования будущей зарплаты.',
-    'Пользователь — 18-летний студент финансов в Киеве, живёт с родителями, доход ~25 000 грн/мес.',
-    'Твоя задача: помочь заранее распределить зарплату по приоритетам, дедлайнам и долгосрочным целям.',
-    'Правила: сначала обязательные расходы и резерв на страховку / чёрный день; must-have важнее nice-to-have; покупки с дедлайном важнее; ',
-    'эмоциональное желание само по себе не должно перевешивать приоритет и долгосрочную ценность (trajectory).',
-    'Отвечай кратко, по делу, на русском. Давай конкретные рекомендации: что купить первым, что отложить, какие trade-off.',
+  const { plan, allocation, goals, wallets, investments, portfolio, manualPlan, itemsCount } = context || {};
+  const lines = [
+    'Ты — спокойный, прагматичный финансовый ассистент.',
+    'Помогаешь распределить зарплату по приоритетам.',
+    'Отвечай кратко, по делу, на русском. Давай конкретные рекомендации.',
     'Все суммы — в гривнах (грн).',
     '',
-    'Текущий контекст плана (JSON):',
-    JSON.stringify(context),
-  ].join('\n');
+    '=== ТЕКУЩИЙ ПЛАН ===',
+  ];
+  if (plan) {
+    lines.push(`Зарплата: ${plan.salary || 0} грн`);
+    lines.push(`Обязательные расходы: ${plan.survivalCost || 0} грн`);
+    lines.push(`Страховка/резерв: ${plan.buffer || 0} грн`);
+    lines.push(`Инвестиции: ${plan.investmentFixed || 0} грн`);
+    lines.push(`Дата зарплаты: ${plan.payday || '—'}`);
+  }
+  if (allocation) {
+    const t = allocation.totals || {};
+    lines.push('');
+    lines.push('=== РАСПРЕДЕЛЕНИЕ ===');
+    lines.push(`Доступно на желания: ${t.availableToAllocate || 0} грн`);
+    if (allocation.approved?.length) {
+      lines.push('Купить сейчас:');
+      allocation.approved.forEach(a => lines.push(`  - ${a.title} (${a.cost} грн)`));
+    }
+    if (allocation.deferred?.length) {
+      lines.push('Отложено:');
+      allocation.deferred.forEach(d => lines.push(`  - ${d.title} (${d.cost} грн) — причина: ${d.reason}`));
+    }
+  }
+  if (portfolio?.totalValue > 0) {
+    lines.push('');
+    lines.push('=== ПОРТФЕЛЬ ===');
+    lines.push(`Общая стоимость: ${portfolio.totalValue} грн`);
+    lines.push(`Вложено: ${portfolio.totalInvested} грн`);
+    lines.push(`P&L: ${portfolio.totalPnL} грн`);
+    if (portfolio.assets?.length) {
+      portfolio.assets.forEach(a => lines.push(`  - ${a.name} (${a.type}): ${a.value} грн`));
+    }
+  }
+  if (wallets?.length) {
+    lines.push('');
+    lines.push(`=== КОШЕЛЬКИ (${wallets.length}) ===`);
+    wallets.forEach(w => lines.push(`  - ${w.name}: ${w.balance || 0} грн`));
+  }
+  if (manualPlan?.length) {
+    lines.push('');
+    lines.push('=== РУЧНОЙ ПЛАН ===');
+    manualPlan.forEach(m => lines.push(`  - ${m.title || '#' + m.itemId}: ${m.amount} грн`));
+  }
+  lines.push('');
+  lines.push(`Всего желаний: ${itemsCount || 0}`);
+  lines.push(`Целей-накоплений: ${Array.isArray(goals) ? goals.length : 0}`);
+  return lines.join('\n');
 }
 
 async function callOpenAI(system, messages, model) {
