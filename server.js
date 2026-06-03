@@ -1243,6 +1243,109 @@ function rawAssetValuations() {
   }));
 }
 
+function addUniqueId(errors, seen, value, label) {
+  const id = Number(value);
+  if (!id) {
+    errors.push(`${label}: missing or invalid id`);
+    return null;
+  }
+  if (seen.has(id)) errors.push(`${label}: duplicate id ${id}`);
+  seen.add(id);
+  return id;
+}
+function validateFullBackup(data) {
+  const errors = [];
+  if (!Array.isArray(data?.plans)) errors.push("plans must be an array");
+  if (!Array.isArray(data?.items)) errors.push("items must be an array");
+  if (errors.length) return { ok: false, mode: "full", errors };
+
+  const planIds = new Set();
+  const itemIds = new Set();
+  const assetIds = new Set();
+  for (const [idx, plan] of data.plans.entries()) {
+    addUniqueId(errors, planIds, plan.id, `plans[${idx}]`);
+    if (plan.payday && !isoDateValue(plan.payday))
+      errors.push(`plans[${idx}]: invalid payday`);
+  }
+  for (const [idx, item] of data.items.entries()) {
+    addUniqueId(errors, itemIds, item.id, `items[${idx}]`);
+    if (item.deadline && !isoDateValue(item.deadline))
+      errors.push(`items[${idx}]: invalid deadline`);
+    if (
+      (item.earliestDate || item.earliest_date) &&
+      !isoDateValue(item.earliestDate ?? item.earliest_date)
+    )
+      errors.push(`items[${idx}]: invalid earliestDate`);
+  }
+  const goals = Array.isArray(data.goals) ? data.goals : [];
+  for (const [idx, goal] of goals.entries()) {
+    const itemId = Number(goal.itemId ?? goal.item_id);
+    if (!itemIds.has(itemId))
+      errors.push(`goals[${idx}]: item ${itemId || "?"} not found`);
+  }
+  const wallets = Array.isArray(data.wallets) ? data.wallets : [];
+  for (const [idx, wallet] of wallets.entries()) {
+    const planId = Number(wallet.planId ?? wallet.plan_id) || null;
+    if (planId && !planIds.has(planId))
+      errors.push(`wallets[${idx}]: plan ${planId} not found`);
+  }
+  const assets = data.investmentAssets || data.portfolio?.assets || [];
+  if (assets && !Array.isArray(assets))
+    errors.push("investmentAssets must be an array");
+  for (const [idx, asset] of (Array.isArray(assets) ? assets : []).entries()) {
+    const id = String(asset.id || "").trim();
+    if (!id) errors.push(`investmentAssets[${idx}]: missing id`);
+    else if (assetIds.has(id))
+      errors.push(`investmentAssets[${idx}]: duplicate id ${id}`);
+    else assetIds.add(id);
+  }
+  const transactions =
+    data.assetTransactions || data.portfolio?.transactions || [];
+  if (transactions && !Array.isArray(transactions))
+    errors.push("assetTransactions must be an array");
+  for (const [idx, tx] of (Array.isArray(transactions)
+    ? transactions
+    : []
+  ).entries()) {
+    const assetId = String((tx.assetId ?? tx.asset_id) || "");
+    if (!assetIds.has(assetId))
+      errors.push(
+        `assetTransactions[${idx}]: asset ${assetId || "?"} not found`,
+      );
+  }
+  const valuations = data.assetValuations || data.portfolio?.valuations || [];
+  if (valuations && !Array.isArray(valuations))
+    errors.push("assetValuations must be an array");
+  for (const [idx, val] of (Array.isArray(valuations)
+    ? valuations
+    : []
+  ).entries()) {
+    const assetId = String((val.assetId ?? val.asset_id) || "");
+    if (!assetIds.has(assetId))
+      errors.push(`assetValuations[${idx}]: asset ${assetId || "?"} not found`);
+  }
+  const decisions = Array.isArray(data.allocationDecisions)
+    ? data.allocationDecisions
+    : [];
+  for (const [idx, decision] of decisions.entries()) {
+    const itemId = Number(decision.itemId ?? decision.item_id);
+    const planId = Number(decision.planId ?? decision.plan_id) || null;
+    if (!itemIds.has(itemId))
+      errors.push(
+        `allocationDecisions[${idx}]: item ${itemId || "?"} not found`,
+      );
+    if (planId && !planIds.has(planId))
+      errors.push(`allocationDecisions[${idx}]: plan ${planId} not found`);
+  }
+
+  return { ok: errors.length === 0, mode: "full", errors };
+}
+function validateImportData(data) {
+  const isFullBackup = Array.isArray(data?.plans) && Array.isArray(data?.items);
+  if (isFullBackup) return validateFullBackup(data);
+  return { ok: true, mode: "partial", errors: [] };
+}
+
 function restoreFullBackup(data) {
   const now = new Date().toISOString();
   db.exec(`
@@ -1461,9 +1564,19 @@ app.get("/api/export", requireAuth, (req, res) => {
   res.json(exportPayload());
 });
 
+app.post("/api/import/validate", requireAuth, (req, res) => {
+  const validation = validateImportData(req.body || {});
+  res.status(validation.ok ? 200 : 400).json(validation);
+});
+
 app.post("/api/import", requireAuth, (req, res) => {
   const data = req.body || {};
   const isFullBackup = Array.isArray(data.plans) && Array.isArray(data.items);
+  const validation = validateImportData(data);
+  if (!validation.ok)
+    return res
+      .status(400)
+      .json({ error: "invalid_backup", errors: validation.errors });
   const save = db.transaction(() => {
     if (isFullBackup) {
       restoreFullBackup(data);

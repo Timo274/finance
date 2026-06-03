@@ -177,6 +177,44 @@ describe("server API", () => {
     assert.equal(valuation.data.error, "asset_not_found");
   });
 
+  it("validates full backups before import and preserves data on invalid backup", async () => {
+    const exported = await request("/api/export");
+    assert.equal(exported.res.status, 200);
+
+    const validDryRun = await request("/api/import/validate", {
+      method: "POST",
+      body: exported.data,
+    });
+    assert.equal(validDryRun.res.status, 200);
+    assert.equal(validDryRun.data.ok, true);
+    assert.equal(validDryRun.data.mode, "full");
+
+    const invalidBackup = {
+      plans: [{ id: 1, name: "Broken", payday: "2026-06-15" }],
+      items: [],
+      goals: [{ id: 1, itemId: 999, targetAmount: 100 }],
+    };
+    const invalidDryRun = await request("/api/import/validate", {
+      method: "POST",
+      body: invalidBackup,
+    });
+    assert.equal(invalidDryRun.res.status, 400);
+    assert.equal(invalidDryRun.data.ok, false);
+    assert.match(invalidDryRun.data.errors.join("\n"), /item 999 not found/);
+
+    const importAttempt = await request("/api/import", {
+      method: "POST",
+      body: invalidBackup,
+    });
+    assert.equal(importAttempt.res.status, 400);
+    assert.equal(importAttempt.data.error, "invalid_backup");
+
+    const state = await request("/api/state?scenario=balanced");
+    assert.equal(state.res.status, 200);
+    assert.equal(state.data.plan.name, "Test salary");
+    assert.equal(state.data.items.length, 1);
+  });
+
   it("returns JSON 404 for unknown API routes", async () => {
     const missing = await request("/api/does-not-exist");
     assert.equal(missing.res.status, 404);
