@@ -1006,15 +1006,32 @@ function viewHistory() {
 
 // ---------- assistant ----------
 let chatHistory = [];
+function sanitizeChatMessage(message) {
+  const role = message?.role === "assistant" ? "assistant" : "user";
+  const content = String(message?.content || "")
+    .slice(0, 4000)
+    .trim();
+  return content ? { role, content } : null;
+}
 function loadChatHistory() {
   try {
     const saved = localStorage.getItem("chatHistory");
-    if (saved) chatHistory = JSON.parse(saved);
-  } catch {}
+    const parsed = saved ? JSON.parse(saved) : [];
+    chatHistory = Array.isArray(parsed)
+      ? parsed.map(sanitizeChatMessage).filter(Boolean).slice(-50)
+      : [];
+  } catch {
+    chatHistory = [];
+  }
 }
 function saveChatHistory() {
   try {
-    localStorage.setItem("chatHistory", JSON.stringify(chatHistory.slice(-50)));
+    const safeHistory = chatHistory
+      .map(sanitizeChatMessage)
+      .filter(Boolean)
+      .slice(-50);
+    chatHistory = safeHistory;
+    localStorage.setItem("chatHistory", JSON.stringify(safeHistory));
   } catch {}
 }
 loadChatHistory();
@@ -1049,11 +1066,15 @@ function viewAssistant() {
     </form>
   </div>`;
 }
+function chatMessageHtml(message) {
+  const safe = sanitizeChatMessage(message);
+  if (!safe) return "";
+  return `<div class="msg ${safe.role}">${md(safe.content)}</div>`;
+}
+
 function initAssistant() {
   const log = $("#chatLog");
-  log.innerHTML = chatHistory
-    .map((m) => `<div class="msg ${m.role}">${md(m.content)}</div>`)
-    .join("");
+  log.innerHTML = chatHistory.map(chatMessageHtml).join("");
   log.scrollTop = log.scrollHeight;
   $$("#assistantRoot .chip").forEach((c) => {
     if (c.dataset.act === "clear-chat") return;
@@ -1073,7 +1094,10 @@ async function sendChat(e) {
   chatHistory.push({ role: "user", content: text });
   saveChatHistory();
   const log = $("#chatLog");
-  log.innerHTML += `<div class="msg user">${md(text)}</div><div class="msg bot" id="pending"><span class="typing">…</span></div>`;
+  log.insertAdjacentHTML(
+    "beforeend",
+    `${chatMessageHtml({ role: "user", content: text })}<div class="msg bot" id="pending"><span class="typing">…</span></div>`,
+  );
   log.scrollTop = log.scrollHeight;
   document.getElementById("suggestions").innerHTML = "";
   try {
