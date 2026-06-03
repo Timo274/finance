@@ -80,6 +80,15 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 
+app.get("/healthz", (req, res) => {
+  try {
+    db.prepare("SELECT 1").get();
+    res.json({ ok: true });
+  } catch {
+    res.status(503).json({ ok: false });
+  }
+});
+
 // ---------- live data version ----------
 // Любая успешная мутация (POST/PUT/DELETE) поднимает версию данных.
 // Фронтенд опрашивает /api/version и обновляет все вкладки/устройства.
