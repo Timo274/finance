@@ -1767,7 +1767,18 @@ app.post("/api/ai/chat/stream", requireAuth, async (req, res) => {
   }
 });
 
-// ---------- static frontend ----------
+// ---------- API errors and static frontend ----------
+app.use("/api", (req, res) => {
+  res.status(404).json({ error: "not_found" });
+});
+app.use((error, req, res, next) => {
+  if (res.headersSent) return next(error);
+  if (req.path.startsWith("/api/")) {
+    return res.status(500).json({ error: "internal_error" });
+  }
+  next(error);
+});
+
 app.use(express.static(path.join(__dirname, "public")));
 app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));

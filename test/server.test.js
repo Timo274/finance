@@ -117,6 +117,12 @@ describe("server API", () => {
     assert.equal(valuation.data.error, "asset_not_found");
   });
 
+  it("returns JSON 404 for unknown API routes", async () => {
+    const missing = await request("/api/does-not-exist");
+    assert.equal(missing.res.status, 404);
+    assert.equal(missing.data.error, "not_found");
+  });
+
   it("runs and lists JSON backups", async () => {
     const run = await request("/api/backups/run", { method: "POST", body: {} });
     assert.equal(run.res.status, 200);
