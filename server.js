@@ -4,6 +4,7 @@ import cookieParser from "cookie-parser";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import crypto from "node:crypto";
 
 import db, {
   getJSON,
@@ -66,6 +67,19 @@ const CONTENT_SECURITY_POLICY = [
   "frame-ancestors 'none'",
 ].join("; ");
 
+function structuredLog(level, event, fields = {}) {
+  if (process.env.NODE_ENV === "test") return;
+  const entry = {
+    ts: new Date().toISOString(),
+    level,
+    event,
+    ...fields,
+  };
+  const line = JSON.stringify(entry);
+  if (level === "error") console.error(line);
+  else console.log(line);
+}
+
 app.use((req, res, next) => {
   res.setHeader("Content-Security-Policy", CONTENT_SECURITY_POLICY);
   res.setHeader("X-Content-Type-Options", "nosniff");
@@ -77,6 +91,26 @@ app.use((req, res, next) => {
   );
   next();
 });
+app.use((req, res, next) => {
+  const rawRequestId = String(req.headers["x-request-id"] || "").trim();
+  const requestId = rawRequestId.slice(0, 100) || crypto.randomUUID();
+  const startedAt = performance.now();
+  req.requestId = requestId;
+  res.setHeader("X-Request-Id", requestId);
+  res.on("finish", () => {
+    if (req.path === "/healthz" && res.statusCode < 500) return;
+    structuredLog(res.statusCode >= 500 ? "error" : "info", "http_request", {
+      requestId,
+      method: req.method,
+      path: req.originalUrl || req.url,
+      status: res.statusCode,
+      durationMs: Math.round(performance.now() - startedAt),
+      ip: authClientKey(req),
+    });
+  });
+  next();
+});
+
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 
@@ -1808,6 +1842,12 @@ app.use("/api", (req, res) => {
 });
 app.use((error, req, res, next) => {
   if (res.headersSent) return next(error);
+  structuredLog("error", "request_error", {
+    requestId: req.requestId,
+    method: req.method,
+    path: req.originalUrl || req.url,
+    error: error?.message || String(error),
+  });
   if (req.path.startsWith("/api/")) {
     return res.status(500).json({ error: "internal_error" });
   }

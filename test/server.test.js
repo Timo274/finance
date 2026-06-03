@@ -52,10 +52,11 @@ after(async () => {
 });
 
 describe("server API", () => {
-  it("serves health checks without auth", async () => {
+  it("serves health checks without auth and returns request ids", async () => {
     const { res, data } = await request("/healthz", { cookie: null });
     assert.equal(res.status, 200);
     assert.equal(data.ok, true);
+    assert.ok(res.headers.get("x-request-id"));
   });
 
   it("protects state before auth", async () => {
