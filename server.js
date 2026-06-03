@@ -118,6 +118,34 @@ const SETTINGS = {
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const monthForPlan = (plan) => String(plan?.payday || todayISO()).slice(0, 7);
 
+function textValue(value, fallback = "", maxLength = 500) {
+  const text = String(value ?? "")
+    .trim()
+    .slice(0, maxLength);
+  return text || fallback;
+}
+function positiveNumber(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(0, number) : fallback;
+}
+function boundedInteger(value, min, max, fallback) {
+  const number = Number.parseInt(value, 10);
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(max, Math.max(min, number));
+}
+function oneOf(value, allowed, fallback) {
+  return allowed.includes(value) ? value : fallback;
+}
+function isoDateValue(value, fallback = null) {
+  const text = String(value || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return fallback;
+  const date = new Date(`${text}T00:00:00.000Z`);
+  return Number.isNaN(date.getTime()) ||
+    date.toISOString().slice(0, 10) !== text
+    ? fallback
+    : text;
+}
+
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_MAX_ATTEMPTS = 20;
 function authClientKey(req) {
@@ -535,11 +563,9 @@ function normalizeItemInput(b) {
   const layer = VALID_LAYERS.has(b.layer)
     ? b.layer
     : layerForCategory(category);
-  const cost = Math.max(0, Number(b.cost) || 0);
+  const cost = positiveNumber(b.cost);
   const band = bandForCost(cost);
-  const scoreType = ["none", "quick", "full"].includes(b.scoreType)
-    ? b.scoreType
-    : "none";
+  const scoreType = oneOf(b.scoreType, ["none", "quick", "full"], "none");
   let scores = null;
   if (scoreType !== "none" && b.scores && typeof b.scores === "object") {
     const clean = {};
@@ -550,21 +576,21 @@ function normalizeItemInput(b) {
     if (Object.keys(clean).length) scores = JSON.stringify(clean);
   }
   return {
-    title: String(b.title || "").trim() || "Без названия",
+    title: textValue(b.title, "Без названия", 160),
     cost,
     category,
     layer,
     band,
     scoreType,
     scores,
-    priority: Math.min(5, Math.max(1, parseInt(b.priority, 10) || 3)),
-    type: ["must", "should", "nice"].includes(b.type) ? b.type : "should",
-    deadline: b.deadline || null,
-    earliestDate: b.earliestDate || null,
+    priority: boundedInteger(b.priority, 1, 5, 3),
+    type: oneOf(b.type, ["must", "should", "nice"], "should"),
+    deadline: isoDateValue(b.deadline),
+    earliestDate: isoDateValue(b.earliestDate),
     canDefer: b.canDefer === false || b.canDefer === 0 ? 0 : 1,
-    emotional: Math.min(5, Math.max(1, parseInt(b.emotional, 10) || 3)),
-    trajectory: Math.min(5, Math.max(1, parseInt(b.trajectory, 10) || 3)),
-    notes: b.notes ? String(b.notes) : null,
+    emotional: boundedInteger(b.emotional, 1, 5, 3),
+    trajectory: boundedInteger(b.trajectory, 1, 5, 3),
+    notes: b.notes ? textValue(b.notes, "", 2000) : null,
   };
 }
 
@@ -651,12 +677,12 @@ app.get("/api/plan", requireAuth, (req, res) => {
 app.post("/api/plan", requireAuth, (req, res) => {
   const b = req.body || {};
   const payload = {
-    name: String(b.name || "Зарплата").trim() || "Зарплата",
-    payday: b.payday || new Date().toISOString().slice(0, 10),
-    salary: Math.max(0, Number(b.salary) || 0),
-    survivalCost: Math.max(0, Number(b.survivalCost) || 0),
-    buffer: Math.max(0, Number(b.buffer) || 0),
-    investmentFixed: Math.max(0, Number(b.investmentFixed) || 0),
+    name: textValue(b.name, "Зарплата", 120),
+    payday: isoDateValue(b.payday, todayISO()),
+    salary: positiveNumber(b.salary),
+    survivalCost: positiveNumber(b.survivalCost),
+    buffer: positiveNumber(b.buffer),
+    investmentFixed: positiveNumber(b.investmentFixed),
   };
   const existing = getActivePlan();
   if (existing) {
@@ -709,7 +735,7 @@ app.get("/api/currency", requireAuth, (req, res) => {
   res.json({ rate: currencyRate() });
 });
 app.post("/api/currency", requireAuth, (req, res) => {
-  const rate = Math.max(1, Number(req.body?.rate) || 43.5);
+  const rate = Math.max(1, positiveNumber(req.body?.rate, 43.5));
   setCurrencyRate(rate);
   res.json({ rate: currencyRate() });
 });

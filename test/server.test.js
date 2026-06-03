@@ -79,6 +79,59 @@ describe("server API", () => {
     assert.ok(sessionCookie);
   });
 
+  it("normalizes invalid plan and item input", async () => {
+    const plan = await request("/api/plan", {
+      method: "POST",
+      body: {
+        name: "   ",
+        payday: "not-a-date",
+        salary: -100,
+        survivalCost: "bad",
+        buffer: -1,
+        investmentFixed: -5,
+      },
+    });
+    assert.equal(plan.res.status, 200);
+    assert.equal(plan.data.plan.name, "Зарплата");
+    assert.match(plan.data.plan.payday, /^\d{4}-\d{2}-\d{2}$/);
+    assert.equal(plan.data.plan.salary, 0);
+    assert.equal(plan.data.plan.survivalCost, 0);
+    assert.equal(plan.data.plan.buffer, 0);
+    assert.equal(plan.data.plan.investmentFixed, 0);
+
+    const item = await request("/api/items", {
+      method: "POST",
+      body: {
+        title: "   ",
+        cost: -50,
+        category: "bad-category",
+        layer: "bad-layer",
+        priority: 99,
+        type: "bad-type",
+        deadline: "2026-02-31",
+        earliestDate: "not-a-date",
+        emotional: -2,
+        trajectory: 99,
+      },
+    });
+    assert.equal(item.res.status, 200);
+    assert.equal(item.data.item.title, "Без названия");
+    assert.equal(item.data.item.cost, 0);
+    assert.equal(item.data.item.category, "lifestyle");
+    assert.equal(item.data.item.layer, "quality");
+    assert.equal(item.data.item.priority, 5);
+    assert.equal(item.data.item.type, "should");
+    assert.equal(item.data.item.deadline, null);
+    assert.equal(item.data.item.earliestDate, null);
+    assert.equal(item.data.item.emotional, 1);
+    assert.equal(item.data.item.trajectory, 5);
+
+    const deleted = await request(`/api/items/${item.data.item.id}`, {
+      method: "DELETE",
+    });
+    assert.equal(deleted.res.status, 200);
+  });
+
   it("creates plan and item, then returns aggregate state", async () => {
     const plan = await request("/api/plan", {
       method: "POST",
