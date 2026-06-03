@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { bandForCost, layerForCategory } from "./categories.js";
 
-const DB_PATH = process.env.DB_PATH || "./data/app.db";
+export const DB_PATH = process.env.DB_PATH || "./data/app.db";
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
 const db = new Database(DB_PATH);
@@ -15,6 +15,13 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS auth_attempts (
+    key TEXT PRIMARY KEY,
+    count INTEGER NOT NULL DEFAULT 0,
+    reset_at INTEGER NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
   CREATE TABLE IF NOT EXISTS plans (

@@ -21,15 +21,6 @@
             rel="stylesheet"
         />
         <link rel="stylesheet" href="/styles.css" />
-        <script>
-            // Тема применяется до первой отрисовки, чтобы не было «мигания».
-            (function () {
-                try {
-                    var t = localStorage.getItem("cq-theme") || "light";
-                    document.documentElement.setAttribute("data-theme", t);
-                } catch (e) {}
-            })();
-        </script>
     </head>
     <body>
         <!-- Логотип (переиспользуется через <use>) -->

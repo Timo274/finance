@@ -58,12 +58,19 @@ npm test               # unit-тесты allocation engine
 | `AI_PROVIDER` | `openai` \| `anthropic` \| `gemini` (опционально) |
 | `AI_API_KEY` | ключ выбранного провайдера (опционально) |
 | `AI_MODEL` | переопределить модель (опционально) |
+| `BACKUP_ENABLED` | `false`, чтобы выключить автоснапшоты JSON |
+| `BACKUP_DIR` | каталог JSON backup (по умолчанию рядом с SQLite, на Fly это `/data/backups`) |
+| `BACKUP_INTERVAL_HOURS` | период автоснапшота, по умолчанию `24` |
+| `BACKUP_RETENTION` | сколько JSON backup хранить, по умолчанию `14` |
 
 ## Backup / restore
 
 Экспорт JSON (`Данные и цели → Экспорт JSON`) содержит планы, желания, кошельки, цели,
 ручные решения и инвестиционный портфель. Импорт полного backup заменяет текущие пользовательские
 данные, но не трогает PIN/настройки сессии; перед восстановлением UI просит подтверждение.
+
+Сервер также пишет scheduled JSON snapshots в `BACKUP_DIR`: один при старте и дальше раз в
+`BACKUP_INTERVAL_HOURS`. На Fly это persistent volume рядом с SQLite (`/data/backups`).
 
 ## Деплой
 

@@ -401,7 +401,15 @@ function sortedItems(items) {
 
 // ---------- theme ----------
 function currentTheme() {
-  return document.documentElement.getAttribute("data-theme") || "light";
+  try {
+    return (
+      localStorage.getItem("cq-theme") ||
+      document.documentElement.getAttribute("data-theme") ||
+      "light"
+    );
+  } catch {
+    return document.documentElement.getAttribute("data-theme") || "light";
+  }
 }
 function applyTheme(t) {
   document.documentElement.setAttribute("data-theme", t);

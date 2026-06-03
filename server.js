@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import cookieParser from "cookie-parser";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -15,6 +16,7 @@ import db, {
   rowToAllocationDecision,
   currencyRate,
   setCurrencyRate,
+  DB_PATH,
 } from "./src/db.js";
 import {
   pinIsSet,
@@ -46,10 +48,26 @@ import {
 import { aiStatus, askAssistant, askAssistantText } from "./src/ai.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const app = express();
+export const app = express();
 app.set("trust proxy", 1);
 app.disable("x-powered-by");
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "script-src-attr 'none'",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com data:",
+  "img-src 'self' data:",
+  "connect-src 'self'",
+  "manifest-src 'self'",
+  "worker-src 'self'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+].join("; ");
+
 app.use((req, res, next) => {
+  res.setHeader("Content-Security-Policy", CONTENT_SECURITY_POLICY);
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "same-origin");
@@ -93,7 +111,6 @@ const monthForPlan = (plan) => String(plan?.payday || todayISO()).slice(0, 7);
 
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_MAX_ATTEMPTS = 20;
-const loginAttempts = new Map();
 function authClientKey(req) {
   const forwarded = String(
     req.headers["fly-client-ip"] || req.headers["x-forwarded-for"] || "",
@@ -105,10 +122,13 @@ function authClientKey(req) {
 function authRateLimit(req, res, next) {
   const key = authClientKey(req);
   const now = Date.now();
-  const current = loginAttempts.get(key);
+  const row = stmt.authAttemptByKey.get(key);
   const entry =
-    current && current.resetAt > now
-      ? current
+    row && row.reset_at > now
+      ? {
+          count: Number(row.count) || 0,
+          resetAt: Number(row.reset_at) || now + LOGIN_WINDOW_MS,
+        }
       : { count: 0, resetAt: now + LOGIN_WINDOW_MS };
   if (entry.count >= LOGIN_MAX_ATTEMPTS) {
     const retryAfter = Math.max(1, Math.ceil((entry.resetAt - now) / 1000));
@@ -116,19 +136,34 @@ function authRateLimit(req, res, next) {
     return res.status(429).json({ error: "too_many_attempts", retryAfter });
   }
   entry.count += 1;
-  loginAttempts.set(key, entry);
+  stmt.upsertAuthAttempt.run({
+    key,
+    count: entry.count,
+    resetAt: entry.resetAt,
+  });
   req.authRateLimitKey = key;
   next();
 }
 setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of loginAttempts.entries()) {
-    if (entry.resetAt <= now) loginAttempts.delete(key);
-  }
+  try {
+    stmt.deleteExpiredAuthAttempts.run(Date.now());
+  } catch {}
 }, LOGIN_WINDOW_MS).unref?.();
 
 // ---------- prepared statements ----------
 const stmt = {
+  authAttemptByKey: db.prepare(
+    "SELECT key, count, reset_at FROM auth_attempts WHERE key = ?",
+  ),
+  upsertAuthAttempt:
+    db.prepare(`INSERT INTO auth_attempts (key, count, reset_at, updated_at)
+    VALUES (@key, @count, @resetAt, datetime('now'))
+    ON CONFLICT(key) DO UPDATE SET count=excluded.count, reset_at=excluded.reset_at, updated_at=datetime('now')`),
+  deleteAuthAttempt: db.prepare("DELETE FROM auth_attempts WHERE key = ?"),
+  deleteExpiredAuthAttempts: db.prepare(
+    "DELETE FROM auth_attempts WHERE reset_at <= ?",
+  ),
+
   activePlan: db.prepare(
     "SELECT * FROM plans WHERE status = 'active' ORDER BY id DESC LIMIT 1",
   ),
@@ -566,7 +601,7 @@ app.post("/api/auth/setup", (req, res) => {
 app.post("/api/auth/login", authRateLimit, (req, res) => {
   const pin = String(req.body?.pin || "");
   if (!verifyPin(pin)) return res.status(401).json({ error: "bad_pin" });
-  if (req.authRateLimitKey) loginAttempts.delete(req.authRateLimitKey);
+  if (req.authRateLimitKey) stmt.deleteAuthAttempt.run(req.authRateLimitKey);
   issueToken(res);
   res.json({ ok: true });
 });
@@ -1334,8 +1369,8 @@ function restoreFullBackup(data) {
   }
 }
 
-app.get("/api/export", requireAuth, (req, res) => {
-  const payload = {
+function exportPayload() {
+  return {
     version: 4,
     exportedAt: new Date().toISOString(),
     plans: db.prepare("SELECT * FROM plans ORDER BY id").all().map(rowToPlan),
@@ -1349,7 +1384,10 @@ app.get("/api/export", requireAuth, (req, res) => {
     portfolio: getPortfolio(),
     allocationDecisions: stmt.allDecisions.all().map(rowToAllocationDecision),
   };
-  res.json(payload);
+}
+
+app.get("/api/export", requireAuth, (req, res) => {
+  res.json(exportPayload());
 });
 
 app.post("/api/import", requireAuth, (req, res) => {
@@ -1418,6 +1456,119 @@ app.post("/api/import", requireAuth, (req, res) => {
   });
   save();
   res.json({ ok: true, mode: isFullBackup ? "full" : "partial" });
+});
+
+const BACKUP_DIR =
+  process.env.BACKUP_DIR || path.join(path.dirname(DB_PATH), "backups");
+const BACKUP_INTERVAL_HOURS = Math.max(
+  1,
+  Number(process.env.BACKUP_INTERVAL_HOURS) || 24,
+);
+const BACKUP_RETENTION = Math.max(
+  1,
+  Number(process.env.BACKUP_RETENTION) || 14,
+);
+let backupsScheduled = false;
+
+function backupFileName(reason = "scheduled") {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const safeReason =
+    String(reason)
+      .replace(/[^a-z0-9_-]/gi, "-")
+      .slice(0, 32) || "backup";
+  return `capital-queue-${safeReason}-${stamp}.json`;
+}
+async function listBackupFiles() {
+  try {
+    const entries = await fs.readdir(BACKUP_DIR, { withFileTypes: true });
+    const files = await Promise.all(
+      entries
+        .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+        .map(async (entry) => {
+          const fullPath = path.join(BACKUP_DIR, entry.name);
+          const stat = await fs.stat(fullPath);
+          return {
+            name: entry.name,
+            path: fullPath,
+            size: stat.size,
+            createdAt: stat.birthtime.toISOString(),
+            modifiedAt: stat.mtime.toISOString(),
+          };
+        }),
+    );
+    return files.sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt));
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+}
+async function pruneBackups() {
+  const files = await listBackupFiles();
+  await Promise.all(
+    files
+      .slice(BACKUP_RETENTION)
+      .map((file) => fs.unlink(file.path).catch(() => {})),
+  );
+}
+async function writeBackup(reason = "scheduled") {
+  await fs.mkdir(BACKUP_DIR, { recursive: true });
+  const payload = exportPayload();
+  const filePath = path.join(BACKUP_DIR, backupFileName(reason));
+  await fs.writeFile(filePath, JSON.stringify(payload, null, 2));
+  await pruneBackups();
+  return {
+    file: path.basename(filePath),
+    path: filePath,
+    exportedAt: payload.exportedAt,
+  };
+}
+function scheduleBackups() {
+  if (
+    backupsScheduled ||
+    process.env.NODE_ENV === "test" ||
+    process.env.BACKUP_ENABLED === "false"
+  )
+    return;
+  backupsScheduled = true;
+  setTimeout(
+    () =>
+      writeBackup("startup").catch((error) =>
+        console.error("Backup failed:", error.message),
+      ),
+    30_000,
+  ).unref?.();
+  setInterval(
+    () =>
+      writeBackup("scheduled").catch((error) =>
+        console.error("Backup failed:", error.message),
+      ),
+    BACKUP_INTERVAL_HOURS * 60 * 60 * 1000,
+  ).unref?.();
+}
+
+app.get("/api/backups", requireAuth, async (req, res) => {
+  try {
+    const files = await listBackupFiles();
+    res.json({
+      backupDir: BACKUP_DIR,
+      retention: BACKUP_RETENTION,
+      backups: files.map(({ path: _path, ...file }) => file),
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: "backup_list_failed",
+      detail: String(error.message || error),
+    });
+  }
+});
+app.post("/api/backups/run", requireAuth, async (req, res) => {
+  try {
+    res.json({ ok: true, backup: await writeBackup("manual") });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ error: "backup_failed", detail: String(error.message || error) });
+  }
 });
 
 app.get("/api/tradeoff/:id", requireAuth, (req, res) => {
@@ -1620,7 +1771,13 @@ app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () =>
-  console.log(`Salary Allocation Planner на http://localhost:${PORT}`),
-);
+export function startServer(port = process.env.PORT || 3000) {
+  scheduleBackups();
+  return app.listen(port, () =>
+    console.log(`Salary Allocation Planner на http://localhost:${port}`),
+  );
+}
+
+if (process.env.NODE_ENV !== "test" && process.env.NO_LISTEN !== "1") {
+  startServer();
+}
