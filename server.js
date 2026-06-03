@@ -900,6 +900,8 @@ app.delete("/api/investments/transactions/:id", requireAuth, (req, res) => {
 app.post("/api/investments/valuations", requireAuth, (req, res) => {
   const { assetId, date, value, quantity, note } = req.body || {};
   if (!assetId) return res.status(400).json({ error: "assetId_required" });
+  if (!stmt.assetById.get(String(assetId)))
+    return res.status(404).json({ error: "asset_not_found" });
   stmt.insertValuation.run({
     id: String(Date.now() + "-" + Math.random().toString(36).slice(2, 8)),
     asset_id: String(assetId),

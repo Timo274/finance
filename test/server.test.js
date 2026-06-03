@@ -9,7 +9,10 @@ let server;
 let baseUrl;
 let sessionCookie;
 
-async function request(pathname, { method = "GET", body, cookie = sessionCookie } = {}) {
+async function request(
+  pathname,
+  { method = "GET", body, cookie = sessionCookie } = {},
+) {
   const headers = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (cookie) headers.Cookie = cookie;
@@ -87,7 +90,13 @@ describe("server API", () => {
 
     const item = await request("/api/items", {
       method: "POST",
-      body: { title: "Laptop", cost: 5000, type: "must", category: "tool", priority: 5 },
+      body: {
+        title: "Laptop",
+        cost: 5000,
+        type: "must",
+        category: "tool",
+        priority: 5,
+      },
     });
     assert.equal(item.res.status, 200);
     assert.equal(item.data.item.title, "Laptop");
@@ -97,6 +106,15 @@ describe("server API", () => {
     assert.equal(state.data.plan.name, "Test salary");
     assert.equal(state.data.items.length, 1);
     assert.equal(state.data.allocation.approved.length, 1);
+  });
+
+  it("returns 404 instead of a database error for missing valuation asset", async () => {
+    const valuation = await request("/api/investments/valuations", {
+      method: "POST",
+      body: { assetId: "missing-asset", value: 1000, date: "2026-06-15" },
+    });
+    assert.equal(valuation.res.status, 404);
+    assert.equal(valuation.data.error, "asset_not_found");
   });
 
   it("runs and lists JSON backups", async () => {
