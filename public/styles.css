@@ -11,8 +11,8 @@
   --border: #dac7ad;
   --border-soft: #eadbc6;
   --text: #19120b;
-  --muted: #6f6253;
-  --muted-2: #9b8975;
+  --muted: #594c3e;
+  --muted-2: #6f6253;
   --accent: #0e5f68;
   --accent-deep: #17313a;
   --accent-soft: #d9eee9;
@@ -42,8 +42,8 @@
   --border: #1f2d4f;
   --border-soft: #1a2540;
   --text: #e8eefb;
-  --muted: #8b99bd;
-  --muted-2: #64708f;
+  --muted: #b7c3e0;
+  --muted-2: #99a8cb;
   --accent: #2f6bff;
   --accent-deep: #1d3f9e;
   --accent-soft: #1a2c63;
@@ -935,3 +935,116 @@ body {
   .auth-gate { position: fixed; overflow: auto; }
   .auth-hero { display: none; }
 }
+
+
+/* ============================================================
+   Contrast repair pass — every text surface must stay readable.
+   The refresh polish above intentionally changed several panels to
+   light/glass surfaces; these overrides realign foreground colors.
+   ============================================================ */
+::placeholder { color: var(--muted); opacity: 1; }
+
+/* Light sidebar uses light panels, therefore text must not inherit the old
+   white-on-dark palette. */
+.sidebar { color: var(--text); }
+.sidebar .brand-title { color: var(--text); }
+.sidebar .brand-sub,
+.sidebar .nav-item { color: var(--muted); }
+.sidebar .nav-item:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+.sidebar .nav-item.active {
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+  box-shadow: none;
+}
+[data-theme='dark'] .sidebar .nav-item.active { color: #ffffff; }
+.sidebar .btn-outline {
+  background: var(--panel);
+  border-color: var(--border);
+  color: var(--text);
+}
+.sidebar .btn-outline:hover {
+  background: color-mix(in srgb, var(--red) 10%, var(--panel));
+  border-color: var(--red);
+  color: var(--red);
+}
+
+/* Keep the cockpit a dark, high-contrast decision surface. The previous
+   polish layer made the panel light while child text stayed white. */
+.decision-cockpit {
+  color: #fffaf2;
+  border-color: rgba(255, 250, 242, .16);
+  background:
+    radial-gradient(650px 260px at 100% 0%, rgba(248, 210, 154, .28), transparent 62%),
+    linear-gradient(145deg, #17313a 0%, #0e5f68 100%);
+  box-shadow: 0 20px 60px rgba(13, 30, 75, 0.20);
+}
+[data-theme='dark'] .decision-cockpit {
+  background:
+    radial-gradient(650px 260px at 100% 0%, rgba(122, 162, 255, .18), transparent 62%),
+    linear-gradient(145deg, #0d1830 0%, #142244 100%);
+}
+.decision-cockpit .eyebrow { color: #f8d29a; }
+.decision-cockpit .decision-hero h2,
+.decision-cockpit .decision-copy,
+.decision-cockpit .insight-item-title,
+.decision-cockpit .insight-item b { color: #fffaf2; }
+.decision-cockpit .decision-hero p,
+.decision-cockpit .insight-item-meta,
+.decision-cockpit .insight-empty { color: rgba(255, 250, 242, .78); }
+.decision-cockpit .decision-actions li {
+  color: #fffaf2;
+  background: rgba(255, 250, 242, .12);
+  border-color: rgba(255, 250, 242, .22);
+}
+.decision-cockpit .decision-actions .tone-danger { color: #ff9b92; }
+.decision-cockpit .decision-actions .tone-warn { color: #ffd27a; }
+.decision-cockpit .decision-actions .tone-good { color: #8af0ce; }
+.decision-cockpit .decision-col {
+  color: #fffaf2;
+  background: rgba(255, 250, 242, .10);
+  border-color: rgba(255, 250, 242, .18);
+}
+.decision-cockpit .decision-col h3 { color: #fffaf2; }
+.decision-cockpit .decision-metric {
+  background: rgba(255, 250, 242, .13);
+  border-color: rgba(255, 250, 242, .22);
+}
+.decision-cockpit .decision-metric span { color: rgba(255, 250, 242, .74); }
+.decision-cockpit .decision-metric b { color: #fffaf2; }
+.decision-cockpit .metric-status b,
+.decision-cockpit .metric-good b { color: #f8d29a; }
+.decision-cockpit .metric-danger b { color: #ff9b92; }
+.decision-cockpit .runway-ring {
+  background: conic-gradient(#f8d29a var(--p), rgba(255, 250, 242, .18) 0);
+}
+.decision-cockpit .runway-ring::after { background: #17313a; }
+[data-theme='dark'] .decision-cockpit .runway-ring::after { background: #0d1830; }
+.decision-cockpit .runway-ring b { color: #fffaf2; }
+.decision-cockpit .runway-ring span { color: rgba(255, 250, 242, .72); }
+
+/* Generic text safeguards for mixed cards, tables, chats and controls. */
+.card, .table-wrap, .modal, .queue-item, .wallet-row, .manual-row, .msg.bot,
+.score-row, .tradeoff, .filters, .quick-add { color: var(--text); }
+.stat-sub, .hint, .goal-cell span, .queue-item .qi-meta, .legend, .legend-col span,
+.view-head p, .empty, .chip-clear { color: var(--muted); }
+.muted, .brand-sub, .field label, th, .stat-label, .band, .chip { color: var(--muted); }
+.chip.active {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--accent-deep);
+  font-weight: 800;
+}
+[data-theme='dark'] .chip.active { color: #ffffff; }
+
+/* On the accent stat card force all nested utility colors to readable values. */
+.cards .card:first-child,
+.cards .card:first-child .accent-num,
+.cards .card:first-child .green-num,
+.cards .card:first-child .red-num,
+.cards .card:first-child .amber-num { color: #ffffff; }
+.cards .card:first-child .muted,
+.cards .card:first-child .stat-label,
+.cards .card:first-child .stat-sub { color: rgba(255,255,255,.84); }
