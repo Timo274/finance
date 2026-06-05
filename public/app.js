@@ -1128,6 +1128,120 @@ function viewQueue() {
   <div id="tradeoffBox"></div>`;
 }
 
+function assetTypeLabel(type) {
+  return (
+    {
+      crypto: "Крипто",
+      stock: "Акция",
+      etf: "ETF",
+      bond: "Облигация",
+      deposit: "Депозит",
+      other: "Другое",
+    }[type] || type || "Другое"
+  );
+}
+function investPct(part, total) {
+  if (!total) return 0;
+  return Math.max(0, Math.min(100, Math.round((Number(part || 0) / total) * 100)));
+}
+function signedPct(value) {
+  if (value == null || Number.isNaN(Number(value))) return "—";
+  const n = Number(value);
+  return `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
+}
+function monthKey(date = new Date()) {
+  return date.toISOString().slice(0, 7);
+}
+function investmentStats(p) {
+  const assets = p?.assets || [];
+  const transactions = p?.transactions || [];
+  const valuations = p?.valuations || [];
+  const total = p?.totals || { totalValue: 0, totalInvested: 0, totalPnL: 0 };
+  const currentMonth = monthKey();
+  const monthlyBuy = transactions
+    .filter((t) => t.type === "buy" && String(t.date || "").slice(0, 7) === currentMonth)
+    .reduce((sum, t) => sum + (Number(t.totalAmount) || 0), 0);
+  const monthlyTarget = Number(state.plan?.investmentFixed) || 0;
+  const lastValuation = valuations.reduce((latest, v) => {
+    const stamp = `${v.date || ""} ${v.createdAt || ""}`;
+    return !latest || stamp > latest.stamp ? { ...v, stamp } : latest;
+  }, null);
+  const lastValDate = lastValuation?.date || "";
+  const daysSinceValuation = lastValDate
+    ? Math.max(0, Math.round((Date.now() - new Date(lastValDate).getTime()) / 86400000))
+    : null;
+  const topAsset = assets.reduce(
+    (best, a) => (!best || (Number(a.currentValue) || 0) > (Number(best.currentValue) || 0) ? a : best),
+    null,
+  );
+  const bestAsset = assets.reduce(
+    (best, a) => (!best || (Number(a.totalPnL) || 0) > (Number(best.totalPnL) || 0) ? a : best),
+    null,
+  );
+  const worstAsset = assets.reduce(
+    (worst, a) => (!worst || (Number(a.totalPnL) || 0) < (Number(worst.totalPnL) || 0) ? a : worst),
+    null,
+  );
+  return {
+    total,
+    assets,
+    transactions,
+    valuations,
+    monthlyBuy,
+    monthlyTarget,
+    monthlyGap: Math.max(0, monthlyTarget - monthlyBuy),
+    monthlyProgress: investPct(monthlyBuy, monthlyTarget),
+    lastValuation,
+    lastValDate,
+    daysSinceValuation,
+    topAsset,
+    topShare: topAsset && total.totalValue ? (topAsset.currentValue / total.totalValue) * 100 : 0,
+    bestAsset,
+    worstAsset,
+    pnlPct: total.totalInvested > 0 ? (total.totalPnL / total.totalInvested) * 100 : null,
+  };
+}
+function investmentInsights(p) {
+  const st = investmentStats(p);
+  const tips = [];
+  if (!st.assets.length) {
+    tips.push({ tone: "action", title: "Начните с первого актива", text: "Добавьте ETF, крипту, депозит или акцию — после этого появятся доходность, концентрация и динамика.", action: "add-asset", button: "+ Актив" });
+    return tips;
+  }
+  if (st.monthlyTarget > 0 && st.monthlyGap > 0) {
+    tips.push({ tone: "action", title: "Довести взнос месяца", text: `По плану нужно инвестировать ещё ${fmt(st.monthlyGap)} из ${fmt(st.monthlyTarget)}.`, action: "add-tx", button: "+ Покупка" });
+  }
+  if (!st.valuations.length || (st.daysSinceValuation != null && st.daysSinceValuation > 32)) {
+    tips.push({ tone: "warning", title: "Обновить текущую стоимость", text: st.lastValDate ? `Последняя оценка была ${fmtDate(st.lastValDate)} — график и P/L могут устареть.` : "Добавьте оценку стоимости, чтобы видеть реальную прибыль/убыток.", action: "add-valuation", button: "+ Оценка" });
+  }
+  if (st.topShare > 60) {
+    tips.push({ tone: "warning", title: "Высокая концентрация", text: `${st.topAsset.name} занимает ${Math.round(st.topShare)}% портфеля. Полезно проверить, комфортен ли такой риск.`, view: "assets", button: "Активы" });
+  }
+  if (st.total.totalInvested > 0 && st.total.totalPnL < 0) {
+    tips.push({ tone: "danger", title: "Портфель в минусе", text: `Текущий результат ${fmt(st.total.totalPnL)} (${signedPct(st.pnlPct)}). Проверьте худшие позиции и дату оценок.`, view: "assets", button: "Разобрать" });
+  }
+  if (!tips.length) {
+    tips.push({ tone: "good", title: "Портфель выглядит актуально", text: "Есть активы, операции и оценки. Следующий шаг — поддерживать регулярный взнос и не терять баланс по долям.", action: "add-tx", button: "+ Операция" });
+  }
+  return tips.slice(0, 3);
+}
+function allocationByType(p) {
+  const totalValue = Number(p?.totals?.totalValue) || 0;
+  const groups = new Map();
+  (p?.assets || []).forEach((a) => {
+    const key = a.type || "other";
+    groups.set(key, (groups.get(key) || 0) + (Number(a.currentValue) || 0));
+  });
+  return [...groups.entries()]
+    .map(([type, value]) => ({ type, value, pct: investPct(value, totalValue) }))
+    .sort((a, b) => b.value - a.value);
+}
+function assetLatestValuation(assetId, p) {
+  return (p?.valuations || []).find((v) => String(v.assetId) === String(assetId)) || null;
+}
+function assetLastTx(assetId, p) {
+  return (p?.transactions || []).find((t) => String(t.assetId) === String(assetId)) || null;
+}
 function viewInvestments() {
   const p = state.portfolio;
   const tabs = [
@@ -1149,93 +1263,140 @@ function viewInvestments() {
   else if (state.invTab === "transactions") content = investTransactions(p);
   else if (state.invTab === "valuations") content = investValuations(p);
 
-  return `<div class="view-head row-between">
-    <div><h1>Инвестиции</h1><p>Отслеживайте активы, покупки/продажи и рыночную стоимость.</p></div>
+  const st = investmentStats(p);
+  const monthlyTargetText = st.monthlyTarget > 0 ? `${fmt(st.monthlyBuy)} / ${fmt(st.monthlyTarget)} в этом месяце` : "задайте регулярный взнос в настройках";
+  return `<div class="view-head row-between investment-head">
+    <div><div class="eyebrow">портфель и дисциплина</div><h1>Инвестиции</h1><p>Контроль активов, операций, регулярного взноса и актуальности оценок.</p></div>
+    <div class="investment-head-actions">
+      <button class="btn btn-outline" data-act="open-plan">План взноса</button>
+      <button class="btn btn-primary" data-act="add-tx">+ Операция</button>
+    </div>
   </div>
-  <div class="chip-row" style="margin-bottom:14px">${tabBtns}</div>
+  <section class="investment-pulse card">
+    <div class="investment-pulse-main">
+      <span class="pulse-icon">↗</span>
+      <div><div class="stat-label">Регулярный инвестиционный взнос</div><b>${monthlyTargetText}</b><p>${st.monthlyGap > 0 ? `Осталось внести ${fmt(st.monthlyGap)}.` : st.monthlyTarget > 0 ? "План месяца закрыт." : "Укажите сумму в стабильных пунктах зарплаты."}</p></div>
+    </div>
+    <div class="investment-pulse-bar"><div style="width:${st.monthlyTarget ? st.monthlyProgress : 8}%"></div></div>
+  </section>
+  <div class="chip-row investment-tabs" style="margin-bottom:14px">${tabBtns}</div>
   <div id="investContent">${content}</div>`;
 }
 function investOverview(p) {
   if (!p || !p.assets.length)
-    return richEmpty("↗", "Портфель пока пустой", "Добавьте первый актив, чтобы отслеживать вложения, текущую стоимость и прибыль/убыток.", "add-asset", "+ Добавить актив");
-  const total = p.totals;
-  const allocations = p.assets
-    .map(
-      (a) =>
-        `<div class="prop-row"><div class="row-between small"><b>${escapeHtml(a.name)}</b><span>${total.totalValue ? Math.round((a.currentValue / total.totalValue) * 100) : 0}%</span></div><div class="goal-mini"><div style="width:${total.totalValue ? (a.currentValue / total.totalValue) * 100 : 0}%"></div></div><div class="muted small">${fmt(a.currentValue)} ${fmtUsd(a.currentValue)} · ${a.type}</div></div>`,
-    )
-    .join("");
+    return `<div class="investment-empty-grid">
+      ${richEmpty("↗", "Портфель пока пустой", "Добавьте первый актив, чтобы отслеживать вложения, текущую стоимость и прибыль/убыток.", "add-asset", "+ Добавить актив")}
+      <div class="card pad-lg investment-guide"><div class="section-title" style="margin-top:0">Как лучше заполнить</div>
+        <ol>
+          <li><b>Актив</b> — название, тип и тикер для автоцен.</li>
+          <li><b>Операция</b> — покупка или продажа в гривнах.</li>
+          <li><b>Оценка</b> — текущая стоимость раз в месяц, чтобы P/L был честным.</li>
+        </ol>
+      </div>
+    </div>`;
+  const st = investmentStats(p);
+  const total = st.total;
   const pnlClass = total.totalPnL >= 0 ? "green-num" : "red-num";
-  const pnlPct =
-    total.totalInvested > 0
-      ? ((total.totalPnL / total.totalInvested) * 100).toFixed(1)
-      : null;
-  const pnlBadge =
-    pnlPct != null
-      ? `<span style="color:${total.totalPnL >= 0 ? "var(--green)" : "var(--red)"};font-size:14px;font-weight:700">${total.totalPnL >= 0 ? "+" : ""}${pnlPct}%</span>`
-      : "";
-  const chartHtml = `<div class="card pad-lg" style="margin-top:16px"><div class="stat-label">Динамика портфеля по месяцам</div><canvas id="portChart" class="chart-line"></canvas></div>`;
+  const pnlBadge = st.pnlPct != null
+    ? `<span style="color:${total.totalPnL >= 0 ? "var(--green)" : "var(--red)"};font-size:14px;font-weight:800">${signedPct(st.pnlPct)}</span>`
+    : "";
+  const insights = investmentInsights(p)
+    .map((tip) => `<div class="investment-tip ${tip.tone}">
+      <div><b>${escapeHtml(tip.title)}</b><p>${escapeHtml(tip.text)}</p></div>
+      <button class="btn btn-sm ${tip.tone === "action" ? "btn-primary" : "btn-outline"}" data-act="${tip.action || "set-inv-tab"}" ${tip.view ? `data-inv-target="${tip.view}"` : ""}>${escapeHtml(tip.button)}</button>
+    </div>`)
+    .join("");
+  const typeRows = allocationByType(p)
+    .map((g) => `<div class="prop-row invest-prop"><div class="row-between small"><b>${assetTypeLabel(g.type)}</b><span>${g.pct}% · ${fmt(g.value)}</span></div><div class="goal-mini"><div style="width:${g.pct}%"></div></div></div>`)
+    .join("");
+  const assetRows = [...p.assets]
+    .sort((a, b) => (Number(b.currentValue) || 0) - (Number(a.currentValue) || 0))
+    .slice(0, 5)
+    .map((a) => {
+      const share = investPct(a.currentValue, total.totalValue);
+      return `<div class="investment-asset-mini"><div><b>${escapeHtml(a.name)}</b><span>${assetTypeLabel(a.type)}${a.ticker ? ` · ${escapeHtml(a.ticker)}` : ""}</span></div><div><strong>${fmt(a.currentValue)}</strong><em class="${a.totalPnL >= 0 ? "green-num" : "red-num"}">${a.totalPnL >= 0 ? "+" : ""}${fmt(a.totalPnL)} · ${share}%</em></div></div>`;
+    })
+    .join("");
+  const chartHtml = st.valuations.length
+    ? `<div class="card pad-lg"><div class="stat-label">Динамика портфеля по месяцам</div><canvas id="portChart" class="chart-line"></canvas></div>`
+    : `<div class="card pad-lg investment-guide"><div class="section-title" style="margin-top:0">Динамика появится после оценок</div><p class="muted">Добавляйте одну оценку стоимости активов в месяц — здесь будет график портфеля.</p><button class="btn btn-outline btn-sm" data-act="add-valuation">+ Оценка</button></div>`;
   return `
-  <div class="grid cards">
-    <div class="card"><div class="stat-label"><span class="stat-ico">💼</span> Стоимость портфеля</div><div class="stat-value">${fmt(total.totalValue)}</div><div class="stat-sub">${fmtUsd(total.totalValue)}</div></div>
-    <div class="card"><div class="stat-label"><span class="stat-ico">💸</span> Вложено</div><div class="stat-value sm">${fmt(total.totalInvested)}</div><div class="stat-sub">${fmtUsd(total.totalInvested)}</div></div>
+  <div class="grid cards investment-kpis">
+    <div class="card"><div class="stat-label"><span class="stat-ico">💼</span> Стоимость портфеля</div><div class="stat-value">${fmt(total.totalValue)}</div><div class="stat-sub">${fmtUsd(total.totalValue)} · ${p.assets.length} активов</div></div>
+    <div class="card"><div class="stat-label"><span class="stat-ico">💸</span> Вложено</div><div class="stat-value sm">${fmt(total.totalInvested)}</div><div class="stat-sub">себестоимость открытых позиций</div></div>
     <div class="card"><div class="stat-label"><span class="stat-ico">📊</span> Прибыль / Убыток</div><div class="stat-value sm ${pnlClass}">${fmt(total.totalPnL)}</div><div class="stat-sub">${fmtUsd(total.totalPnL)} ${pnlBadge}</div></div>
+    <div class="card"><div class="stat-label"><span class="stat-ico">⏱</span> Актуальность</div><div class="stat-value sm">${st.lastValDate ? fmtDate(st.lastValDate) : "—"}</div><div class="stat-sub">${st.daysSinceValuation == null ? "нет оценок" : `${st.daysSinceValuation} дн. назад`}</div></div>
   </div>
-  <div class="card pad-lg" style="margin-top:16px">
-    <div class="row-between"><div class="stat-label">Распределение портфеля</div>
-      <button class="btn btn-sm btn-outline" data-act="refresh-prices">🔄 Обновить цены</button></div>
-    <div style="margin-top:14px">${allocations}</div>
-  </div>
-  ${chartHtml}`;
+  <div class="investment-layout">
+    <div class="investment-left">
+      <div class="card pad-lg"><div class="row-between"><div class="section-title" style="margin:0">Следующие действия</div><button class="btn btn-sm btn-outline" data-act="refresh-prices">🔄 Обновить цены</button></div><div class="investment-tips">${insights}</div></div>
+      ${chartHtml}
+    </div>
+    <div class="investment-right">
+      <div class="card pad-lg"><div class="section-title" style="margin-top:0">Аллокация по типам</div>${typeRows || '<p class="muted">Нет стоимости по типам.</p>'}</div>
+      <div class="card pad-lg"><div class="row-between"><div class="section-title" style="margin:0">Крупнейшие позиции</div><button class="btn btn-sm btn-outline" data-act="set-inv-tab" data-inv-target="assets">Все</button></div><div class="investment-mini-list">${assetRows}</div></div>
+    </div>
+  </div>`;
 }
 function investAssets(p) {
   const rows = p
     ? p.assets
-        .map(
-          (a) => `<div class="wallet-row">
-    <div><b>${escapeHtml(a.name)}</b><div class="muted small">${a.type}${a.ticker ? " · " + a.ticker : ""}${a.currency ? " · цены " + escapeHtml(a.currency) : ""}</div></div>
-    <div style="min-width:200px">
+        .map((a) => {
+          const latestVal = assetLatestValuation(a.id, p);
+          const lastTx = assetLastTx(a.id, p);
+          const pct = investPct(a.currentValue, p.totals?.totalValue || 0);
+          return `<div class="wallet-row investment-row">
+    <div class="investment-row-title"><b>${escapeHtml(a.name)}</b><div class="muted small">${assetTypeLabel(a.type)}${a.ticker ? " · " + escapeHtml(a.ticker) : ""}${a.currency ? " · цены " + escapeHtml(a.currency) : ""}</div></div>
+    <div class="investment-row-metrics">
       <div class="row-between small"><span>${fmt(a.currentValue)}</span><span class="${a.totalPnL >= 0 ? "green-num" : "red-num"}">${a.totalPnL >= 0 ? "+" : ""}${fmt(a.totalPnL)}</span></div>
-      <div class="muted small">кол-во: ${a.quantityHeld} · вложено: ${fmt(a.totalInvested)}</div>
+      <div class="goal-mini"><div style="width:${pct}%"></div></div>
+      <div class="muted small">${pct}% портфеля · кол-во ${a.quantityHeld} · вложено ${fmt(a.totalInvested)}</div>
+      <div class="muted small">последняя оценка: ${latestVal ? fmtDate(latestVal.date) : "—"}${lastTx ? ` · операция: ${fmtDate(lastTx.date)}` : ""}</div>
     </div>
-  </div>`,
-        )
+    <button class="btn btn-sm btn-danger" data-act="delete-invest-asset" data-id="${escapeAttr(a.id)}" title="Удалить актив">×</button>
+  </div>`;
+        })
         .join("")
     : "";
-  return `<div class="card pad-lg"><div class="row-between"><div class="section-title" style="margin:0">Активы</div><button class="btn btn-primary btn-sm" data-act="add-asset">+ Актив</button></div>
-    <div style="margin-top:14px">${rows || '<p class="muted">Нет активов.</p>'}</div></div>`;
+  return `<div class="card pad-lg"><div class="row-between"><div><div class="section-title" style="margin:0">Активы</div><p class="muted small" style="margin:4px 0 0">Доля, P/L, количество и дата последней оценки по каждой позиции.</p></div><button class="btn btn-primary btn-sm" data-act="add-asset">+ Актив</button></div>
+    <div style="margin-top:14px">${rows || richEmpty("↗", "Нет активов", "Добавьте первый актив, затем покупки и оценки стоимости.", "add-asset", "+ Актив")}</div></div>`;
 }
 function investTransactions(p) {
+  if (!p?.assets?.length) return richEmpty("↗", "Сначала нужен актив", "Операции привязываются к активу — добавьте ETF, акцию, крипту или депозит.", "add-asset", "+ Актив");
   const rows = p
     ? p.transactions
         .map((t) => {
           const asset = p.assets.find((a) => a.id === t.assetId);
-          return `<div class="wallet-row">
-      <div><b>${escapeHtml(asset?.name || t.assetId)}</b><div class="muted small">${fmtDate(t.date)} · ${t.type === "buy" ? "Покупка" : "Продажа"}</div></div>
-      <div style="min-width:180px">
+          return `<div class="wallet-row investment-row">
+      <div><b>${escapeHtml(asset?.name || t.assetId)}</b><div class="muted small">${fmtDate(t.date)} · ${t.type === "buy" ? "Покупка" : "Продажа"}${t.note ? " · " + escapeHtml(t.note) : ""}</div></div>
+      <div class="investment-row-metrics compact">
         <div class="row-between small"><span>${t.quantity} × ${fmt(t.price)}</span><span>${fmt(t.totalAmount)}</span></div>
-        <div class="muted small">комиссия: ${fmt(t.fee)}${t.note ? " · " + escapeHtml(t.note) : ""}</div>
+        <div class="muted small">комиссия: ${fmt(t.fee)}</div>
       </div>
+      <button class="btn btn-sm btn-danger" data-act="delete-invest-tx" data-id="${escapeAttr(t.id)}" title="Удалить операцию">×</button>
     </div>`;
         })
         .join("")
     : "";
-  return `<div class="card pad-lg"><div class="row-between"><div class="section-title" style="margin:0">Операции покупки/продажи</div><button class="btn btn-primary btn-sm" data-act="add-tx">+ Операция</button></div>
+  const monthTotal = investmentStats(p).monthlyBuy;
+  return `<div class="card pad-lg"><div class="row-between"><div><div class="section-title" style="margin:0">Операции покупки/продажи</div><p class="muted small" style="margin:4px 0 0">Покупки за текущий месяц: ${fmt(monthTotal)}</p></div><button class="btn btn-primary btn-sm" data-act="add-tx">+ Операция</button></div>
     <div style="margin-top:14px">${rows || '<p class="muted">Нет операций.</p>'}</div></div>`;
 }
 function investValuations(p) {
+  if (!p?.assets?.length) return richEmpty("↗", "Сначала нужен актив", "Оценки показывают текущую стоимость активов и строят график портфеля.", "add-asset", "+ Актив");
   const rows = p
     ? p.valuations
         .map((v) => {
           const asset = p.assets.find((a) => a.id === v.assetId);
-          return `<div class="wallet-row">
+          return `<div class="wallet-row investment-row">
       <div><b>${escapeHtml(asset?.name || v.assetId)}</b><div class="muted small">${fmtDate(v.date)}${v.note ? " · " + escapeHtml(v.note) : ""}</div></div>
       <div class="stat-value sm">${fmt(v.value)}</div>
+      <button class="btn btn-sm btn-danger" data-act="delete-invest-valuation" data-id="${escapeAttr(v.id)}" title="Удалить оценку">×</button>
     </div>`;
         })
         .join("")
     : "";
-  return `<div class="card pad-lg"><div class="row-between"><div class="section-title" style="margin:0">Ежемесячные оценки</div><button class="btn btn-primary btn-sm" data-act="add-valuation">+ Оценка</button></div>
+  return `<div class="card pad-lg"><div class="row-between"><div><div class="section-title" style="margin:0">Ежемесячные оценки</div><p class="muted small" style="margin:4px 0 0">Одна актуальная оценка в месяц делает P/L и график полезными.</p></div><button class="btn btn-primary btn-sm" data-act="add-valuation">+ Оценка</button></div>
     <div style="margin-top:14px">${rows || '<p class="muted">Добавьте оценку стоимости актива.</p>'}</div></div>`;
 }
 
@@ -1514,6 +1675,13 @@ function bindViewEvents() {
       else if (act === "ai-explain") await explainItem(id);
       else if (act === "delete") await deleteItem(id);
       else if (act === "delete-wallet") await deleteWallet(el.dataset.id);
+      else if (act === "delete-invest-asset") await deleteInvestmentAsset(el.dataset.id);
+      else if (act === "delete-invest-tx") await deleteInvestmentTransaction(el.dataset.id);
+      else if (act === "delete-invest-valuation") await deleteInvestmentValuation(el.dataset.id);
+      else if (act === "set-inv-tab") {
+        state.invTab = el.dataset.invTarget || "overview";
+        renderView();
+      }
       else if (act === "go-view") setView(el.dataset.targetView || "dashboard");
       else if (act === "dismiss-onboarding") {
         localStorage.setItem("onboardingDismissed", "1");
@@ -1751,6 +1919,34 @@ async function refreshPrices() {
   }
 }
 
+async function deleteInvestmentAsset(id) {
+  const asset = state.portfolio?.assets?.find((a) => String(a.id) === String(id));
+  const ok = await confirmDialog({
+    title: "Удалить актив?",
+    text: `Актив «${asset?.name || "без названия"}» будет удалён вместе с его операциями и оценками.`,
+    confirmText: "Удалить",
+    danger: true,
+  });
+  if (!ok) return;
+  await api.del(`/api/investments/assets/${encodeURIComponent(id)}`);
+  toast("Актив удалён");
+  await refresh();
+}
+async function deleteInvestmentTransaction(id) {
+  const ok = await confirmDialog({ title: "Удалить операцию?", text: "Покупка/продажа будет убрана из расчёта количества, себестоимости и P/L.", confirmText: "Удалить", danger: true });
+  if (!ok) return;
+  await api.del(`/api/investments/transactions/${encodeURIComponent(id)}`);
+  toast("Операция удалена");
+  await refresh();
+}
+async function deleteInvestmentValuation(id) {
+  const ok = await confirmDialog({ title: "Удалить оценку?", text: "Эта запись исчезнет из графика и расчёта текущей стоимости.", confirmText: "Удалить", danger: true });
+  if (!ok) return;
+  await api.del(`/api/investments/valuations/${encodeURIComponent(id)}`);
+  toast("Оценка удалена");
+  await refresh();
+}
+
 async function downloadCSV(type) {
   try {
     const resp = await fetch(`/api/export/csv/${type}`);
@@ -1975,8 +2171,12 @@ function openAssetModal() {
 }
 
 function openTxModal() {
+  if (!(state.portfolio?.assets || []).length) {
+    toast("Сначала добавьте актив");
+    return openAssetModal();
+  }
   const assetOpts = (state.portfolio?.assets || [])
-    .map((a) => `<option value="${a.id}">${escapeHtml(a.name)}</option>`)
+    .map((a) => `<option value="${escapeAttr(a.id)}">${escapeHtml(a.name)}</option>`)
     .join("");
   openModal(`<div class="modal narrow">
     <div class="modal-head"><h2>Операция покупки/продажи</h2><button class="close-x" data-close-modal>×</button></div>
@@ -2012,8 +2212,12 @@ function openTxModal() {
 }
 
 function openValuationModal() {
+  if (!(state.portfolio?.assets || []).length) {
+    toast("Сначала добавьте актив");
+    return openAssetModal();
+  }
   const assetOpts = (state.portfolio?.assets || [])
-    .map((a) => `<option value="${a.id}">${escapeHtml(a.name)}</option>`)
+    .map((a) => `<option value="${escapeAttr(a.id)}">${escapeHtml(a.name)}</option>`)
     .join("");
   openModal(`<div class="modal narrow">
     <div class="modal-head"><h2>Ежемесячная оценка</h2><button class="close-x" data-close-modal>×</button></div>
