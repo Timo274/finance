@@ -634,29 +634,48 @@ function miniInsightItem(item, emptyText) {
   </div>`;
 }
 
+function decisionMetric(label, value, accent = "") {
+  return `<div class="decision-metric ${accent}"><span>${label}</span><b>${value}</b></div>`;
+}
+
 function decisionCockpit() {
   const insights = state.insights;
   if (!insights) return "";
   const metrics = insights.metrics || {};
+  const runway = Math.max(0, Math.min(100, metrics.runwayPct || 0));
+  const statusLabel =
+    insights.status === "danger"
+      ? "Нужен trade-off"
+      : insights.status === "warning"
+        ? "Проверить перед покупкой"
+        : insights.status === "no_plan"
+          ? "Нет плана"
+          : "Можно действовать";
   const actionRows = (insights.actions || [])
-    .map((a) => `<li class="tone-${a.tone || "neutral"}">${escapeHtml(a.text)}</li>`)
+    .map((a) => `<li class="tone-${a.tone || "neutral"}"><span></span>${escapeHtml(a.text)}</li>`)
     .join("");
   return `<section class="decision-cockpit decision-${insights.status || "safe"}">
     <div class="decision-hero">
-      <div>
+      <div class="decision-copy">
         <div class="eyebrow">Decision cockpit</div>
         <h2>${escapeHtml(insights.headline || "План готов")}</h2>
-        <p>Короткий слой решений: что можно брать сейчас, за чем следить и что лучше перенести.</p>
+        <p>Один экран для решения: что купить сейчас, что держать под контролем и где лучше нажать паузу.</p>
       </div>
-      <div class="runway-ring" style="--pct:${Math.max(0, Math.min(100, metrics.runwayPct || 0))}">
+      <div class="runway-ring" style="--pct:${runway}">
         <b>${metrics.runwayPct ?? 0}%</b><span>запас</span>
       </div>
     </div>
+    <div class="decision-strip">
+      ${decisionMetric("Статус", statusLabel, "metric-status")}
+      ${decisionMetric("Свободно", fmt(metrics.remaining || 0), metrics.remaining < 0 ? "metric-danger" : "metric-good")}
+      ${decisionMetric("В плане", fmt(metrics.allocated || 0))}
+      ${decisionMetric("Активных", `${metrics.activeCount || 0} шт.`)}
+    </div>
     <ul class="decision-actions">${actionRows}</ul>
     <div class="decision-grid">
-      <div class="decision-col"><h3>Брать сейчас</h3>${(insights.buyNow || []).slice(0, 3).map((x) => miniInsightItem(x, "Пока ничего не помещается в план")).join("") || `<div class="insight-empty">Пока ничего не помещается в план</div>`}</div>
-      <div class="decision-col"><h3>Проверить</h3>${(insights.watch || []).slice(0, 3).map((x) => miniInsightItem(x, "Нет срочных рисков")).join("") || `<div class="insight-empty">Нет срочных рисков</div>`}</div>
-      <div class="decision-col"><h3>Перенести</h3>${(insights.postpone || []).slice(0, 3).map((x) => miniInsightItem(x, "Нечего переносить")).join("") || `<div class="insight-empty">Нечего переносить</div>`}</div>
+      <div class="decision-col decision-buy"><h3><span>✓</span> Брать сейчас</h3>${(insights.buyNow || []).slice(0, 3).map((x) => miniInsightItem(x, "Пока ничего не помещается в план")).join("") || `<div class="insight-empty">Пока ничего не помещается в план</div>`}</div>
+      <div class="decision-col decision-watch"><h3><span>!</span> Проверить</h3>${(insights.watch || []).slice(0, 3).map((x) => miniInsightItem(x, "Нет срочных рисков")).join("") || `<div class="insight-empty">Нет срочных рисков</div>`}</div>
+      <div class="decision-col decision-postpone"><h3><span>↷</span> Перенести</h3>${(insights.postpone || []).slice(0, 3).map((x) => miniInsightItem(x, "Нечего переносить")).join("") || `<div class="insight-empty">Нечего переносить</div>`}</div>
     </div>
   </section>`;
 }
@@ -684,9 +703,10 @@ function viewDashboard() {
     pfInvested > 0 ? ((pfPL / pfInvested) * 100).toFixed(1) : null;
 
   return `
-  <div class="view-head"><h1>Кабинет</h1><p>Как разложить зарплату заранее — до того, как деньги пришли.</p></div>
-  ${decisionCockpit()}
-  <div class="grid cards">
+  <div class="dashboard-shell">
+    <div class="view-head dashboard-head"><div><h1>Кабинет</h1><p>Как разложить зарплату заранее — до того, как деньги пришли.</p></div><span class="page-kicker">личный финансовый cockpit</span></div>
+    ${decisionCockpit()}
+    <div class="grid cards dashboard-cards">
     <div class="card"><div class="stat-label"><span class="stat-ico">💰</span> Зарплата</div><div class="stat-value">${fmt(t.salary)}</div><div class="stat-sub">${fmtDate(state.plan.payday)} ${fmtUsd(t.salary)}</div></div>
     <div class="card"><div class="stat-label"><span class="stat-ico">🛡️</span> Обязательные расходы</div><div class="stat-value sm">${fmt(t.survival)}</div><div class="stat-sub">${fmtUsd(t.survival)} стабильный расходник</div></div>
     <div class="card"><div class="stat-label"><span class="stat-ico">🏦</span> Страховка</div><div class="stat-value sm accent-num">${fmt(t.reserve)}</div><div class="stat-sub">${fmtUsd(t.reserve)} чёрный день</div></div>
@@ -695,9 +715,9 @@ function viewDashboard() {
     <div class="card"><div class="stat-label"><span class="stat-ico">📋</span> Распределено</div><div class="stat-value sm">${fmt(committedTotal())}</div><div class="stat-sub">${fmtUsd(committedTotal())} ${hasManualPlan() ? "ручной план" : `${state.allocation.approved.length} покупок`}</div></div>
     <div class="card"><div class="stat-label"><span class="stat-ico">${remainingSurplus() < 0 ? "⚠️" : "✅"}</span> Останется из излишков</div><div class="stat-value ${remainingSurplus() < 0 ? "red-num" : "green-num"}">${fmt(remainingSurplus())}</div><div class="stat-sub">${fmtUsd(remainingSurplus())} ${hasManualPlan() ? "по ручному плану" : "по авто-распределению"}</div></div>
     ${pfValue > 0 ? `<div class="card"><div class="stat-label"><span class="stat-ico">💼</span> Портфель</div><div class="stat-value sm">${fmt(pfValue)}</div><div class="stat-sub">${fmtUsd(pfValue)} ${pfPLpct ? `<span style="color:${pfPL >= 0 ? "var(--green)" : "var(--red)"};font-weight:700">${pfPL >= 0 ? "+" : ""}${pfPLpct}%</span>` : ""}</div></div>` : ""}
-  </div>
+    </div>
 
-  <div class="card pad-lg" style="margin-top:16px">
+    <div class="card pad-lg allocation-card">
     <div class="row-between"><div class="stat-label">Распределение по слоям</div>
       <span class="status-badge status-${t.status}">${STATUS_LABELS[t.status]}</span></div>
     <div class="donut-wrap">
@@ -722,6 +742,7 @@ function viewDashboard() {
       <div class="alloc-seg" style="width:${stablePct(t.fixedInvestment)}%;background:var(--green)" title="Инвестиции"></div>${segs}
     </div>
     ${t.status === "overallocated" ? `<div class="tradeoff" style="background:color-mix(in srgb,var(--red) 10%,transparent);border-color:var(--red)"><b style="color:var(--red)">Перерасход.</b> Стабильные пункты и желания выше зарплаты — посмотрите «План распределения», что перенести.</div>` : ""}
+    </div>
   </div>
   `;
 }
