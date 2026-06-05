@@ -20,7 +20,7 @@
             href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@600;700;800&display=swap"
             rel="stylesheet"
         />
-        <link rel="stylesheet" href="/styles.css?v=20260605-layer1" />
+        <link rel="stylesheet" href="/styles.css?v=20260605-themes" />
     </head>
     <body>
         <!-- Логотип (переиспользуется через <use>) -->
@@ -109,6 +109,18 @@
                     </button>
                 </form>
                 <div class="auth-foot">
+                    <select id="paletteSelectAuth" class="theme-select" title="Цветовая тема" aria-label="Цветовая тема">
+                            <option value="ocean">Ocean Teal</option>
+                            <option value="sapphire">Sapphire</option>
+                            <option value="violet">Executive Violet</option>
+                            <option value="emerald">Emerald</option>
+                            <option value="amber">Amber Desk</option>
+                            <option value="rose">Rose Graphite</option>
+                            <option value="cyan">Cyber Cyan</option>
+                            <option value="slate">Slate Mint</option>
+                            <option value="forest">Forest Gold</option>
+                            <option value="mono">Mono Steel</option>
+                        </select>
                     <button
                         id="themeBtnAuth"
                         class="icon-btn"
@@ -242,6 +254,18 @@
                         >
                             ⚙
                         </button>
+                        <select id="paletteSelect" class="theme-select" title="Цветовая тема" aria-label="Цветовая тема">
+                                <option value="ocean">Ocean Teal</option>
+                                <option value="sapphire">Sapphire</option>
+                                <option value="violet">Executive Violet</option>
+                                <option value="emerald">Emerald</option>
+                                <option value="amber">Amber Desk</option>
+                                <option value="rose">Rose Graphite</option>
+                                <option value="cyan">Cyber Cyan</option>
+                                <option value="slate">Slate Mint</option>
+                                <option value="forest">Forest Gold</option>
+                                <option value="mono">Mono Steel</option>
+                            </select>
                         <button
                             id="themeBtn"
                             class="icon-btn"
@@ -294,6 +318,6 @@
 
         <div id="toast" class="toast hidden"></div>
 
-        <script src="/app.js?v=20260605-layer1" type="module"></script>
+        <script src="/app.js?v=20260605-themes" type="module"></script>
     </body>
 </html>

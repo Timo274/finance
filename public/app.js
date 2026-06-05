@@ -402,37 +402,88 @@ function sortedItems(items) {
 }
 
 // ---------- theme ----------
+const THEME_MODES = [
+  { id: "light", label: "Светлая", icon: "☾", meta: "#ffffff" },
+  { id: "dark", label: "Тёмная", icon: "☀", meta: "#0a1020" },
+  { id: "cockpit", label: "Decision Cockpit", icon: "◈", meta: "#102f32" },
+];
+const THEME_PALETTES = [
+  { id: "ocean", label: "Ocean Teal" },
+  { id: "sapphire", label: "Sapphire" },
+  { id: "violet", label: "Executive Violet" },
+  { id: "emerald", label: "Emerald" },
+  { id: "amber", label: "Amber Desk" },
+  { id: "rose", label: "Rose Graphite" },
+  { id: "cyan", label: "Cyber Cyan" },
+  { id: "slate", label: "Slate Mint" },
+  { id: "forest", label: "Forest Gold" },
+  { id: "mono", label: "Mono Steel" },
+];
+function isTheme(t) {
+  return THEME_MODES.some((x) => x.id === t);
+}
+function isPalette(p) {
+  return THEME_PALETTES.some((x) => x.id === p);
+}
 function currentTheme() {
   try {
-    return (
-      localStorage.getItem("cq-theme") ||
-      document.documentElement.getAttribute("data-theme") ||
-      "light"
-    );
-  } catch {
-    return document.documentElement.getAttribute("data-theme") || "light";
-  }
+    const stored = localStorage.getItem("cq-theme");
+    if (isTheme(stored)) return stored;
+  } catch {}
+  const attr = document.documentElement.getAttribute("data-theme");
+  return isTheme(attr) ? attr : "light";
+}
+function currentPalette() {
+  try {
+    const stored = localStorage.getItem("cq-palette");
+    if (isPalette(stored)) return stored;
+  } catch {}
+  const attr = document.documentElement.getAttribute("data-palette");
+  return isPalette(attr) ? attr : "ocean";
+}
+function syncThemeControls(t, palette = currentPalette()) {
+  const mode = THEME_MODES.find((x) => x.id === t) || THEME_MODES[0];
+  [$("#themeBtn"), $("#themeBtnAuth")].forEach((btn) => {
+    if (!btn) return;
+    btn.textContent = mode.icon;
+    btn.title = `Режим: ${mode.label}. Нажмите, чтобы переключить`;
+    btn.setAttribute("aria-label", btn.title);
+  });
+  [$("#paletteSelect"), $("#paletteSelectAuth")].forEach((sel) => {
+    if (sel) sel.value = palette;
+  });
+}
+function applyPalette(p = currentPalette()) {
+  const palette = isPalette(p) ? p : "ocean";
+  document.documentElement.setAttribute("data-palette", palette);
+  try {
+    localStorage.setItem("cq-palette", palette);
+  } catch {}
+  syncThemeControls(currentTheme(), palette);
+  if (typeof drawCharts === "function") requestAnimationFrame(drawCharts);
 }
 function applyTheme(t) {
-  document.documentElement.setAttribute("data-theme", t);
+  const theme = isTheme(t) ? t : "light";
+  document.documentElement.setAttribute("data-theme", theme);
   try {
-    localStorage.setItem("cq-theme", t);
+    localStorage.setItem("cq-theme", theme);
   } catch {}
+  const mode = THEME_MODES.find((x) => x.id === theme) || THEME_MODES[0];
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute("content", t === "dark" ? "#0a1020" : "#ffffff");
-  const icon = t === "dark" ? "☀" : "☾";
-  const a = $("#themeBtn");
-  if (a) a.textContent = icon;
-  const b = $("#themeBtnAuth");
-  if (b) b.textContent = icon;
+  if (meta) meta.setAttribute("content", mode.meta);
+  syncThemeControls(theme);
   if (typeof drawCharts === "function") requestAnimationFrame(drawCharts);
 }
 function toggleTheme() {
-  applyTheme(currentTheme() === "dark" ? "light" : "dark");
+  const i = THEME_MODES.findIndex((x) => x.id === currentTheme());
+  applyTheme(THEME_MODES[(i + 1) % THEME_MODES.length].id);
 }
 $("#themeBtn")?.addEventListener("click", toggleTheme);
 $("#themeBtnAuth")?.addEventListener("click", toggleTheme);
+$("#paletteSelect")?.addEventListener("change", (e) => applyPalette(e.target.value));
+$("#paletteSelectAuth")?.addEventListener("change", (e) => applyPalette(e.target.value));
 applyTheme(currentTheme());
+applyPalette(currentPalette());
 
 // ============================================================
 // AUTH
