@@ -74,6 +74,20 @@ npm test               # unit-тесты allocation engine
 
 ## Деплой
 
-Репозиторий содержит `render.yaml` для деплоя на [Render](https://render.com) в один клик
-(persistent disk для SQLite). Аналогично разворачивается на Railway / Fly.io — нужен только
-Node 18+, постоянный диск под `data/` и переменные окружения выше.
+Production сейчас развёрнут на Fly.io: `https://salary-planner-475c5d.fly.dev`.
+Конфигурация лежит в `fly.toml`: регион `fra`, Docker build, порт `8080`, SQLite и backup на
+persistent volume `/data`.
+
+Ручной деплой на Fly.io из корня репозитория:
+
+```bash
+fly deploy --remote-only --app salary-planner-475c5d
+```
+
+Для автоматического деплоя через GitHub Actions добавьте repo secret `FLY_API_TOKEN`; после этого
+каждый push в `main` будет прогонять тесты и деплоить приложение. Workflow также можно запускать
+вручную через GitHub Actions (`workflow_dispatch`).
+
+Репозиторий также содержит `render.yaml` для деплоя на [Render](https://render.com) в один клик
+(persistent disk для SQLite). Аналогично разворачивается на Railway — нужен только Node 18+,
+постоянный диск под `data/` и переменные окружения выше.
