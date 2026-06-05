@@ -1006,7 +1006,13 @@ function queueItemRow(item, extra = "", reason = "") {
       <div class="qi-meta">${layerLabel(layer)} · ${catLabelShort(item.category)} · ${bandLabel(item.band)} · приоритет ${item.priority}/5 · траектория ${item.trajectory}/5${item.deadline ? " · дедлайн " + fmtDate(item.deadline) : ""}</div>
       ${gp.saved > 0 ? `<div class="goal-mini"><div style="width:${gp.pct}%"></div></div><div class="qi-meta">Накоплено ${fmt(gp.saved)} из ${fmt(gp.cost)} · осталось ${fmt(gp.left)}</div>` : ""}
       ${reason ? `<div class="reason">↪ ${reason}</div>` : ""}
-      ${extra ? `<div class="qi-meta">${extra}</div>` : ""}
+      ${extra ? `<div class="qi-meta mobile-swipe-hint">${extra}</div>` : ""}
+      <div class="mobile-item-actions" aria-label="Действия с желанием">
+        <button class="btn btn-sm btn-outline" data-act="tradeoff" data-id="${item.id}">Trade-off</button>
+        <button class="btn btn-sm btn-outline" data-act="save-goal" data-id="${item.id}">Копить</button>
+        <button class="btn btn-sm btn-ghost" data-act="edit" data-id="${item.id}">Изм.</button>
+        <button class="btn btn-sm btn-ghost" data-act="bought" data-id="${item.id}">Куплено</button>
+      </div>
     </div>
     <div class="qi-cost">${fmt(item.cost)}</div>
   </div>`;
@@ -1466,6 +1472,7 @@ function viewMore() {
       <button class="card more-tile" data-act="go-view" data-target-view="history"><span>↺</span><b>История</b><p>Закрытые месяцы и решения</p></button>
       <button class="card more-tile" data-act="go-view" data-target-view="assistant"><span>✦</span><b>AI-ассистент</b><p>Пояснения и trade-off</p></button>
       <button class="card more-tile" data-act="open-plan"><span>⚙</span><b>Настройки плана</b><p>Зарплата, расходы, резерв</p></button>
+      <button class="card more-tile" data-act="toggle-theme"><span>◐</span><b>Тема</b><p>Светлая / тёмная / авто</p></button>
       <button class="card more-tile danger" id="logoutBtnMobileMore" type="button"><span>⏻</span><b>Выйти</b><p>Завершить сессию</p></button>
     </div>`;
 }
@@ -1689,6 +1696,7 @@ function bindViewEvents() {
         renderView();
       }
       else if (act === "refresh-prices") await refreshPrices();
+      else if (act === "toggle-theme") toggleTheme();
       else if (act === "clear-chat") {
         chatHistory = [];
         saveChatHistory();
