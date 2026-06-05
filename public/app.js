@@ -1996,8 +1996,17 @@ $("#installBtn")?.addEventListener("click", async () => {
   deferredInstallPrompt = null;
   $("#installBtn")?.classList.add("hidden");
 });
-if ("serviceWorker" in navigator)
-  navigator.serviceWorker.register("/sw.js").catch(() => {});
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js?v=20260605-refresh2").then((registration) => {
+    registration.update?.();
+  }).catch(() => {});
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!sessionStorage.getItem("cq-sw-refreshed-20260605-refresh2")) {
+      sessionStorage.setItem("cq-sw-refreshed-20260605-refresh2", "1");
+      location.reload();
+    }
+  });
+}
 
 // ============================================================
 // СИНХРОНИЗАЦИЯ ДАННЫХ МЕЖДУ ВКЛАДКАМИ И УСТРОЙСТВАМИ
