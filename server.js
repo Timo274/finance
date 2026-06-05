@@ -41,6 +41,8 @@ import {
 } from "./src/categories.js";
 import {
   allocate,
+  allocationFromManualPlan,
+  amountToFund,
   tradeoff,
   scenarioSummaries,
   SCENARIOS,
@@ -470,8 +472,9 @@ function getPortfolio() {
       } else if (tx.type === "sell") {
         const sellQty = Math.min(qty, quantityHeld);
         if (sellQty <= 0) continue;
-        const sellProceeds =
+        const sellTotal =
           storedTotal > 0 ? storedTotal : Math.max(0, gross - fee);
+        const sellProceeds = qty > 0 ? sellTotal * (sellQty / qty) : 0;
         const avgCost = quantityHeld > 0 ? costBasis / quantityHeld : 0;
         const soldBasis = avgCost * sellQty;
         realizedPnL += sellProceeds - soldBasis;
@@ -566,16 +569,23 @@ function getManualPlan() {
 function getGoals() {
   return stmt.goalsByItems.all().map(rowToGoal);
 }
+function effectiveAllocation(plan, items, scenario = "balanced") {
+  if (!plan) return null;
+  const options = {
+    scenario,
+    includeIds: scenario === "custom" ? customIds() : null,
+  };
+  const manualPlan = getManualPlan() || [];
+  if (scenario === "balanced" && manualPlan.length > 0) {
+    return allocationFromManualPlan(plan, items, manualPlan, options);
+  }
+  return allocate(plan, items, options);
+}
 
 function buildAIContext(scenario = "balanced") {
   const plan = getActivePlan();
   const items = getActiveItems();
-  const allocation = plan
-    ? allocate(plan, items, {
-        scenario,
-        includeIds: scenario === "custom" ? customIds() : null,
-      })
-    : null;
+  const allocation = effectiveAllocation(plan, items, scenario);
   const portfolio = getPortfolio();
   return {
     plan,
@@ -584,10 +594,14 @@ function buildAIContext(scenario = "balanced") {
       approved: allocation.approved.map((a) => ({
         title: a.item.title,
         cost: a.item.cost,
+        allocatedAmount: a.allocatedAmount,
+        remainingCost: a.remainingCost,
+        manual: !!a.manual,
       })),
       deferred: allocation.deferred.map((d) => ({
         title: d.item.title,
         cost: d.item.cost,
+        remainingCost: d.remainingCost,
         reason: d.reason,
       })),
       policyTargets: allocation.policyTargets,
@@ -782,31 +796,75 @@ app.post("/api/plan/close", requireAuth, (req, res) => {
   const plan = getActivePlan();
   if (!plan) return res.status(400).json({ error: "no_active_plan" });
   const items = getActiveItems();
-  const result = allocate(plan, items, {
-    scenario: req.body?.scenario || "balanced",
-  });
+  const scenario = req.body?.scenario || "balanced";
+  const manualPlan = getManualPlan() || [];
+  const useManual = scenario === "balanced" && manualPlan.length > 0;
+  const result = useManual
+    ? allocationFromManualPlan(plan, items, manualPlan, { scenario })
+    : allocate(plan, items, { scenario });
 
   const snapshot = {
     closedScenario: result.scenario,
+    source: useManual ? "manual" : "auto",
     totals: result.totals,
     buckets: result.buckets,
     approved: result.approved.map((a) => ({
       title: a.item.title,
       cost: a.item.cost,
+      allocatedAmount: a.allocatedAmount,
+      remainingCost: a.remainingCost,
       layer: a.item.layer,
+      purchased: useManual ? a.fullyFunded : true,
     })),
     deferred: result.deferred.map((d) => ({
       title: d.item.title,
       cost: d.item.cost,
+      remainingCost: d.remainingCost,
       reason: d.reason,
     })),
   };
-  // Купленное архивируем (bought), отложенное оставляем в мастер-листе.
-  const approvedIds = new Set(result.approved.map((a) => a.item.id));
+
   const close = db.transaction(() => {
     stmt.closePlan.run({ id: plan.id, snapshot: JSON.stringify(snapshot) });
-    for (const id of approvedIds)
-      stmt.setItemStatus.run({ id, status: "bought" });
+
+    for (const entry of result.approved) {
+      if (!useManual) {
+        stmt.setItemStatus.run({ id: entry.item.id, status: "bought" });
+        continue;
+      }
+
+      const cost = positiveNumber(entry.item.cost);
+      const savedBefore = positiveNumber(entry.item.savedAmount);
+      const contribution = Math.max(0, Number(entry.allocatedAmount) || 0);
+      const savedAmount = Math.min(cost, savedBefore + contribution);
+      stmt.updateItemSavings.run({ id: entry.item.id, savedAmount });
+
+      if (contribution > 0) {
+        const existingGoal = stmt.goalByItem.get(entry.item.id);
+        stmt.upsertGoal.run({
+          itemId: entry.item.id,
+          targetAmount: cost,
+          savedAmount,
+          monthlyContribution: Math.max(0, Number(existingGoal?.monthly_contribution) || 0),
+          deadline: existingGoal?.deadline || entry.item.deadline || null,
+          status: savedAmount >= cost ? "complete" : "active",
+        });
+        const goal = stmt.goalByItem.get(entry.item.id);
+        if (goal) {
+          stmt.insertGoalContribution.run({
+            goalId: goal.id,
+            planId: plan.id,
+            amount: contribution,
+            date: todayISO(),
+            note: "Закрытие месяца по ручному плану",
+          });
+        }
+      }
+
+      if (cost > 0 && savedAmount >= cost) {
+        stmt.setItemStatus.run({ id: entry.item.id, status: "bought" });
+      }
+    }
   });
   close();
 
@@ -937,10 +995,7 @@ app.get("/api/allocation", requireAuth, (req, res) => {
   const plan = getActivePlan();
   if (!plan) return res.json({ plan: null, allocation: null });
   const scenario = req.query.scenario || "balanced";
-  const allocation = allocate(plan, getActiveItems(), {
-    scenario,
-    includeIds: scenario === "custom" ? customIds() : null,
-  });
+  const allocation = effectiveAllocation(plan, getActiveItems(), scenario);
   res.json({ plan, allocation });
 });
 
@@ -1230,14 +1285,21 @@ app.post("/api/manual-plan", requireAuth, (req, res) => {
       .status(400)
       .json({ error: "item_not_found", itemId: invalid.itemId });
 
+  const cappedManualPlan = manualPlan
+    .map((entry) => {
+      const item = items.find((it) => Number(it.id) === Number(entry.itemId));
+      const amount = Math.min(entry.amount, amountToFund(item));
+      return { ...entry, amount };
+    })
+    .filter((entry) => entry.amount > 0);
   const allocation = allocate(plan, items, { scenario: "balanced" });
-  const total = manualPlan.reduce((sum, entry) => sum + entry.amount, 0);
+  const total = cappedManualPlan.reduce((sum, entry) => sum + entry.amount, 0);
   const availableToAllocate = allocation.totals.availableToAllocate;
   const overBudget = total > availableToAllocate;
 
   const save = db.transaction(() => {
     stmt.deleteDecisionsForPlan.run({ planId });
-    manualPlan.forEach((entry) =>
+    cappedManualPlan.forEach((entry) =>
       stmt.upsertDecision.run({
         planId,
         itemId: entry.itemId,
@@ -1808,7 +1870,47 @@ app.get("/api/tradeoff/:id", requireAuth, (req, res) => {
   const plan = getActivePlan();
   if (!plan) return res.status(400).json({ error: "no_active_plan" });
   const scenario = req.query.scenario || "balanced";
-  const t = tradeoff(Number(req.params.id), plan, getActiveItems(), {
+  const items = getActiveItems();
+  const targetId = Number(req.params.id);
+  const manualPlan = getManualPlan() || [];
+
+  if (scenario === "balanced" && manualPlan.length > 0) {
+    const result = allocationFromManualPlan(plan, items, manualPlan, { scenario });
+    const target = items.find((item) => Number(item.id) === targetId);
+    if (!target) return res.status(404).json({ error: "not_found" });
+    const approvedEntry = result.approved.find((a) => Number(a.item.id) === targetId);
+    const targetAmount = amountToFund(target);
+    if (approvedEntry) {
+      const freed = Number(approvedEntry.allocatedAmount) || 0;
+      return res.json({
+        itemId: targetId,
+        approved: true,
+        remainingIfKept: result.totals.remaining,
+        freedIfRemoved: freed,
+        remainingIfRemoved: result.totals.remaining + freed,
+      });
+    }
+    let need = Math.max(0, targetAmount - result.totals.remaining);
+    const displaces = [];
+    const removable = [...result.approved].sort(
+      (a, b) => (a.item.priority || 1) - (b.item.priority || 1),
+    );
+    for (const a of removable) {
+      if (need <= 0) break;
+      displaces.push(a.item);
+      need -= Number(a.allocatedAmount) || amountToFund(a.item);
+    }
+    return res.json({
+      itemId: targetId,
+      approved: false,
+      remainingIfAdded: result.totals.remaining - targetAmount,
+      belowBuffer: result.totals.remaining - targetAmount < 0,
+      belowReserve: result.totals.remaining - targetAmount < 0,
+      displaces,
+    });
+  }
+
+  const t = tradeoff(targetId, plan, items, {
     scenario,
     includeIds: scenario === "custom" ? customIds() : null,
   });
@@ -1831,12 +1933,7 @@ app.get("/api/state", requireAuth, (req, res) => {
   const plan = getActivePlan();
   const items = getActiveItems();
   const scenario = req.query.scenario || "balanced";
-  const allocation = plan
-    ? allocate(plan, items, {
-        scenario,
-        includeIds: scenario === "custom" ? customIds() : null,
-      })
-    : null;
+  const allocation = effectiveAllocation(plan, items, scenario);
   res.json({
     plan,
     items,

@@ -146,7 +146,7 @@ function policyTargets(available, weights) {
   );
 }
 
-function amountToFund(item) {
+export function amountToFund(item) {
   const cost = Math.max(0, Number(item.cost) || 0);
   const saved = Math.max(0, Number(item.savedAmount) || 0);
   return Math.max(0, cost - saved);
@@ -310,6 +310,116 @@ export function allocate(plan, items, options = {}) {
     },
     weights: scenario.weights,
     policyTargets: targets,
+    buckets,
+    approved,
+    deferred,
+    timeline,
+  };
+}
+
+/**
+ * Пересобрать allocation-результат вокруг ручного плана.
+ * Ручной план — главный источник для UI/истории, но базовые расходы и доступный бюджет
+ * остаются теми же, что в авто-распределении.
+ */
+export function allocationFromManualPlan(plan, items, manualPlan = [], options = {}) {
+  const base = allocate(plan, items, options);
+  const byId = new Map((items || []).map((item) => [Number(item.id), item]));
+  const requestedById = new Map();
+
+  for (const entry of Array.isArray(manualPlan) ? manualPlan : []) {
+    const itemId = Number(entry?.itemId);
+    const amount = Math.max(0, Number(entry?.amount) || 0);
+    if (!itemId || amount <= 0 || !byId.has(itemId)) continue;
+    requestedById.set(itemId, (requestedById.get(itemId) || 0) + amount);
+  }
+
+  const approved = [];
+  const deferred = [];
+  const buckets = emptyBuckets();
+  let allocated = 0;
+
+  for (const item of items || []) {
+    const remainingCost = amountToFund(item);
+    const requested = requestedById.get(Number(item.id)) || 0;
+    const allocatedAmount = Math.min(requested, remainingCost);
+    const itemForResult = { ...item, remainingCost };
+
+    if (allocatedAmount > 0) {
+      const balanceAfter = base.totals.availableToAllocate - (allocated + allocatedAmount);
+      approved.push({
+        item: itemForResult,
+        allocatedAmount,
+        remainingCost,
+        balanceAfter,
+        manual: true,
+        fullyFunded: allocatedAmount >= remainingCost,
+      });
+      allocated += allocatedAmount;
+      buckets[item.layer] = (buckets[item.layer] || 0) + allocatedAmount;
+    }
+
+    if (allocatedAmount < remainingCost) {
+      deferred.push({
+        item: itemForResult,
+        remainingCost: remainingCost - allocatedAmount,
+        reason:
+          allocatedAmount > 0
+            ? "Частично профинансировано ручным планом"
+            : "Не выбрано в ручном плане",
+      });
+    }
+  }
+
+  const remaining = base.totals.availableToAllocate - allocated;
+  let status = "safe";
+  const importantDeferred = deferred.some(
+    (d) => d.remainingCost > 0 && (d.item.type === "must" || !d.item.canDefer),
+  );
+  if (base.totals.salary < base.totals.stableExpenses || remaining < 0 || importantDeferred) {
+    status = "overallocated";
+  } else if (
+    base.totals.availableToAllocate > 0 &&
+    remaining < base.totals.availableToAllocate * 0.15
+  ) {
+    status = "tight";
+  }
+
+  const timeline = [];
+  let balance = base.totals.availableToAllocate;
+  const scheduled = approved
+    .map((a, idx) => {
+      const earliest =
+        a.item.earliestDate && new Date(a.item.earliestDate) > new Date(plan.payday)
+          ? a.item.earliestDate
+          : plan.payday;
+      return { ...a, date: earliest, order: idx };
+    })
+    .sort((a, b) =>
+      a.date < b.date ? -1 : a.date > b.date ? 1 : a.order - b.order,
+    );
+  for (const a of scheduled) {
+    balance -= a.allocatedAmount;
+    timeline.push({
+      item: a.item,
+      date: a.date,
+      allocatedAmount: a.allocatedAmount,
+      balanceAfter: balance,
+      manual: true,
+    });
+  }
+
+  return {
+    ...base,
+    manual: true,
+    totals: {
+      ...base.totals,
+      allocated,
+      remaining,
+      freeAfterBuffer: remaining,
+      freeAfterReserve: remaining,
+      status,
+    },
     buckets,
     approved,
     deferred,

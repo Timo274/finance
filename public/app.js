@@ -278,10 +278,24 @@ function drawCharts() {
   }
   const portChart = $("#portChart");
   if (portChart && state.portfolio && state.portfolio.valuations.length) {
-    const byMonth = new Map();
+    const latestByAssetMonth = new Map();
     state.portfolio.valuations.forEach((v) => {
-      const m = v.date.slice(0, 7);
-      byMonth.set(m, (byMonth.get(m) || 0) + v.value);
+      const m = String(v.date || "").slice(0, 7);
+      if (!m || !v.assetId) return;
+      const key = `${v.assetId}:${m}`;
+      const prev = latestByAssetMonth.get(key);
+      const stamp = `${v.date || ""} ${v.createdAt || ""}`;
+      if (!prev || stamp > prev.stamp) {
+        latestByAssetMonth.set(key, {
+          month: m,
+          value: Number(v.value) || 0,
+          stamp,
+        });
+      }
+    });
+    const byMonth = new Map();
+    latestByAssetMonth.forEach((v) => {
+      byMonth.set(v.month, (byMonth.get(v.month) || 0) + v.value);
     });
     const months = [...byMonth.entries()].sort(([a], [b]) =>
       a.localeCompare(b),
@@ -321,6 +335,11 @@ function prioDots(p) {
   for (let i = 1; i <= 5; i++) s += `<i class="${i <= p ? "on" : ""}"></i>`;
   return s + "</span>";
 }
+function amountToFund(item) {
+  const cost = Math.max(0, Number(item?.cost) || 0);
+  const saved = Math.max(0, Number(item?.savedAmount) || 0);
+  return Math.max(0, cost - saved);
+}
 function goalProgress(item) {
   const cost = Number(item.cost) || 0;
   const goal = state.goals.find((g) => g.itemId === item.id);
@@ -342,11 +361,41 @@ function goalProgress(item) {
 function walletTotal() {
   return state.wallets.reduce((sum, w) => sum + Number(w.amount || 0), 0);
 }
+function itemById(itemId) {
+  return state.items.find((i) => Number(i.id) === Number(itemId));
+}
+function normalizedManualEntries() {
+  return state.manualPlan
+    .map((p) => {
+      const item = itemById(p.itemId);
+      if (!item) return null;
+      const requested = Math.max(0, Number(p.amount) || 0);
+      const amount = Math.min(requested, amountToFund(item));
+      return amount > 0 ? { itemId: Number(p.itemId), amount, item } : null;
+    })
+    .filter(Boolean);
+}
 function manualPlanTotal() {
-  return state.manualPlan.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+  return normalizedManualEntries().reduce((sum, p) => sum + p.amount, 0);
 }
 function manualAmountFor(itemId) {
-  return state.manualPlan.find((p) => p.itemId === itemId)?.amount || 0;
+  const item = itemById(itemId);
+  const raw =
+    state.manualPlan.find((p) => Number(p.itemId) === Number(itemId))?.amount ||
+    0;
+  return item
+    ? Math.min(Math.max(0, Number(raw) || 0), amountToFund(item))
+    : 0;
+}
+function plannedAmountFor(itemId) {
+  if (hasManualPlan()) return manualAmountFor(itemId);
+  const entry = state.allocation?.approved?.find(
+    (a) => Number(a.item?.id) === Number(itemId),
+  );
+  return entry
+    ? Number(entry.allocatedAmount ?? entry.remainingCost ?? entry.item?.cost) ||
+        0
+    : 0;
 }
 // Единый источник «распределено / останется» для всех вкладок.
 // Если пользователь заполнил ручной план — он главный; иначе берём авто-распределение.
@@ -366,12 +415,9 @@ function remainingSurplus() {
 function committedBuckets() {
   if (!hasManualPlan()) return state.allocation?.buckets || {};
   const b = {};
-  for (const p of state.manualPlan) {
-    const amt = Number(p.amount) || 0;
-    if (amt <= 0) continue;
-    const it = state.items.find((i) => i.id === p.itemId);
-    const layer = (it && (it.layer || it.bucket)) || "quality";
-    b[layer] = (b[layer] || 0) + amt;
+  for (const p of normalizedManualEntries()) {
+    const layer = (p.item && (p.item.layer || p.item.bucket)) || "quality";
+    b[layer] = (b[layer] || 0) + p.amount;
   }
   return b;
 }
@@ -970,7 +1016,7 @@ function viewQueue() {
   const q = state.queueFilters;
   const filtered = state.items.filter((it) => {
     const gp = goalProgress(it);
-    const inPlan = state.allocation?.approved.some((a) => a.item.id === it.id);
+    const inPlan = plannedAmountFor(it.id) > 0;
     const textOk =
       !q.q ||
       `${it.title} ${it.notes || ""}`.toLowerCase().includes(q.q.toLowerCase());
@@ -1223,15 +1269,16 @@ function viewPlan() {
   const available = a.totals.availableToAllocate;
   const planned = manualPlanTotal();
   const sortedItems = [...state.items].sort(
-    (a, b) => (Number(b.cost) || 0) - (Number(a.cost) || 0),
+    (a, b) => amountToFund(b) - amountToFund(a),
   );
   const manualRows = sortedItems
     .map((it) => {
       const amount = manualAmountFor(it.id);
       const gp = goalProgress(it);
+      const left = amountToFund(it);
       return `<div class="manual-row">
-      <div><b>${escapeHtml(it.title)}</b><div class="muted small">${fmt(it.cost)} · накоплено ${fmt(gp.saved)}</div></div>
-      <input type="number" min="0" value="${amount || ""}" placeholder="0" data-manual="${it.id}" />
+      <div><b>${escapeHtml(it.title)}</b><div class="muted small">к распределению ${fmt(left)} · накоплено ${fmt(gp.saved)} из ${fmt(gp.cost)}</div></div>
+      <input type="number" min="0" max="${left}" value="${amount || ""}" placeholder="0" data-manual="${it.id}" />
     </div>`;
     })
     .join("");
@@ -1649,12 +1696,21 @@ async function explainItem(id) {
 }
 
 async function saveManualPlan() {
-  const manualPlan = $$("[data-manual]").map((el) => ({
-    itemId: Number(el.dataset.manual),
-    amount: Number(el.value) || 0,
-  }));
+  let wasCapped = false;
+  const manualPlan = $$("[data-manual]").map((el) => {
+    const itemId = Number(el.dataset.manual);
+    const item = itemById(itemId);
+    const raw = Math.max(0, Number(el.value) || 0);
+    const amount = item ? Math.min(raw, amountToFund(item)) : raw;
+    if (raw !== amount) wasCapped = true;
+    return { itemId, amount };
+  });
   await api.post("/api/manual-plan", { manualPlan });
-  toast("Ручной план сохранён");
+  toast(
+    wasCapped
+      ? "Ручной план сохранён; суммы выше остатка обрезаны"
+      : "Ручной план сохранён",
+  );
   await refresh();
 }
 

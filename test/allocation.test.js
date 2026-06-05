@@ -1,6 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { allocate, tradeoff, scoreVerdict } from "../src/allocation.js";
+import {
+  allocate,
+  allocationFromManualPlan,
+  amountToFund,
+  tradeoff,
+  scoreVerdict,
+} from "../src/allocation.js";
 
 const basePlan = {
   payday: "2026-06-15",
@@ -179,6 +185,32 @@ describe("allocate", () => {
     assert.equal(r.approved.length, 0);
     assert.equal(r.deferred.length, 1);
     assert.equal(r.totals.status, "safe");
+  });
+});
+
+describe("manual allocation", () => {
+  it("uses manual entries as the source of allocated totals and buckets", () => {
+    const items = [
+      makeItem({
+        id: 1,
+        title: "A",
+        cost: 5000,
+        savedAmount: 1000,
+        layer: "career",
+      }),
+      makeItem({ id: 2, title: "B", cost: 3000, layer: "quality" }),
+    ];
+    const r = allocationFromManualPlan(basePlan, items, [
+      { itemId: 1, amount: 6000 },
+      { itemId: 2, amount: 500 },
+    ]);
+    assert.equal(amountToFund(items[0]), 4000);
+    assert.equal(r.totals.allocated, 4500);
+    assert.equal(r.totals.remaining, 11500);
+    assert.equal(r.buckets.career, 4000);
+    assert.equal(r.buckets.quality, 500);
+    assert.equal(r.approved[0].fullyFunded, true);
+    assert.equal(r.deferred.find((d) => d.item.id === 2).remainingCost, 2500);
   });
 });
 
