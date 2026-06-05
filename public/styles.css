@@ -206,6 +206,47 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .bottom-nav { display: none; }
 
+/* ---------- decision cockpit ---------- */
+.decision-cockpit {
+  margin-bottom: 16px;
+  padding: 18px;
+  border: 1px solid var(--border-soft);
+  border-radius: calc(var(--radius) + 4px);
+  background:
+    radial-gradient(600px 220px at 100% 0%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 60%),
+    linear-gradient(145deg, var(--panel), var(--panel-2));
+  box-shadow: var(--shadow-sm);
+}
+.decision-cockpit.decision-danger { border-color: color-mix(in srgb, var(--red) 45%, var(--border)); }
+.decision-cockpit.decision-warning { border-color: color-mix(in srgb, var(--amber) 45%, var(--border)); }
+.decision-hero { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.eyebrow { color: var(--accent-num); font-size: 11px; text-transform: uppercase; letter-spacing: .12em; font-weight: 800; }
+.decision-hero h2 { margin: 4px 0 4px; font-size: 23px; letter-spacing: -.02em; }
+.decision-hero p { margin: 0; color: var(--muted); font-size: 13.5px; }
+.runway-ring {
+  --p: calc(var(--pct) * 1%);
+  width: 94px; height: 94px; border-radius: 50%; flex: 0 0 auto;
+  display: grid; place-items: center;
+  background: conic-gradient(var(--accent) var(--p), var(--border-soft) 0);
+  position: relative;
+}
+.runway-ring::after { content: ""; position: absolute; inset: 9px; border-radius: 50%; background: var(--panel); }
+.runway-ring b, .runway-ring span { position: relative; z-index: 1; display: block; text-align: center; }
+.runway-ring b { align-self: end; font-size: 22px; line-height: 1; }
+.runway-ring span { align-self: start; color: var(--muted); font-size: 11px; font-weight: 700; margin-top: 4px; }
+.decision-actions { margin: 14px 0 0; padding: 0; display: grid; gap: 8px; list-style: none; }
+.decision-actions li { padding: 10px 12px; border-radius: 12px; background: color-mix(in srgb, var(--panel) 72%, transparent); border: 1px solid var(--border-soft); color: var(--text); font-size: 13px; }
+.decision-actions .tone-danger { border-color: color-mix(in srgb, var(--red) 45%, var(--border)); color: var(--red); }
+.decision-actions .tone-warn { border-color: color-mix(in srgb, var(--amber) 45%, var(--border)); color: var(--amber); }
+.decision-actions .tone-good { border-color: color-mix(in srgb, var(--green) 45%, var(--border)); color: var(--green); }
+.decision-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+.decision-col { background: color-mix(in srgb, var(--panel) 74%, transparent); border: 1px solid var(--border-soft); border-radius: var(--radius); padding: 13px; min-width: 0; }
+.decision-col h3 { margin: 0 0 10px; font-size: 13px; color: var(--muted); }
+.insight-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-top: 1px solid var(--border-soft); }
+.insight-item:first-of-type { border-top: 0; padding-top: 0; }
+.insight-item-title { font-weight: 700; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.insight-item-meta, .insight-empty { color: var(--muted); font-size: 12px; margin-top: 3px; }
+.insight-item b { white-space: nowrap; font-size: 13px; }
 /* ---------- status badge ---------- */
 .status-badge {
   font-size: 12.5px; font-weight: 600; padding: 5px 11px; border-radius: 999px;
@@ -306,6 +347,7 @@ tbody tr:last-child td { border-bottom: none; }
 .hint { font-size: 11.5px; color: var(--muted-2); }
 .filters { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr 1fr 1fr; gap: 10px; margin-bottom: 14px; }
 .quick-add { display: grid; grid-template-columns: 1fr 130px 110px auto; gap: 10px; padding: 12px; margin-bottom: 12px; }
+.quick-add.quick-add-smart { grid-template-columns: minmax(180px, 1.2fr) minmax(100px, .55fr) minmax(120px, .75fr) minmax(100px, .6fr) minmax(110px, .6fr) minmax(130px, .7fr) auto; }
 .quick-add input, .quick-add select,
 .filters input, .filters select,
 .manual-row input {
@@ -467,7 +509,10 @@ tbody tr:last-child td { border-bottom: none; }
   .card.pad-lg { padding: 16px; }
   .section-title { margin: 18px 0 10px; }
 
-  .plan-cols, .form-grid, .chart-cols, .filters, .quick-add { grid-template-columns: 1fr; }
+  .plan-cols, .form-grid, .chart-cols, .filters, .quick-add, .quick-add.quick-add-smart, .decision-grid { grid-template-columns: 1fr; }
+  .decision-hero { align-items: flex-start; }
+  .runway-ring { width: 76px; height: 76px; }
+  .runway-ring b { font-size: 18px; }
   .mobile-sort { display: block; }
   .table-wrap table { min-width: 980px; }
   .mobile-queue { display: block; }

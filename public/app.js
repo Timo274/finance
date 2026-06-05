@@ -32,6 +32,7 @@ const state = {
   plan: null,
   items: [],
   allocation: null,
+  insights: null,
   history: [],
   investments: [],
   portfolio: null,
@@ -509,6 +510,7 @@ async function loadAndRender() {
   state.plan = data.plan;
   state.items = data.items;
   state.allocation = data.allocation;
+  state.insights = data.insights || null;
   state.history = data.history;
   state.investments = data.investments || [];
   state.portfolio = data.portfolio || null;
@@ -526,6 +528,7 @@ async function refresh() {
   state.plan = data.plan;
   state.items = data.items;
   state.allocation = data.allocation;
+  state.insights = data.insights || null;
   state.history = data.history;
   state.investments = data.investments || [];
   state.portfolio = data.portfolio || null;
@@ -615,6 +618,49 @@ function noPlanBlock() {
     <button class="btn btn-primary" data-act="open-plan">Настроить зарплату</button></div>`;
 }
 
+function insightMoney(n) {
+  return fmt(Number(n) || 0);
+}
+
+function miniInsightItem(item, emptyText) {
+  if (!item) return `<div class="insight-empty">${emptyText}</div>`;
+  const layer = item.layer || item.bucket;
+  return `<div class="insight-item" data-id="${item.id}">
+    <div class="insight-item-main">
+      <div class="insight-item-title"><span class="dot" style="background:${layerColor(layer)}"></span>${escapeHtml(item.title)}</div>
+      <div class="insight-item-meta">${layerLabel(layer)} · ${TYPE_LABELS[item.type] || item.type}${item.deadlineText ? ` · ${escapeHtml(item.deadlineText)}` : ""}</div>
+    </div>
+    <b>${insightMoney(item.remainingCost ?? item.cost)}</b>
+  </div>`;
+}
+
+function decisionCockpit() {
+  const insights = state.insights;
+  if (!insights) return "";
+  const metrics = insights.metrics || {};
+  const actionRows = (insights.actions || [])
+    .map((a) => `<li class="tone-${a.tone || "neutral"}">${escapeHtml(a.text)}</li>`)
+    .join("");
+  return `<section class="decision-cockpit decision-${insights.status || "safe"}">
+    <div class="decision-hero">
+      <div>
+        <div class="eyebrow">Decision cockpit</div>
+        <h2>${escapeHtml(insights.headline || "План готов")}</h2>
+        <p>Короткий слой решений: что можно брать сейчас, за чем следить и что лучше перенести.</p>
+      </div>
+      <div class="runway-ring" style="--pct:${Math.max(0, Math.min(100, metrics.runwayPct || 0))}">
+        <b>${metrics.runwayPct ?? 0}%</b><span>запас</span>
+      </div>
+    </div>
+    <ul class="decision-actions">${actionRows}</ul>
+    <div class="decision-grid">
+      <div class="decision-col"><h3>Брать сейчас</h3>${(insights.buyNow || []).slice(0, 3).map((x) => miniInsightItem(x, "Пока ничего не помещается в план")).join("") || `<div class="insight-empty">Пока ничего не помещается в план</div>`}</div>
+      <div class="decision-col"><h3>Проверить</h3>${(insights.watch || []).slice(0, 3).map((x) => miniInsightItem(x, "Нет срочных рисков")).join("") || `<div class="insight-empty">Нет срочных рисков</div>`}</div>
+      <div class="decision-col"><h3>Перенести</h3>${(insights.postpone || []).slice(0, 3).map((x) => miniInsightItem(x, "Нечего переносить")).join("") || `<div class="insight-empty">Нечего переносить</div>`}</div>
+    </div>
+  </section>`;
+}
+
 function viewDashboard() {
   if (!state.plan || !state.allocation) {
     return `<div class="view-head"><h1>Кабинет</h1><p>Обзор будущей зарплаты до её прихода.</p></div>${noPlanBlock()}`;
@@ -639,6 +685,7 @@ function viewDashboard() {
 
   return `
   <div class="view-head"><h1>Кабинет</h1><p>Как разложить зарплату заранее — до того, как деньги пришли.</p></div>
+  ${decisionCockpit()}
   <div class="grid cards">
     <div class="card"><div class="stat-label"><span class="stat-ico">💰</span> Зарплата</div><div class="stat-value">${fmt(t.salary)}</div><div class="stat-sub">${fmtDate(state.plan.payday)} ${fmtUsd(t.salary)}</div></div>
     <div class="card"><div class="stat-label"><span class="stat-ico">🛡️</span> Обязательные расходы</div><div class="stat-value sm">${fmt(t.survival)}</div><div class="stat-sub">${fmtUsd(t.survival)} стабильный расходник</div></div>
@@ -762,10 +809,13 @@ function viewQueue() {
     <div><h1>Очередь желаний</h1><p>Единый список желаний — переносится из месяца в месяц. Купленное архивируется.</p></div>
     <button class="btn btn-primary" data-act="add-item">+ Добавить желание</button>
   </div>
-  <form class="quick-add card" id="quickAddForm">
+  <form class="quick-add card quick-add-smart" id="quickAddForm">
     <input name="title" placeholder="Быстро добавить желание..." required />
     <input name="cost" type="number" min="0" placeholder="Сумма" required />
+    <select name="category">${state.meta.categories.map((c) => `<option value="${c.id}">${c.ru}</option>`).join("")}</select>
     <select name="type"><option value="should">Should</option><option value="must">Must</option><option value="nice">Nice</option></select>
+    <select name="priority"><option value="3">Приоритет 3</option><option value="5">Приоритет 5</option><option value="4">Приоритет 4</option><option value="2">Приоритет 2</option><option value="1">Приоритет 1</option></select>
+    <input name="deadline" type="date" title="Дедлайн" />
     <button class="btn btn-primary" type="submit">Добавить</button>
   </form>
   <div class="filters card">
@@ -1230,15 +1280,18 @@ function bindViewEvents() {
 async function quickAddItem(e) {
   e.preventDefault();
   const f = new FormData(e.currentTarget);
+  const category = f.get("category") || "lifestyle";
+  const priority = Number(f.get("priority") || 3);
   await api.post("/api/items", {
     title: f.get("title"),
     cost: +f.get("cost"),
     type: f.get("type"),
-    category: "lifestyle",
-    priority: 3,
+    category,
+    priority,
+    deadline: f.get("deadline") || null,
     emotional: 3,
-    trajectory: 3,
-    canDefer: true,
+    trajectory: category === "tool" || category === "growth" ? 4 : 3,
+    canDefer: f.get("type") !== "must",
     scoreType: "none",
   });
   toast("Желание добавлено");

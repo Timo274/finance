@@ -47,6 +47,7 @@ import {
   scoreVerdict,
 } from "./src/allocation.js";
 import { aiStatus, askAssistant, askAssistantText } from "./src/ai.js";
+import { buildDecisionInsights } from "./src/insights.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const app = express();
@@ -1840,6 +1841,7 @@ app.get("/api/state", requireAuth, (req, res) => {
     plan,
     items,
     allocation,
+    insights: buildDecisionInsights(plan, items, allocation),
     history: stmt.closedPlans.all().map(rowToPlan),
     meta: metaPayload(),
     investments: getInvestments(),

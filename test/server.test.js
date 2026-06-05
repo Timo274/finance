@@ -166,6 +166,8 @@ describe("server API", () => {
     assert.equal(state.data.plan.name, "Test salary");
     assert.equal(state.data.items.length, 1);
     assert.equal(state.data.allocation.approved.length, 1);
+    assert.equal(state.data.insights.status, "safe");
+    assert.equal(state.data.insights.buyNow[0].title, "Laptop");
   });
 
   it("returns 404 instead of a database error for missing valuation asset", async () => {
