@@ -40,6 +40,7 @@ const state = {
   manualPlan: [],
   goals: [],
   view: "dashboard",
+  firstLoginPending: false,
   queueFilters: {
     q: "",
     layer: "all",
@@ -490,6 +491,7 @@ $("#authForm").addEventListener("submit", async (e) => {
     } else {
       await api.post("/api/auth/login", { pin });
     }
+    state.firstLoginPending = true;
     $("#authGate").classList.add("hidden");
     await loadAndRender();
   } catch (ex) {
@@ -521,6 +523,7 @@ async function loadAndRender() {
   $("#app").classList.remove("hidden");
   renderTopbar();
   renderView();
+  maybeShowOnboardingAfterLogin();
 }
 
 async function refresh() {
@@ -598,7 +601,7 @@ function renderView() {
   else if (v === "assistant") {
     root.innerHTML = viewAssistant();
     initAssistant();
-  }
+  } else if (v === "more") root.innerHTML = viewMore();
   bindViewEvents();
   requestAnimationFrame(drawCharts);
 }
@@ -612,10 +615,104 @@ window.addEventListener("resize", () => {
 // ============================================================
 // VIEWS
 // ============================================================
+function setView(view) {
+  state.view = view;
+  $$(".nav-item[data-view]").forEach((x) =>
+    x.classList.toggle("active", x.dataset.view === view),
+  );
+  renderView();
+}
+
+function onboardingSteps() {
+  const hasPlan = !!state.plan;
+  const hasItems = state.items.length > 0;
+  const hasPriorities = state.items.some((i) => Number(i.priority) >= 4 || i.deadline);
+  const hasManual = hasManualPlan();
+  const hasWallet = state.wallets.length > 0;
+  return [
+    { id: "plan", done: hasPlan, label: "Ввести зарплату и обязательные расходы", hint: "Это база маршрута денег.", action: "open-plan", button: "Настроить" },
+    { id: "items", done: hasItems, label: "Добавить 3–5 желаний", hint: "От мелких покупок до больших целей.", action: "add-item", button: "Добавить" },
+    { id: "priority", done: hasPriorities, label: "Отметить приоритеты и дедлайны", hint: "Так cockpit поймёт, что важно сейчас.", view: "queue", button: "Открыть" },
+    { id: "manual", done: hasManual, label: "Собрать план месяца", hint: "Распределите излишки по желаниям.", view: "plan", button: "План" },
+    { id: "wallet", done: hasWallet, label: "Разложить остаток по кошелькам", hint: "Карманы снижают хаос после зарплаты.", action: "add-wallet", button: "Кошелёк" },
+  ];
+}
+
+function onboardingProgress() {
+  const steps = onboardingSteps();
+  const done = steps.filter((s) => s.done).length;
+  return { steps, done, total: steps.length, pct: Math.round((done / steps.length) * 100) };
+}
+
+function onboardingChecklist({ compact = false } = {}) {
+  const { steps, done, total, pct } = onboardingProgress();
+  if (done === total && compact) return "";
+  return `<section class="onboarding-card card pad-lg ${compact ? "compact" : ""}">
+    <div class="row-between onboarding-head">
+      <div>
+        <div class="eyebrow">быстрый старт</div>
+        <h2>Маршрут: зарплата → обязательное → излишки → желания → план</h2>
+        <p class="muted">${done}/${total} готово. Выполните шаги один раз — дальше кабинет будет сразу подсказывать следующее действие.</p>
+      </div>
+      <div class="onboarding-progress" style="--pct:${pct}"><b>${pct}%</b><span>готово</span></div>
+    </div>
+    <div class="onboarding-steps">
+      ${steps.map((step, idx) => `<div class="onboarding-step ${step.done ? "done" : ""}">
+        <span class="step-check">${step.done ? "✓" : idx + 1}</span>
+        <div><b>${step.label}</b><p>${step.hint}</p></div>
+        ${step.done ? "" : `<button class="btn btn-sm btn-outline" data-act="${step.action || "go-view"}" ${step.view ? `data-target-view="${step.view}"` : ""}>${step.button}</button>`}
+      </div>`).join("")}
+    </div>
+    <div class="onboarding-foot"><button class="btn btn-sm btn-ghost" data-act="dismiss-onboarding">Скрыть подсказку</button></div>
+  </section>`;
+}
+
+function maybeShowOnboardingAfterLogin() {
+  if (!state.firstLoginPending) return;
+  state.firstLoginPending = false;
+  const { done, total } = onboardingProgress();
+  if (done === total || localStorage.getItem("onboardingDismissed") === "1") return;
+  openModal(`<div class="modal onboarding-modal">
+    <div class="modal-head"><h2>Соберём план за 5 шагов</h2><button class="close-x" data-close-modal>×</button></div>
+    ${onboardingChecklist()}
+  </div>`);
+  bindViewEvents();
+}
+
+function smartDashboardCta() {
+  if (!state.plan) {
+    return { tone: "warning", title: "Начните с зарплаты", text: "Введите доход, дату зарплаты и стабильные расходы — остальной план появится автоматически.", action: "open-plan", button: "Настроить зарплату" };
+  }
+  if (!state.items.length) {
+    return { tone: "neutral", title: "Добавьте первую очередь желаний", text: "Запишите покупки и цели, чтобы увидеть, что помещается в излишки после обязательного.", action: "add-item", button: "+ Добавить желание" };
+  }
+  if ((state.allocation?.totals?.status) === "overallocated" || remainingSurplus() < 0) {
+    return { tone: "danger", title: "План перегружен", text: "Желаний больше, чем свободных денег. Откройте план и перенесите лишнее на следующий месяц.", view: "plan", button: "Разобрать план" };
+  }
+  if (!hasManualPlan()) {
+    return { tone: "good", title: "Следующий шаг — зафиксировать план", text: `Свободно ${fmt(remainingSurplus())}. Распределите излишки по желаниям, чтобы не решать в день зарплаты.`, view: "plan", button: "Собрать план" };
+  }
+  if (!state.wallets.length) {
+    return { tone: "neutral", title: "Разложите остаток по карманам", text: "Кошельки помогают не смешивать еду, транспорт, накопления и свободные траты.", action: "add-wallet", button: "+ Кошелёк" };
+  }
+  const buy = state.insights?.buyNow?.[0];
+  return { tone: "good", title: buy ? `Можно действовать: ${buy.title}` : "План месяца собран", text: buy ? `Первое безопасное действие по cockpit — ${fmt(buy.remainingCost ?? buy.cost)}.` : "Проверьте план перед зарплатой и закрывайте месяц, когда решения выполнены.", view: buy ? "queue" : "plan", button: buy ? "Открыть очередь" : "Открыть план" };
+}
+
+function smartCtaCard() {
+  const cta = smartDashboardCta();
+  return `<section class="smart-cta card smart-${cta.tone}">
+    <div><div class="eyebrow">главное действие</div><h2>${escapeHtml(cta.title)}</h2><p>${escapeHtml(cta.text)}</p></div>
+    <button class="btn btn-primary" data-act="${cta.action || "go-view"}" ${cta.view ? `data-target-view="${cta.view}"` : ""}>${escapeHtml(cta.button)}</button>
+  </section>`;
+}
+
+function richEmpty(icon, title, text, action = "", button = "", targetView = "") {
+  return `<div class="empty rich-empty"><div class="big">${icon}</div><h3>${escapeHtml(title)}</h3><p>${escapeHtml(text)}</p>${action ? `<button class="btn btn-primary" data-act="${action}" ${targetView ? `data-target-view="${targetView}"` : ""}>${escapeHtml(button)}</button>` : ""}</div>`;
+}
+
 function noPlanBlock() {
-  return `<div class="empty"><div class="big">◎</div>
-    <p>Сначала настройте будущую зарплату.</p>
-    <button class="btn btn-primary" data-act="open-plan">Настроить зарплату</button></div>`;
+  return richEmpty("◎", "Сначала настройте зарплату", "После этого появится маршрут: обязательные расходы, излишки, желания и план месяца.", "open-plan", "Настроить зарплату");
 }
 
 function insightMoney(n) {
@@ -705,6 +802,8 @@ function viewDashboard() {
   return `
   <div class="dashboard-shell">
     <div class="view-head dashboard-head"><div><h1>Кабинет</h1><p>Как разложить зарплату заранее — до того, как деньги пришли.</p></div><span class="page-kicker">личный финансовый cockpit</span></div>
+    ${localStorage.getItem("onboardingDismissed") === "1" ? "" : onboardingChecklist({ compact: true })}
+    ${smartCtaCard()}
     ${decisionCockpit()}
     <div class="grid cards dashboard-cards">
     <div class="card"><div class="stat-label"><span class="stat-ico">💰</span> Зарплата</div><div class="stat-value">${fmt(t.salary)}</div><div class="stat-sub">${fmtDate(state.plan.payday)} ${fmtUsd(t.salary)}</div></div>
@@ -814,12 +913,17 @@ function viewQueue() {
       <td>${it.deadline ? fmtDate(it.deadline) : "—"}</td>
       <td>${inPlan ? '<span class="green-num">в плане</span>' : '<span class="muted">позже</span>'}</td>
       <td style="text-align:right">
-        <button class="btn btn-sm btn-ghost" data-act="tradeoff" data-id="${it.id}">Trade-off</button>
-        <button class="btn btn-sm btn-ghost" data-act="ai-explain" data-id="${it.id}">✦ почему</button>
-        <button class="btn btn-sm btn-outline" data-act="save-goal" data-id="${it.id}">Копить</button>
-        <button class="btn btn-sm btn-outline" data-act="edit" data-id="${it.id}">✎</button>
-        <button class="btn btn-sm btn-ghost" data-act="bought" data-id="${it.id}" title="Отметить купленным">✓</button>
-        <button class="btn btn-sm btn-danger" data-act="delete" data-id="${it.id}" title="Удалить">×</button>
+        <details class="row-menu">
+          <summary aria-label="Действия с желанием">⋯</summary>
+          <div class="row-menu-pop">
+            <button class="btn btn-sm btn-ghost" data-act="tradeoff" data-id="${it.id}">Trade-off</button>
+            <button class="btn btn-sm btn-ghost" data-act="ai-explain" data-id="${it.id}">✦ почему</button>
+            <button class="btn btn-sm btn-outline" data-act="save-goal" data-id="${it.id}">Копить</button>
+            <button class="btn btn-sm btn-outline" data-act="edit" data-id="${it.id}">Редактировать</button>
+            <button class="btn btn-sm btn-ghost" data-act="bought" data-id="${it.id}">Отметить купленным</button>
+            <button class="btn btn-sm btn-danger" data-act="delete" data-id="${it.id}">Удалить</button>
+          </div>
+        </details>
       </td>
     </tr>`;
     })
@@ -871,10 +975,9 @@ function viewQueue() {
       ? `<div class="table-wrap queue-table"><table>
     <thead><tr>${th("title", "Желание")}${th("cost", "Стоимость")}<th>Накоплено</th>${th("layer", "Слой")}${th("category", "Категория")}${th("band", "Band")}${th("type", "Тип")}${th("priority", "Приоритет")}${th("deadline", "Дедлайн")}<th>Статус</th><th></th></tr></thead>
     <tbody>${rows}</tbody></table></div>`
-      : `<div class="empty"><div class="big">≡</div><p>Очередь пуста. Добавьте первое желание.</p>
-       <button class="btn btn-primary" data-act="add-item">+ Добавить желание</button></div>`
+      : richEmpty("≡", "Очередь желаний пока пустая", "Добавьте то, что хотите купить: от обязательных покупок до мечт. Потом cockpit сам покажет, что помещается в излишки.", "add-item", "+ Добавить желание")
   }
-  ${state.items.length && !filtered.length ? '<div class="empty"><p>По фильтрам ничего не найдено.</p></div>' : ""}
+  ${state.items.length && !filtered.length ? richEmpty("⌕", "По фильтрам ничего не найдено", "Сбросьте поиск или выберите другой слой, тип или статус.") : ""}
   <div class="mobile-queue">${sortedItems(filtered)
     .map((it) => queueItemRow(it, "Свайп влево — куплено, вправо — удалить"))
     .join("")}</div>
@@ -910,7 +1013,7 @@ function viewInvestments() {
 }
 function investOverview(p) {
   if (!p || !p.assets.length)
-    return '<div class="empty"><div class="big">↗</div><p>Добавьте первый актив, чтобы увидеть портфель.</p></div>';
+    return richEmpty("↗", "Портфель пока пустой", "Добавьте первый актив, чтобы отслеживать вложения, текущую стоимость и прибыль/убыток.", "add-asset", "+ Добавить актив");
   const total = p.totals;
   const allocations = p.assets
     .map(
@@ -1012,7 +1115,7 @@ function viewWallets() {
     <div class="card"><div class="stat-label">В кошельках</div><div class="stat-value">${fmt(total)}</div><div class="stat-sub">${state.wallets.length} карманов</div></div>
     <div class="card"><div class="stat-label">Излишки после стабильных пунктов</div><div class="stat-value sm">${fmt(available)}</div><div class="stat-sub">${total > available ? "кошельки выше излишков" : "в пределах излишков"}</div></div>
   </div>
-  <div class="card pad-lg" style="margin-top:16px"><div class="section-title" style="margin-top:0">Карманы</div>${rows || '<p class="muted">Создайте карманы: еда, транспорт, инвестиции...</p>'}</div>`;
+  <div class="card pad-lg" style="margin-top:16px"><div class="section-title" style="margin-top:0">Карманы</div>${rows || richEmpty("◫", "Кошельков ещё нет", "Создайте карманы для еды, транспорта, инвестиций и свободных трат — так остаток не смешивается.", "add-wallet", "+ Кошелёк")}</div>`;
 }
 
 function viewPlan() {
@@ -1042,7 +1145,7 @@ function viewPlan() {
   <div class="card pad-lg" style="margin-bottom:16px">
     <div class="row-between"><div><div class="section-title" style="margin:0">Ручной план</div><p class="muted small" style="margin:4px 0 0">Введите, сколько отправить на каждое желание в этом месяце.</p></div>
       <div><div class="stat-value sm ${planned > available ? "red-num" : "green-num"}">${fmt(planned)}</div><div class="muted small">из ${fmt(available)}</div></div></div>
-    <div class="manual-list">${manualRows || '<p class="muted">Добавьте желания, чтобы распределять вручную.</p>'}</div>
+    <div class="manual-list">${manualRows || richEmpty("🎯", "Пока нечего распределять", "Добавьте желания в очередь — здесь появится ручной план распределения излишков.", "add-item", "+ Добавить желание")}</div>
     <div class="row-between" style="margin-top:12px">
       <span class="${planned > available ? "red-num" : "muted"}">${planned > available ? "План выше доступного бюджета" : `Свободно ещё ${fmt(available - planned)}`}</span>
       <button class="btn btn-primary" data-act="save-manual-plan">Сохранить ручной план</button>
@@ -1050,10 +1153,21 @@ function viewPlan() {
   </div>`;
 }
 
+function viewMore() {
+  return `<div class="view-head"><h1>Ещё</h1><p>Редкие разделы и настройки собраны здесь, чтобы нижняя навигация не перегружала телефон.</p></div>
+    <div class="more-grid">
+      <button class="card more-tile" data-act="go-view" data-target-view="wallets"><span>◫</span><b>Кошельки</b><p>Карманы текущего месяца</p></button>
+      <button class="card more-tile" data-act="go-view" data-target-view="history"><span>↺</span><b>История</b><p>Закрытые месяцы и решения</p></button>
+      <button class="card more-tile" data-act="go-view" data-target-view="assistant"><span>✦</span><b>AI-ассистент</b><p>Пояснения и trade-off</p></button>
+      <button class="card more-tile" data-act="open-plan"><span>⚙</span><b>Настройки плана</b><p>Зарплата, расходы, резерв</p></button>
+      <button class="card more-tile danger" id="logoutBtnMobileMore" type="button"><span>⏻</span><b>Выйти</b><p>Завершить сессию</p></button>
+    </div>`;
+}
+
 function viewHistory() {
   if (!state.history.length) {
     return `<div class="view-head"><h1>История решений</h1><p>Закрытые месяцы появятся здесь.</p></div>
-      <div class="empty"><div class="big">↺</div><p>Пока нет закрытых месяцев.<br>Когда зарплата потрачена по плану — нажмите «Закрыть месяц» на экране плана.</p></div>`;
+      ${richEmpty("↺", "История начнётся после первого закрытого месяца", "Когда зарплата распределена и решения выполнены — закройте месяц на экране плана, чтобы сохранить снимок.", "go-view", "Открыть план", "plan")}`;
   }
   return `<div class="view-head"><h1>История решений</h1><p>Что ты решал в прошлые месяцы: купленное, отложенное, остаток.</p></div>
     ${state.history
@@ -1255,6 +1369,12 @@ function bindViewEvents() {
       else if (act === "ai-explain") await explainItem(id);
       else if (act === "delete") await deleteItem(id);
       else if (act === "delete-wallet") await deleteWallet(el.dataset.id);
+      else if (act === "go-view") setView(el.dataset.targetView || "dashboard");
+      else if (act === "dismiss-onboarding") {
+        localStorage.setItem("onboardingDismissed", "1");
+        closeModal();
+        renderView();
+      }
       else if (act === "refresh-prices") await refreshPrices();
       else if (act === "clear-chat") {
         chatHistory = [];
@@ -1296,6 +1416,7 @@ function bindViewEvents() {
       renderView();
     }),
   );
+  $("#logoutBtnMobileMore")?.addEventListener("click", doLogout);
 }
 
 async function quickAddItem(e) {
@@ -1362,7 +1483,14 @@ async function markBought(id) {
 }
 
 async function deleteItem(id) {
-  if (!confirm("Удалить желание?")) return;
+  const item = state.items.find((i) => i.id === id);
+  const ok = await confirmDialog({
+    title: "Удалить желание?",
+    text: `«${item?.title || "Желание"}» будет удалено из очереди и планов. Если покупка уже сделана — лучше отметьте её купленной.`,
+    confirmText: "Удалить навсегда",
+    danger: true,
+  });
+  if (!ok) return;
   await api.del(`/api/items/${id}`);
   toast("Удалено");
   await refresh();
@@ -1445,7 +1573,14 @@ async function closeMonth() {
 }
 
 async function deleteWallet(id) {
-  if (!confirm("Удалить кошелёк?")) return;
+  const wallet = state.wallets.find((w) => String(w.id) === String(id));
+  const ok = await confirmDialog({
+    title: "Удалить кошелёк?",
+    text: `Кошелёк «${wallet?.name || "без названия"}» исчезнет из текущего месяца. Деньги в истории не меняются.`,
+    confirmText: "Удалить",
+    danger: true,
+  });
+  if (!ok) return;
   await api.del(`/api/wallets/${id}`);
   toast("Кошелёк удалён");
   await refresh();
@@ -1503,6 +1638,27 @@ function openModal(html) {
 }
 function closeModal() {
   $("#modalRoot").innerHTML = "";
+}
+
+function confirmDialog({ title, text, confirmText = "Подтвердить", cancelText = "Отмена", danger = false }) {
+  return new Promise((resolve) => {
+    openModal(`<div class="modal narrow confirm-modal">
+      <div class="modal-head"><h2>${escapeHtml(title)}</h2><button class="close-x" data-confirm="0">×</button></div>
+      <p class="muted">${escapeHtml(text)}</p>
+      <div class="confirm-note">Это действие нельзя отменить автоматически.</div>
+      <div class="modal-foot">
+        <button type="button" class="btn btn-ghost" data-confirm="0">${escapeHtml(cancelText)}</button>
+        <button type="button" class="btn ${danger ? "btn-danger" : "btn-primary"}" data-confirm="1">${escapeHtml(confirmText)}</button>
+      </div>
+    </div>`);
+    $$("[data-confirm]").forEach((btn) =>
+      btn.addEventListener("click", () => {
+        const yes = btn.dataset.confirm === "1";
+        closeModal();
+        resolve(yes);
+      }),
+    );
+  });
 }
 
 function openQuickItemModal() {
@@ -1961,7 +2117,13 @@ function openItemModal(item) {
   });
   if (item)
     $("#delItem")?.addEventListener("click", async () => {
-      if (!confirm("Удалить желание навсегда?")) return;
+      const ok = await confirmDialog({
+        title: "Удалить желание навсегда?",
+        text: `«${item.title}» будет удалено из очереди, накоплений и ручного плана.`,
+        confirmText: "Удалить",
+        danger: true,
+      });
+      if (!ok) return;
       await api.del(`/api/items/${item.id}`);
       closeModal();
       toast("Удалено");
@@ -1997,12 +2159,12 @@ $("#installBtn")?.addEventListener("click", async () => {
   $("#installBtn")?.classList.add("hidden");
 });
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/sw.js?v=20260605-refresh2").then((registration) => {
+  navigator.serviceWorker.register("/sw.js?v=20260605-ux1").then((registration) => {
     registration.update?.();
   }).catch(() => {});
   navigator.serviceWorker.addEventListener("controllerchange", () => {
-    if (!sessionStorage.getItem("cq-sw-refreshed-20260605-refresh2")) {
-      sessionStorage.setItem("cq-sw-refreshed-20260605-refresh2", "1");
+    if (!sessionStorage.getItem("cq-sw-refreshed-20260605-ux1")) {
+      sessionStorage.setItem("cq-sw-refreshed-20260605-ux1", "1");
       location.reload();
     }
   });

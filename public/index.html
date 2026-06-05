@@ -20,7 +20,7 @@
             href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@600;700;800&display=swap"
             rel="stylesheet"
         />
-        <link rel="stylesheet" href="/styles.css?v=20260605-contrast1" />
+        <link rel="stylesheet" href="/styles.css?v=20260605-ux1" />
     </head>
     <body>
         <!-- Логотип (переиспользуется через <use>) -->
@@ -77,17 +77,17 @@
 
         <!-- Экран входа / установки PIN -->
         <div id="authGate" class="auth-gate hidden">
-            <section class="auth-hero" aria-label="Обновлённый интерфейс Capital Queue">
-                <div class="release-pill">ОБНОВЛЕНО • свежий интерфейс</div>
-                <h1>План зарплаты, который видно сразу</h1>
+            <section class="auth-hero" aria-label="Capital Queue — план зарплаты">
+                <div class="release-pill">ЛИЧНЫЙ ФИНАНСОВЫЙ COCKPIT</div>
+                <h1>Разложи зарплату до того, как она исчезнет</h1>
                 <p>
-                    Переработал первый экран, навигацию и карточки так, чтобы прод
-                    отличался от старой версии ещё до входа в аккаунт.
+                    Capital Queue показывает путь денег простым маршрутом:
+                    зарплата → обязательное → излишки → желания → план месяца.
                 </p>
                 <div class="hero-proof-grid">
-                    <span>⚡ свежие ассеты без старого кеша</span>
-                    <span>◉ новый экран входа</span>
-                    <span>▦ контрастный кабинет</span>
+                    <span>🛡️ сначала обязательные расходы</span>
+                    <span>🎯 потом желания по приоритету</span>
+                    <span>✅ в конце понятный план действий</span>
                 </div>
             </section>
             <div class="auth-card">
@@ -303,30 +303,15 @@
                         <span class="ico">≡</span
                         ><span class="lbl">Желания</span>
                     </button>
-                    <button class="nav-item" data-view="wallets">
-                        <span class="ico">◫</span
-                        ><span class="lbl">Кошельки</span>
+                    <button class="nav-item" data-view="plan">
+                        <span class="ico">▤</span><span class="lbl">План</span>
                     </button>
                     <button class="nav-item" data-view="investments">
                         <span class="ico">↗</span
                         ><span class="lbl">Инвест</span>
                     </button>
-                    <button class="nav-item" data-view="plan">
-                        <span class="ico">▤</span><span class="lbl">План</span>
-                    </button>
-                    <button class="nav-item" data-view="history">
-                        <span class="ico">↺</span
-                        ><span class="lbl">История</span>
-                    </button>
-                    <button class="nav-item" data-view="assistant">
-                        <span class="ico">✦</span><span class="lbl">AI</span>
-                    </button>
-                    <button
-                        class="nav-item nav-action"
-                        id="logoutBtnMobile"
-                        type="button"
-                    >
-                        <span class="ico">⏻</span><span class="lbl">Выйти</span>
+                    <button class="nav-item" data-view="more">
+                        <span class="ico">•••</span><span class="lbl">Ещё</span>
                     </button>
                 </nav>
             </main>
@@ -337,6 +322,6 @@
 
         <div id="toast" class="toast hidden"></div>
 
-        <script src="/app.js?v=20260605-contrast1" type="module"></script>
+        <script src="/app.js?v=20260605-ux1" type="module"></script>
     </body>
 </html>
