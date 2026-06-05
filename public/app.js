@@ -1445,7 +1445,7 @@ function viewPlan() {
       const left = amountToFund(it);
       return `<div class="manual-row">
       <div><b>${escapeHtml(it.title)}</b><div class="muted small">к распределению ${fmt(left)} · накоплено ${fmt(gp.saved)} из ${fmt(gp.cost)}</div></div>
-      <input type="number" min="0" max="${left}" value="${amount || ""}" placeholder="0" data-manual="${it.id}" />
+      <input type="number" min="0" max="${left}" value="${amount || ""}" placeholder="0" inputmode="decimal" data-manual="${it.id}" />
     </div>`;
     })
     .join("");
@@ -1456,10 +1456,10 @@ function viewPlan() {
   </div>
   <div class="card pad-lg" style="margin-bottom:16px">
     <div class="row-between"><div><div class="section-title" style="margin:0">Ручной план</div><p class="muted small" style="margin:4px 0 0">Введите, сколько отправить на каждое желание в этом месяце.</p></div>
-      <div><div class="stat-value sm ${planned > available ? "red-num" : "green-num"}">${fmt(planned)}</div><div class="muted small">из ${fmt(available)}</div></div></div>
+      <div><div class="stat-value sm ${planned > available ? "red-num" : "green-num"}" data-manual-total>${fmt(planned)}</div><div class="muted small">из ${fmt(available)}</div></div></div>
     <div class="manual-list">${manualRows || richEmpty("🎯", "Пока нечего распределять", "Добавьте желания в очередь — здесь появится ручной план распределения излишков.", "add-item", "+ Добавить желание")}</div>
     <div class="row-between" style="margin-top:12px">
-      <span class="${planned > available ? "red-num" : "muted"}">${planned > available ? "План выше доступного бюджета" : `Свободно ещё ${fmt(available - planned)}`}</span>
+      <span class="${planned > available ? "red-num" : "muted"}" data-manual-remaining>${planned > available ? "План выше доступного бюджета" : `Свободно ещё ${fmt(available - planned)}`}</span>
       <button class="btn btn-primary" data-act="save-manual-plan">Сохранить ручной план</button>
     </div>
   </div>`;
@@ -1738,6 +1738,9 @@ function bindViewEvents() {
     }),
   );
   $("#logoutBtnMobileMore")?.addEventListener("click", doLogout);
+  $$('[data-manual]').forEach((el) => {
+    el.addEventListener("input", updateManualPlanDraft);
+  });
 }
 
 async function quickAddItem(e) {
@@ -1871,7 +1874,7 @@ async function explainItem(id) {
   box.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
-async function saveManualPlan() {
+function readManualPlanInputs() {
   let wasCapped = false;
   const manualPlan = $$("[data-manual]").map((el) => {
     const itemId = Number(el.dataset.manual);
@@ -1881,6 +1884,38 @@ async function saveManualPlan() {
     if (raw !== amount) wasCapped = true;
     return { itemId, amount };
   });
+  return { manualPlan, wasCapped };
+}
+
+function renderManualPlanDraftTotals() {
+  if (state.view !== "plan") return;
+  const available = state.allocation?.totals?.availableToAllocate || 0;
+  const planned = manualPlanTotal();
+  const totalEl = $("[data-manual-total]");
+  if (totalEl) {
+    totalEl.textContent = fmt(planned);
+    totalEl.classList.toggle("red-num", planned > available);
+    totalEl.classList.toggle("green-num", planned <= available);
+  }
+  const remainingEl = $("[data-manual-remaining]");
+  if (remainingEl) {
+    remainingEl.textContent = planned > available
+      ? "План выше доступного бюджета"
+      : `Свободно ещё ${fmt(available - planned)}`;
+    remainingEl.classList.toggle("red-num", planned > available);
+    remainingEl.classList.toggle("muted", planned <= available);
+  }
+}
+
+function updateManualPlanDraft() {
+  state.manualPlan = readManualPlanInputs().manualPlan;
+  renderManualPlanDraftTotals();
+}
+
+async function saveManualPlan() {
+  const { manualPlan, wasCapped } = readManualPlanInputs();
+  state.manualPlan = manualPlan;
+  renderManualPlanDraftTotals();
   await api.post("/api/manual-plan", { manualPlan });
   toast(
     wasCapped
@@ -2525,12 +2560,12 @@ $("#installBtn")?.addEventListener("click", async () => {
   $("#installBtn")?.classList.add("hidden");
 });
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/sw.js?v=20260605-ux1").then((registration) => {
+  navigator.serviceWorker.register("/sw.js?v=20260606-live-manual").then((registration) => {
     registration.update?.();
   }).catch(() => {});
   navigator.serviceWorker.addEventListener("controllerchange", () => {
-    if (!sessionStorage.getItem("cq-sw-refreshed-20260605-ux1")) {
-      sessionStorage.setItem("cq-sw-refreshed-20260605-ux1", "1");
+    if (!sessionStorage.getItem("cq-sw-refreshed-20260606-live-manual")) {
+      sessionStorage.setItem("cq-sw-refreshed-20260606-live-manual", "1");
       location.reload();
     }
   });

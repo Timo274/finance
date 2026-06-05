@@ -1,7 +1,7 @@
-const CACHE = "capital-queue-v7-layer1";
+const CACHE = "capital-queue-v8-live-manual";
 const STATIC = [
   "/styles.css?v=20260605-layer1",
-  "/app.js?v=20260605-layer1",
+  "/app.js?v=20260606-live-manual",
   "/logo.svg",
   "/manifest.webmanifest",
   "/icon-192.png",
