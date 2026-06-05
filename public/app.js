@@ -446,6 +446,56 @@ function sortedItems(items) {
     return String(av).localeCompare(String(bv), "ru") * mul;
   });
 }
+function queueCostTotal(items = state.items) {
+  return items.reduce((sum, item) => sum + amountToFund(item), 0);
+}
+function queueFundedTotal(items = state.items) {
+  return items.reduce((sum, item) => sum + goalProgress(item).saved, 0);
+}
+function isUrgentItem(item) {
+  if (!item.deadline) return false;
+  const now = new Date();
+  const deadline = new Date(`${item.deadline}T23:59:59`);
+  if (Number.isNaN(deadline.getTime())) return false;
+  const days = Math.ceil((deadline - now) / 86400000);
+  return days >= 0 && days <= 30 && goalProgress(item).pct < 100;
+}
+function urgentItems(items = state.items) {
+  return items.filter(isUrgentItem).sort((a, b) => String(a.deadline || "").localeCompare(String(b.deadline || ""), "ru"));
+}
+function sortOption(value, label) {
+  const current = `${state.queueSort.key}:${state.queueSort.dir}`;
+  return `<option value="${value}" ${current === value ? "selected" : ""}>${label}</option>`;
+}
+function planPulseData() {
+  const totals = state.allocation?.totals || {};
+  const salary = Number(totals.salary) || 0;
+  const fixed = (Number(totals.survival) || 0) + (Number(totals.reserve) || 0) + (Number(totals.fixedInvestment) || 0);
+  const available = Number(totals.availableToAllocate) || 0;
+  const committed = committedTotal();
+  const remaining = remainingSurplus();
+  const queueLeft = queueCostTotal();
+  const urgentCount = urgentItems().length;
+  const pressure = available > 0 ? Math.round((committed / available) * 100) : 0;
+  const fixedPct = salary > 0 ? Math.round((fixed / salary) * 100) : 0;
+  const queueMonths = available > 0 ? Math.ceil(queueLeft / available) : null;
+  const tone = remaining < 0 ? "danger" : pressure >= 85 || urgentCount ? "warn" : "good";
+  const headline =
+    tone === "danger"
+      ? "Плану нужен разгрузочный trade-off"
+      : tone === "warn"
+        ? "План рабочий, но есть зоны внимания"
+        : "План выглядит устойчивым";
+  const advice =
+    tone === "danger"
+      ? "Сначала перенесите часть ручного плана или снизьте сумму по желаниям — сейчас обязательства выше свободных денег."
+      : urgentCount
+        ? "Проверьте ближайшие дедлайны: срочные желания лучше либо профинансировать, либо честно перенести."
+        : pressure >= 85
+          ? "Оставьте небольшой буфер вместо распределения всех излишков — так меньше риск импульсивных решений."
+          : "Можно выбрать 1–2 покупки из очереди и остальное оставить в буфере/кошельках.";
+  return { salary, fixed, available, committed, remaining, queueLeft, urgentCount, pressure, fixedPct, queueMonths, tone, headline, advice };
+}
 
 // ---------- theme ----------
 const THEME_MODES = [
@@ -803,6 +853,47 @@ function smartCtaCard() {
     <button class="btn btn-primary" data-act="${cta.action || "go-view"}" ${cta.view ? `data-target-view="${cta.view}"` : ""}>${escapeHtml(cta.button)}</button>
   </section>`;
 }
+function planPulseCard() {
+  const pulse = planPulseData();
+  const queueMonthsText = pulse.queueMonths == null ? "—" : `${pulse.queueMonths} мес.`;
+  const remainingTone = pulse.remaining < 0 ? "danger" : "good";
+  return `<section class="plan-pulse card pulse-${pulse.tone}">
+    <div class="plan-pulse-copy">
+      <div class="eyebrow">пульс плана</div>
+      <h2>${escapeHtml(pulse.headline)}</h2>
+      <p>${escapeHtml(pulse.advice)}</p>
+    </div>
+    <div class="pulse-metrics">
+      <div class="pulse-metric"><span>База</span><b>${pulse.fixedPct}%</b><em>${fmt(pulse.fixed)}</em></div>
+      <div class="pulse-metric"><span>Занято излишков</span><b>${pulse.pressure}%</b><em>${fmt(pulse.committed)} / ${fmt(pulse.available)}</em></div>
+      <div class="pulse-metric pulse-${remainingTone}"><span>${pulse.remaining < 0 ? "Не хватает" : "Буфер"}</span><b>${fmt(pulse.remaining)}</b><em>после плана</em></div>
+      <div class="pulse-metric"><span>Очередь</span><b>${queueMonthsText}</b><em>${fmt(pulse.queueLeft)} осталось</em></div>
+    </div>
+    ${pulse.urgentCount ? `<div class="pulse-note"><b>${pulse.urgentCount}</b> дедлайн(ов) в ближайшие 30 дней — проверьте очередь перед зарплатой.</div>` : ""}
+  </section>`;
+}
+
+function queueSummaryCard(filtered) {
+  const allLeft = queueCostTotal();
+  const filteredLeft = queueCostTotal(filtered);
+  const funded = queueFundedTotal();
+  const planned = state.items.filter((it) => plannedAmountFor(it.id) > 0).length;
+  const urgent = urgentItems();
+  const top = sortedItems(filtered).slice(0, 3);
+  return `<section class="queue-summary card">
+    <div class="queue-summary-head">
+      <div><div class="eyebrow">срез очереди</div><h2>Что сейчас давит на план</h2><p>Короткая диагностика перед сортировкой: сколько осталось профинансировать, что уже в плане и где горят дедлайны.</p></div>
+      <button class="btn btn-outline" data-act="go-view" data-target-view="plan">Открыть план</button>
+    </div>
+    <div class="queue-summary-grid">
+      <div><span>Всего осталось</span><b>${fmt(allLeft)}</b><em>${state.items.length} желаний</em></div>
+      <div><span>В текущем фильтре</span><b>${fmt(filteredLeft)}</b><em>${filtered.length} позиций</em></div>
+      <div><span>Накоплено</span><b>${fmt(funded)}</b><em>по всем желаниям</em></div>
+      <div class="${urgent.length ? "warn" : "good"}"><span>Дедлайны 30 дней</span><b>${urgent.length}</b><em>${planned} в плане</em></div>
+    </div>
+    ${top.length ? `<div class="queue-focus"><span>Фокус:</span>${top.map((it) => `<button class="chip-btn" data-act="tradeoff" data-id="${it.id}">${escapeHtml(it.title)} · ${fmtShort(amountToFund(it))}</button>`).join("")}</div>` : ""}
+  </section>`;
+}
 
 function richEmpty(icon, title, text, action = "", button = "", targetView = "") {
   return `<div class="empty rich-empty"><div class="big">${icon}</div><h3>${escapeHtml(title)}</h3><p>${escapeHtml(text)}</p>${action ? `<button class="btn btn-primary" data-act="${action}" ${targetView ? `data-target-view="${targetView}"` : ""}>${escapeHtml(button)}</button>` : ""}</div>`;
@@ -975,6 +1066,7 @@ function viewDashboard() {
     <div class="view-head dashboard-head"><div><h1>Кабинет</h1><p>Главный срез зарплаты: слои, остаток и следующие действия.</p></div><span class="page-kicker">личный финансовый cockpit</span></div>
     ${allocationLayerCard(t, segs, stablePct)}
     ${smartCtaCard()}
+    ${planPulseCard()}
     ${decisionCockpit()}
     <div class="grid cards dashboard-cards">
     <div class="card"><div class="stat-label"><span class="stat-ico">💰</span> Зарплата</div><div class="stat-value">${fmt(t.salary)}</div><div class="stat-sub">${fmtDate(state.plan.payday)} ${fmtUsd(t.salary)}</div></div>
@@ -1084,6 +1176,7 @@ function viewQueue() {
     <div><h1>Очередь желаний</h1><p>Единый список желаний — переносится из месяца в месяц. Купленное архивируется.</p></div>
     <button class="btn btn-primary" data-act="add-item">+ Добавить желание</button>
   </div>
+  ${queueSummaryCard(filtered)}
   <form class="quick-add card quick-add-smart" id="quickAddForm">
     <input name="title" placeholder="Быстро добавить желание..." required />
     <input name="cost" type="number" min="0" placeholder="Сумма" required />
@@ -1118,7 +1211,7 @@ function viewQueue() {
           `<option value="${k}" ${q.status === k ? "selected" : ""}>${v}</option>`,
       )
       .join("")}</select>
-    <select id="mobileSort" class="mobile-sort"><option value="priority:desc">Сорт: приоритет ↓</option><option value="cost:desc">Стоимость ↓</option><option value="cost:asc">Стоимость ↑</option><option value="deadline:asc">Дедлайн ↑</option><option value="title:asc">Название ↑</option></select>
+    <select id="mobileSort" class="mobile-sort">${sortOption("priority:desc", "Сорт: приоритет ↓")}${sortOption("cost:desc", "Стоимость ↓")}${sortOption("cost:asc", "Стоимость ↑")}${sortOption("deadline:asc", "Дедлайн ↑")}${sortOption("title:asc", "Название ↑")}</select>
   </div>
   ${
     state.items.length && filtered.length
