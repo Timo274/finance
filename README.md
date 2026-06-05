@@ -85,8 +85,7 @@ fly deploy --remote-only --app salary-planner-475c5d
 ```
 
 Для автоматического деплоя через GitHub Actions добавьте repo secret `FLY_API_TOKEN`; после этого
-каждый push в `main` будет прогонять тесты и деплоить приложение. Workflow также можно запускать
-вручную через GitHub Actions (`workflow_dispatch`).
+каждый push в `main` будет прогонять тесты и деплоить приложение.
 
 Репозиторий также содержит `render.yaml` для деплоя на [Render](https://render.com) в один клик
 (persistent disk для SQLite). Аналогично разворачивается на Railway — нужен только Node 18+,
