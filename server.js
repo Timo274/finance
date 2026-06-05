@@ -221,6 +221,54 @@ setInterval(() => {
   } catch {}
 }, LOGIN_WINDOW_MS).unref?.();
 
+const rateLimitBuckets = new Map();
+function rateLimit({ name, windowMs, max }) {
+  return (req, res, next) => {
+    const key = `${name}:${authClientKey(req)}`;
+    const now = Date.now();
+    const current = rateLimitBuckets.get(key);
+    const entry =
+      current && current.resetAt > now
+        ? current
+        : { count: 0, resetAt: now + windowMs };
+    if (entry.count >= max) {
+      const retryAfter = Math.max(1, Math.ceil((entry.resetAt - now) / 1000));
+      res.setHeader("Retry-After", String(retryAfter));
+      structuredLog("info", "rate_limited", {
+        requestId: req.requestId,
+        bucket: name,
+        ip: authClientKey(req),
+        retryAfter,
+      });
+      return res.status(429).json({ error: "rate_limited", retryAfter });
+    }
+    entry.count += 1;
+    rateLimitBuckets.set(key, entry);
+    next();
+  };
+}
+setInterval(
+  () => {
+    const now = Date.now();
+    for (const [key, entry] of rateLimitBuckets.entries()) {
+      if (entry.resetAt <= now) rateLimitBuckets.delete(key);
+    }
+  },
+  15 * 60 * 1000,
+).unref?.();
+
+const aiRateLimit = rateLimit({ name: "ai", windowMs: 60 * 1000, max: 20 });
+const importRateLimit = rateLimit({
+  name: "import",
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+});
+const backupRateLimit = rateLimit({
+  name: "backup",
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+});
+
 // ---------- prepared statements ----------
 const stmt = {
   authAttemptByKey: db.prepare(
@@ -1564,12 +1612,12 @@ app.get("/api/export", requireAuth, (req, res) => {
   res.json(exportPayload());
 });
 
-app.post("/api/import/validate", requireAuth, (req, res) => {
+app.post("/api/import/validate", requireAuth, importRateLimit, (req, res) => {
   const validation = validateImportData(req.body || {});
   res.status(validation.ok ? 200 : 400).json(validation);
 });
 
-app.post("/api/import", requireAuth, (req, res) => {
+app.post("/api/import", requireAuth, importRateLimit, (req, res) => {
   const data = req.body || {};
   const isFullBackup = Array.isArray(data.plans) && Array.isArray(data.items);
   const validation = validateImportData(data);
@@ -1745,7 +1793,7 @@ app.get("/api/backups", requireAuth, async (req, res) => {
     });
   }
 });
-app.post("/api/backups/run", requireAuth, async (req, res) => {
+app.post("/api/backups/run", requireAuth, backupRateLimit, async (req, res) => {
   try {
     res.json({ ok: true, backup: await writeBackup("manual") });
   } catch (error) {
@@ -1901,7 +1949,7 @@ app.get("/api/export/csv/:type", requireAuth, (req, res) => {
 // ================= AI =================
 app.get("/api/ai/status", requireAuth, (req, res) => res.json(aiStatus()));
 
-app.post("/api/ai/explain", requireAuth, async (req, res) => {
+app.post("/api/ai/explain", requireAuth, aiRateLimit, async (req, res) => {
   try {
     const item = stmt.itemById.get(Number(req.body?.itemId));
     if (!item) return res.status(404).json({ error: "not_found" });
@@ -1924,7 +1972,7 @@ app.post("/api/ai/explain", requireAuth, async (req, res) => {
   }
 });
 
-app.post("/api/ai/chat", requireAuth, async (req, res) => {
+app.post("/api/ai/chat", requireAuth, aiRateLimit, async (req, res) => {
   try {
     const messages = sanitizeMessages(req.body?.messages);
     const context = buildAIContext("balanced");
@@ -1937,7 +1985,7 @@ app.post("/api/ai/chat", requireAuth, async (req, res) => {
   }
 });
 
-app.post("/api/ai/chat/stream", requireAuth, async (req, res) => {
+app.post("/api/ai/chat/stream", requireAuth, aiRateLimit, async (req, res) => {
   try {
     const messages = sanitizeMessages(req.body?.messages);
     const out = await askAssistant(messages, buildAIContext("balanced"));
