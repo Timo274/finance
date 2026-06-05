@@ -630,7 +630,7 @@ function onboardingSteps() {
   const hasManual = hasManualPlan();
   const hasWallet = state.wallets.length > 0;
   return [
-    { id: "plan", done: hasPlan, label: "Ввести зарплату и обязательные расходы", hint: "Это база маршрута денег.", action: "open-plan", button: "Настроить" },
+    { id: "plan", done: hasPlan, label: "Ввести зарплату и обязательные расходы", hint: "Это база для всех расчётов.", action: "open-plan", button: "Настроить" },
     { id: "items", done: hasItems, label: "Добавить 3–5 желаний", hint: "От мелких покупок до больших целей.", action: "add-item", button: "Добавить" },
     { id: "priority", done: hasPriorities, label: "Отметить приоритеты и дедлайны", hint: "Так cockpit поймёт, что важно сейчас.", view: "queue", button: "Открыть" },
     { id: "manual", done: hasManual, label: "Собрать план месяца", hint: "Распределите излишки по желаниям.", view: "plan", button: "План" },
@@ -651,7 +651,7 @@ function onboardingChecklist({ compact = false } = {}) {
     <div class="row-between onboarding-head">
       <div>
         <div class="eyebrow">быстрый старт</div>
-        <h2>Маршрут: зарплата → обязательное → излишки → желания → план</h2>
+        <h2>Быстрый старт: от зарплаты к плану месяца</h2>
         <p class="muted">${done}/${total} готово. Выполните шаги один раз — дальше кабинет будет сразу подсказывать следующее действие.</p>
       </div>
       <div class="onboarding-progress" style="--pct:${pct}"><b>${pct}%</b><span>готово</span></div>
@@ -712,7 +712,7 @@ function richEmpty(icon, title, text, action = "", button = "", targetView = "")
 }
 
 function noPlanBlock() {
-  return richEmpty("◎", "Сначала настройте зарплату", "После этого появится маршрут: обязательные расходы, излишки, желания и план месяца.", "open-plan", "Настроить зарплату");
+  return richEmpty("◎", "Сначала настройте зарплату", "После этого появится понятная картина: обязательные расходы, свободные деньги, желания и план месяца.", "open-plan", "Настроить зарплату");
 }
 
 function insightMoney(n) {
@@ -777,6 +777,80 @@ function decisionCockpit() {
   </section>`;
 }
 
+
+function allocationLayerCard(t, segs, stablePct) {
+  const remaining = remainingSurplus();
+  const committed = committedTotal();
+  const fixedBase = (Number(t.survival) || 0) + (Number(t.reserve) || 0) + (Number(t.fixedInvestment) || 0);
+  const salary = Number(t.salary) || 0;
+  const fixedPct = salary ? Math.round((fixedBase / salary) * 100) : 0;
+  const committedPct = salary ? Math.round((committed / salary) * 100) : 0;
+  const remainingPct = salary ? Math.round((remaining / salary) * 100) : 0;
+  const layerRows = Object.entries(committedBuckets())
+    .filter(([, v]) => v > 0)
+    .map(
+      ([k, v]) =>
+        `<span><span class="dot" style="background:${bucketColor(k)}"></span>${bucketLabel(k)} <b>${fmt(v)}</b></span>`,
+    )
+    .join("");
+
+  return `<section class="card pad-lg allocation-card allocation-card-prime">
+    <div class="allocation-topline">
+      <div>
+        <div class="eyebrow">главный экран</div>
+        <h2>Распределение по слоям</h2>
+        <p>Сначала база, потом защита и инвестиции, затем желания — всё видно одним срезом.</p>
+      </div>
+      <span class="status-badge status-${t.status}">${STATUS_LABELS[t.status]}</span>
+    </div>
+
+    <div class="allocation-hero-grid">
+      <div class="allocation-donut-panel">
+        <canvas id="donutAlloc" class="chart-donut allocation-donut"></canvas>
+        <div class="allocation-donut-caption">
+          <span>Всего к распределению</span>
+          <b>${fmt(t.salary)}</b>
+          <em>${fmtUsd(t.salary)}</em>
+        </div>
+      </div>
+
+      <div class="allocation-layer-summary">
+        <div class="layer-summary-card base">
+          <span>База</span>
+          <b>${fmt(fixedBase)}</b>
+          <em>${fixedPct}% зарплаты</em>
+        </div>
+        <div class="layer-summary-card planned">
+          <span>Желания в плане</span>
+          <b>${fmt(committed)}</b>
+          <em>${committedPct}% зарплаты</em>
+        </div>
+        <div class="layer-summary-card ${remaining < 0 ? "danger" : "free"}">
+          <span>${remaining < 0 ? "Не хватает" : "Свободный остаток"}</span>
+          <b>${fmt(remaining)}</b>
+          <em>${remainingPct}% зарплаты</em>
+        </div>
+      </div>
+
+      <div class="legend legend-col allocation-legend">
+        <span><span class="dot" style="background:#64708f"></span>Обязательные <b>${fmt(t.survival)}</b></span>
+        <span><span class="dot" style="background:var(--accent)"></span>Страховка <b>${fmt(t.reserve)}</b></span>
+        <span><span class="dot" style="background:var(--green)"></span>Инвестиции <b>${fmt(t.fixedInvestment)}</b></span>
+        ${layerRows}
+        <span><span class="dot" style="background:var(--border)"></span>Останется <b>${fmt(remaining)}</b></span>
+      </div>
+    </div>
+
+    <div class="alloc-bar allocation-main-bar" aria-label="Полоса распределения зарплаты">
+      <div class="alloc-seg" style="width:${stablePct(t.survival)}%;background:#64708f" title="Обязательные"></div>
+      <div class="alloc-seg" style="width:${stablePct(t.reserve)}%;background:var(--accent)" title="Страховка"></div>
+      <div class="alloc-seg" style="width:${stablePct(t.fixedInvestment)}%;background:var(--green)" title="Инвестиции"></div>${segs}
+    </div>
+    <div class="allocation-axis"><span>обязательное</span><span>защита</span><span>рост</span><span>желания</span><span>остаток</span></div>
+    ${t.status === "overallocated" ? `<div class="tradeoff" style="background:color-mix(in srgb,var(--red) 10%,transparent);border-color:var(--red)"><b style="color:var(--red)">Перерасход.</b> Стабильные пункты и желания выше зарплаты — откройте «План распределения» и перенесите лишнее.</div>` : ""}
+  </section>`;
+}
+
 function viewDashboard() {
   if (!state.plan || !state.allocation) {
     return `<div class="view-head"><h1>Кабинет</h1><p>Обзор будущей зарплаты до её прихода.</p></div>${noPlanBlock()}`;
@@ -801,8 +875,8 @@ function viewDashboard() {
 
   return `
   <div class="dashboard-shell">
-    <div class="view-head dashboard-head"><div><h1>Кабинет</h1><p>Как разложить зарплату заранее — до того, как деньги пришли.</p></div><span class="page-kicker">личный финансовый cockpit</span></div>
-    ${localStorage.getItem("onboardingDismissed") === "1" ? "" : onboardingChecklist({ compact: true })}
+    <div class="view-head dashboard-head"><div><h1>Кабинет</h1><p>Главный срез зарплаты: слои, остаток и следующие действия.</p></div><span class="page-kicker">личный финансовый cockpit</span></div>
+    ${allocationLayerCard(t, segs, stablePct)}
     ${smartCtaCard()}
     ${decisionCockpit()}
     <div class="grid cards dashboard-cards">
@@ -814,33 +888,6 @@ function viewDashboard() {
     <div class="card"><div class="stat-label"><span class="stat-ico">📋</span> Распределено</div><div class="stat-value sm">${fmt(committedTotal())}</div><div class="stat-sub">${fmtUsd(committedTotal())} ${hasManualPlan() ? "ручной план" : `${state.allocation.approved.length} покупок`}</div></div>
     <div class="card"><div class="stat-label"><span class="stat-ico">${remainingSurplus() < 0 ? "⚠️" : "✅"}</span> Останется из излишков</div><div class="stat-value ${remainingSurplus() < 0 ? "red-num" : "green-num"}">${fmt(remainingSurplus())}</div><div class="stat-sub">${fmtUsd(remainingSurplus())} ${hasManualPlan() ? "по ручному плану" : "по авто-распределению"}</div></div>
     ${pfValue > 0 ? `<div class="card"><div class="stat-label"><span class="stat-ico">💼</span> Портфель</div><div class="stat-value sm">${fmt(pfValue)}</div><div class="stat-sub">${fmtUsd(pfValue)} ${pfPLpct ? `<span style="color:${pfPL >= 0 ? "var(--green)" : "var(--red)"};font-weight:700">${pfPL >= 0 ? "+" : ""}${pfPLpct}%</span>` : ""}</div></div>` : ""}
-    </div>
-
-    <div class="card pad-lg allocation-card">
-    <div class="row-between"><div class="stat-label">Распределение по слоям</div>
-      <span class="status-badge status-${t.status}">${STATUS_LABELS[t.status]}</span></div>
-    <div class="donut-wrap">
-      <canvas id="donutAlloc" class="chart-donut"></canvas>
-      <div class="legend legend-col">
-        <span><span class="dot" style="background:#64708f"></span>Обязательные <b>${fmt(t.survival)}</b></span>
-        <span><span class="dot" style="background:var(--accent)"></span>Страховка <b>${fmt(t.reserve)}</b></span>
-        <span><span class="dot" style="background:var(--green)"></span>Инвестиции <b>${fmt(t.fixedInvestment)}</b></span>
-        ${Object.entries(committedBuckets())
-          .filter(([, v]) => v > 0)
-          .map(
-            ([k, v]) =>
-              `<span><span class="dot" style="background:${bucketColor(k)}"></span>${bucketLabel(k)} <b>${fmt(v)}</b></span>`,
-          )
-          .join("")}
-        <span><span class="dot" style="background:var(--border)"></span>Останется <b>${fmt(remainingSurplus())}</b></span>
-      </div>
-    </div>
-    <div class="alloc-bar" style="margin-top:16px">
-      <div class="alloc-seg" style="width:${stablePct(t.survival)}%;background:#64708f" title="Обязательные"></div>
-      <div class="alloc-seg" style="width:${stablePct(t.reserve)}%;background:var(--accent)" title="Страховка"></div>
-      <div class="alloc-seg" style="width:${stablePct(t.fixedInvestment)}%;background:var(--green)" title="Инвестиции"></div>${segs}
-    </div>
-    ${t.status === "overallocated" ? `<div class="tradeoff" style="background:color-mix(in srgb,var(--red) 10%,transparent);border-color:var(--red)"><b style="color:var(--red)">Перерасход.</b> Стабильные пункты и желания выше зарплаты — посмотрите «План распределения», что перенести.</div>` : ""}
     </div>
   </div>
   `;
