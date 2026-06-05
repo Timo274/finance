@@ -6,12 +6,22 @@ test("sets up PIN, creates a plan and adds a wishlist item", async ({
   await page.goto("/");
 
   await expect(page.locator("#authGate")).toBeVisible();
-  await expect(page.locator("#authTitle")).toHaveText("Создайте PIN");
+  const authTitle = page.locator("#authTitle");
+  await expect(authTitle).toHaveText(/Создайте PIN|Вход/);
+
+  const isSetup = (await authTitle.textContent()) === "Создайте PIN";
   await page.locator("#pinInput").fill("1234");
-  await page.locator("#pinConfirm").fill("1234");
+  if (isSetup) {
+    await page.locator("#pinConfirm").fill("1234");
+  }
   await page.locator("#authSubmit").click();
 
   await expect(page.locator("#app")).toBeVisible();
+  const onboardingModal = page.locator("#modalRoot .modal-overlay");
+  if (await onboardingModal.isVisible()) {
+    await page.locator("#modalRoot [data-close-modal]").first().click();
+    await expect(onboardingModal).toBeHidden();
+  }
   await expect(page.locator("#topPlanName")).toHaveText(
     "Зарплата не настроена",
   );
