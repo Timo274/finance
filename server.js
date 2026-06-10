@@ -9,14 +9,20 @@ import crypto from "node:crypto";
 import db, {
   getJSON,
   setJSON,
+  getSetting,
+  setSetting,
   rowToItem,
   rowToPlan,
   rowToWallet,
   rowToGoal,
+  rowToGoalContribution,
   rowToInvestmentUpdate,
   rowToAllocationDecision,
   currencyRate,
   setCurrencyRate,
+  eurRate,
+  setEurRate,
+  rateForCurrency,
   DB_PATH,
 } from "./src/db.js";
 import {
@@ -27,7 +33,12 @@ import {
   clearToken,
   isAuthed,
   requireAuth,
+  bumpTokenVersion,
 } from "./src/auth.js";
+import { getVapidKeys, sendPush } from "./src/webpush.js";
+import { monobankEnabled, getMonthSummary } from "./src/monobank.js";
+import { checkPrice } from "./src/pricecheck.js";
+import { offsiteEnabled, uploadOffsiteBackup } from "./src/offsite.js";
 import {
   CATEGORIES,
   LAYERS,
@@ -48,7 +59,15 @@ import {
   SCENARIOS,
   scoreVerdict,
 } from "./src/allocation.js";
-import { aiStatus, askAssistant, askAssistantText } from "./src/ai.js";
+import {
+  aiStatus,
+  aiEnabled,
+  askAssistant,
+  askAssistantText,
+  askAssistantStream,
+  monthReviewPrompt,
+  talkMeOutPrompt,
+} from "./src/ai.js";
 import { buildDecisionInsights } from "./src/insights.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -88,6 +107,11 @@ app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "same-origin");
+  if (process.env.NODE_ENV === "production")
+    res.setHeader(
+      "Strict-Transport-Security",
+      "max-age=31536000; includeSubDomains",
+    );
   res.setHeader(
     "Permissions-Policy",
     "camera=(), microphone=(), geolocation=()",
@@ -114,7 +138,14 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json({ limit: "1mb" }));
+// Импорт бэкапа может быть заметно больше обычных запросов — отдельный лимит 10mb.
+const jsonParser = express.json({ limit: "1mb" });
+const importJsonParser = express.json({ limit: "10mb" });
+app.use((req, res, next) => {
+  if (req.path === "/api/import" || req.path === "/api/import/validate")
+    return importJsonParser(req, res, next);
+  return jsonParser(req, res, next);
+});
 app.use(cookieParser());
 
 app.get("/healthz", (req, res) => {
@@ -309,12 +340,25 @@ const stmt = {
   allItems: db.prepare("SELECT * FROM items ORDER BY id DESC"),
   itemById: db.prepare("SELECT * FROM items WHERE id = ?"),
   insertItem: db.prepare(`INSERT INTO items
-    (title, cost, category, bucket, band, score_type, scores, priority, type, deadline, earliest_date, can_defer, emotional, trajectory, notes)
-    VALUES (@title,@cost,@category,@layer,@band,@scoreType,@scores,@priority,@type,@deadline,@earliestDate,@canDefer,@emotional,@trajectory,@notes)`),
+    (title, cost, category, bucket, band, score_type, scores, priority, type, deadline, earliest_date, can_defer, emotional, trajectory, notes, recurring, url, currency, cost_original)
+    VALUES (@title,@cost,@category,@layer,@band,@scoreType,@scores,@priority,@type,@deadline,@earliestDate,@canDefer,@emotional,@trajectory,@notes,@recurring,@url,@currency,@costOriginal)`),
   updateItem: db.prepare(`UPDATE items SET
     title=@title, cost=@cost, category=@category, bucket=@layer, band=@band, score_type=@scoreType, scores=@scores,
     priority=@priority, type=@type, deadline=@deadline, earliest_date=@earliestDate, can_defer=@canDefer, emotional=@emotional,
-    trajectory=@trajectory, notes=@notes, updated_at=datetime('now') WHERE id=@id`),
+    trajectory=@trajectory, notes=@notes, recurring=@recurring, url=@url, currency=@currency, cost_original=@costOriginal,
+    updated_at=datetime('now') WHERE id=@id`),
+  itemsWithUrl: db.prepare(
+    "SELECT * FROM items WHERE status='active' AND url IS NOT NULL AND url != ''",
+  ),
+  nonUahItems: db.prepare(
+    "SELECT * FROM items WHERE currency != 'UAH' AND cost_original IS NOT NULL",
+  ),
+  updateItemCostBand: db.prepare(
+    "UPDATE items SET cost=@cost, band=@band, updated_at=datetime('now') WHERE id=@id",
+  ),
+  updateItemLinkPrice: db.prepare(
+    "UPDATE items SET link_price=@linkPrice, link_price_at=datetime('now') WHERE id=@id",
+  ),
   setItemStatus: db.prepare(
     "UPDATE items SET status=@status, updated_at=datetime('now') WHERE id=@id",
   ),
@@ -348,6 +392,24 @@ const stmt = {
   insertGoalContribution:
     db.prepare(`INSERT INTO goal_contributions (goal_id, plan_id, amount, date, note)
     VALUES (@goalId, @planId, @amount, @date, @note)`),
+  contributionsByGoal: db.prepare(
+    "SELECT * FROM goal_contributions WHERE goal_id = ? ORDER BY date DESC, id DESC",
+  ),
+  allGoalContributions: db.prepare(
+    "SELECT * FROM goal_contributions ORDER BY id",
+  ),
+  insertGoalContributionFull:
+    db.prepare(`INSERT INTO goal_contributions (id, goal_id, plan_id, amount, date, note, created_at)
+    VALUES (@id, @goalId, @planId, @amount, @date, @note, @createdAt)`),
+
+  pushSubscriptions: db.prepare("SELECT * FROM push_subscriptions"),
+  insertPushSubscription:
+    db.prepare(`INSERT INTO push_subscriptions (endpoint, p256dh, auth)
+    VALUES (@endpoint, @p256dh, @auth)
+    ON CONFLICT(endpoint) DO UPDATE SET p256dh=excluded.p256dh, auth=excluded.auth`),
+  deletePushSubscription: db.prepare(
+    "DELETE FROM push_subscriptions WHERE endpoint = ?",
+  ),
 
   investmentUpdates:
     db.prepare(`SELECT iu.*, ia.name AS account_name, ia.type AS account_type
@@ -417,9 +479,12 @@ const stmt = {
   allValuations: db.prepare(
     "SELECT * FROM asset_valuations ORDER BY date DESC, created_at DESC",
   ),
+  // Одна оценка на (актив, дату): повторная запись за тот же день обновляет значение.
   insertValuation:
     db.prepare(`INSERT INTO asset_valuations (id, asset_id, date, value, quantity, note)
-    VALUES (@id, @asset_id, @date, @value, @quantity, @note)`),
+    VALUES (@id, @asset_id, @date, @value, @quantity, @note)
+    ON CONFLICT(asset_id, date) DO UPDATE SET value=excluded.value,
+      quantity=excluded.quantity, note=excluded.note, created_at=datetime('now')`),
   deleteValuation: db.prepare("DELETE FROM asset_valuations WHERE id = ?"),
 };
 
@@ -660,8 +725,25 @@ function normalizeItemInput(b) {
   const layer = VALID_LAYERS.has(b.layer)
     ? b.layer
     : layerForCategory(category);
-  const cost = positiveNumber(b.cost);
+  // Мультивалютность: канонический cost всегда в грн. Для USD/EUR храним
+  // оригинальную сумму (costOriginal) и пересчитываем по текущему курсу.
+  const currency = oneOf(
+    String(b.currency || "UAH").toUpperCase(),
+    ["UAH", "USD", "EUR"],
+    "UAH",
+  );
+  const costOriginal =
+    currency === "UAH" ? null : positiveNumber(b.costOriginal ?? b.cost);
+  const cost =
+    currency === "UAH"
+      ? positiveNumber(b.cost)
+      : Math.round(costOriginal * rateForCurrency(currency) * 100) / 100;
   const band = bandForCost(cost);
+  let url = null;
+  if (b.url) {
+    const raw = textValue(b.url, "", 1000);
+    if (/^https?:\/\//i.test(raw)) url = raw;
+  }
   const scoreType = oneOf(b.scoreType, ["none", "quick", "full"], "none");
   let scores = null;
   if (scoreType !== "none" && b.scores && typeof b.scores === "object") {
@@ -688,6 +770,10 @@ function normalizeItemInput(b) {
     emotional: boundedInteger(b.emotional, 1, 5, 3),
     trajectory: boundedInteger(b.trajectory, 1, 5, 3),
     notes: b.notes ? textValue(b.notes, "", 2000) : null,
+    recurring: b.recurring === true || b.recurring === 1 ? 1 : 0,
+    url,
+    currency,
+    costOriginal,
   };
 }
 
@@ -743,6 +829,28 @@ app.post("/api/auth/logout", (req, res) => {
   res.json({ ok: true });
 });
 
+// Смена PIN: требует текущий PIN. Инвалидирует все старые сессии.
+app.post("/api/auth/change-pin", requireAuth, authRateLimit, (req, res) => {
+  const currentPin = String(req.body?.currentPin || "");
+  const newPin = String(req.body?.newPin || "");
+  if (!verifyPin(currentPin)) return res.status(401).json({ error: "bad_pin" });
+  if (newPin.length < 4) return res.status(400).json({ error: "pin_too_short" });
+  if (req.authRateLimitKey) stmt.deleteAuthAttempt.run(req.authRateLimitKey);
+  setPin(newPin);
+  bumpTokenVersion();
+  issueToken(res); // текущее устройство остаётся залогиненным
+  structuredLog("info", "pin_changed", { requestId: req.requestId });
+  res.json({ ok: true });
+});
+
+// «Выйти на всех устройствах»: поднимает версию токенов, все cookie протухают.
+app.post("/api/auth/logout-all", requireAuth, (req, res) => {
+  bumpTokenVersion();
+  clearToken(res);
+  structuredLog("info", "logout_all", { requestId: req.requestId });
+  res.json({ ok: true });
+});
+
 // ================= META =================
 function metaPayload() {
   return {
@@ -759,6 +867,9 @@ function metaPayload() {
     })),
     defaults: DEFAULTS,
     ai: aiStatus(),
+    monobank: monobankEnabled(),
+    offsiteBackup: offsiteEnabled(),
+    push: { enabled: true, publicKey: getVapidKeys().publicKey },
   };
 }
 
@@ -824,45 +935,94 @@ app.post("/api/plan/close", requireAuth, (req, res) => {
     })),
   };
 
+  // Чек-лист закрытия: фронт может передать purchases=[{itemId, purchased}],
+  // чтобы подтвердить, что реально куплено. Без purchases — прежнее поведение
+  // (auto → всё approved куплено, manual → куплено только полностью накопленное).
+  const purchasesRaw = Array.isArray(req.body?.purchases)
+    ? req.body.purchases
+    : null;
+  const purchasedById = purchasesRaw
+    ? new Map(
+        purchasesRaw
+          .map((p) => [Number(p?.itemId), p?.purchased === true])
+          .filter(([id]) => Number.isFinite(id) && id > 0),
+      )
+    : null;
+  const isPurchased = (entry) => {
+    if (purchasedById) return purchasedById.get(Number(entry.item.id)) === true;
+    return useManual ? !!entry.fullyFunded : true;
+  };
+
+  snapshot.approved = result.approved.map((a) => ({
+    title: a.item.title,
+    cost: a.item.cost,
+    allocatedAmount: a.allocatedAmount,
+    remainingCost: a.remainingCost,
+    layer: a.item.layer,
+    purchased: isPurchased(a),
+    recurring: !!a.item.recurring,
+  }));
+
+  const recordContribution = (item, contribution, savedAmount, note) => {
+    const cost = positiveNumber(item.cost);
+    const existingGoal = stmt.goalByItem.get(item.id);
+    stmt.upsertGoal.run({
+      itemId: item.id,
+      targetAmount: cost,
+      savedAmount,
+      monthlyContribution: Math.max(
+        0,
+        Number(existingGoal?.monthly_contribution) || 0,
+      ),
+      deadline: existingGoal?.deadline || item.deadline || null,
+      status: savedAmount >= cost ? "complete" : "active",
+    });
+    const goal = stmt.goalByItem.get(item.id);
+    if (goal) {
+      stmt.insertGoalContribution.run({
+        goalId: goal.id,
+        planId: plan.id,
+        amount: contribution,
+        date: todayISO(),
+        note,
+      });
+    }
+  };
+
   const close = db.transaction(() => {
     stmt.closePlan.run({ id: plan.id, snapshot: JSON.stringify(snapshot) });
 
     for (const entry of result.approved) {
-      if (!useManual) {
-        stmt.setItemStatus.run({ id: entry.item.id, status: "bought" });
+      const item = entry.item;
+      const cost = positiveNumber(item.cost);
+      const purchased = isPurchased(entry);
+
+      if (purchased) {
+        if (item.recurring) {
+          // Регулярное желание: после покупки возвращается в очередь с нуля.
+          stmt.updateItemSavings.run({ id: item.id, savedAmount: 0 });
+          stmt.deleteGoalByItem.run(item.id);
+          stmt.setItemStatus.run({ id: item.id, status: "active" });
+        } else {
+          stmt.setItemStatus.run({ id: item.id, status: "bought" });
+        }
         continue;
       }
 
-      const cost = positiveNumber(entry.item.cost);
-      const savedBefore = positiveNumber(entry.item.savedAmount);
+      // Не куплено: выделенные деньги превращаются в накопление.
+      const savedBefore = positiveNumber(item.savedAmount);
       const contribution = Math.max(0, Number(entry.allocatedAmount) || 0);
       const savedAmount = Math.min(cost, savedBefore + contribution);
-      stmt.updateItemSavings.run({ id: entry.item.id, savedAmount });
-
+      stmt.updateItemSavings.run({ id: item.id, savedAmount });
       if (contribution > 0) {
-        const existingGoal = stmt.goalByItem.get(entry.item.id);
-        stmt.upsertGoal.run({
-          itemId: entry.item.id,
-          targetAmount: cost,
+        recordContribution(
+          item,
+          contribution,
           savedAmount,
-          monthlyContribution: Math.max(0, Number(existingGoal?.monthly_contribution) || 0),
-          deadline: existingGoal?.deadline || entry.item.deadline || null,
-          status: savedAmount >= cost ? "complete" : "active",
-        });
-        const goal = stmt.goalByItem.get(entry.item.id);
-        if (goal) {
-          stmt.insertGoalContribution.run({
-            goalId: goal.id,
-            planId: plan.id,
-            amount: contribution,
-            date: todayISO(),
-            note: "Закрытие месяца по ручному плану",
-          });
-        }
-      }
-
-      if (cost > 0 && savedAmount >= cost) {
-        stmt.setItemStatus.run({ id: entry.item.id, status: "bought" });
+          useManual
+            ? "Закрытие месяца по ручному плану"
+            : "Закрытие месяца (не куплено — в накопление)",
+        );
       }
     }
   });
@@ -871,14 +1031,62 @@ app.post("/api/plan/close", requireAuth, (req, res) => {
   res.json({ ok: true, snapshot });
 });
 
+// Превью закрытия месяца — данные для чек-листа на фронте.
+app.get("/api/plan/close-preview", requireAuth, (req, res) => {
+  const plan = getActivePlan();
+  if (!plan) return res.status(400).json({ error: "no_active_plan" });
+  const items = getActiveItems();
+  const scenario = req.query.scenario || "balanced";
+  const manualPlan = getManualPlan() || [];
+  const useManual = scenario === "balanced" && manualPlan.length > 0;
+  const result = useManual
+    ? allocationFromManualPlan(plan, items, manualPlan, { scenario })
+    : allocate(plan, items, { scenario });
+  res.json({
+    source: useManual ? "manual" : "auto",
+    totals: result.totals,
+    approved: result.approved.map((a) => ({
+      itemId: a.item.id,
+      title: a.item.title,
+      cost: a.item.cost,
+      allocatedAmount: a.allocatedAmount,
+      savedAmount: a.item.savedAmount || 0,
+      recurring: !!a.item.recurring,
+      fullyFunded: useManual ? !!a.fullyFunded : true,
+    })),
+    deferredCount: result.deferred.length,
+  });
+});
+
 // ================= CURRENCY =================
+function recomputeForeignCurrencyCosts() {
+  const rows = stmt.nonUahItems.all();
+  const update = db.transaction(() => {
+    for (const row of rows) {
+      const original = Number(row.cost_original) || 0;
+      if (original <= 0) continue;
+      const cost =
+        Math.round(original * rateForCurrency(row.currency) * 100) / 100;
+      stmt.updateItemCostBand.run({ id: row.id, cost, band: bandForCost(cost) });
+    }
+  });
+  update();
+  return rows.length;
+}
+
 app.get("/api/currency", requireAuth, (req, res) => {
-  res.json({ rate: currencyRate() });
+  res.json({ rate: currencyRate(), eurRate: eurRate() });
 });
 app.post("/api/currency", requireAuth, (req, res) => {
-  const rate = Math.max(1, positiveNumber(req.body?.rate, 43.5));
-  setCurrencyRate(rate);
-  res.json({ rate: currencyRate() });
+  if (req.body?.rate != null) {
+    setCurrencyRate(Math.max(1, positiveNumber(req.body.rate, 43.5)));
+  }
+  if (req.body?.eurRate != null) {
+    setEurRate(Math.max(1, positiveNumber(req.body.eurRate, 47)));
+  }
+  // Курс изменился — пересчитываем гривневую стоимость валютных желаний.
+  const recalculated = recomputeForeignCurrencyCosts();
+  res.json({ rate: currencyRate(), eurRate: eurRate(), recalculated });
 });
 
 // ================= ITEMS (master wishlist) =================
@@ -917,36 +1125,68 @@ app.post("/api/items/:id/savings", requireAuth, (req, res) => {
   const id = Number(req.params.id);
   const item = stmt.itemById.get(id);
   if (!item) return res.status(404).json({ error: "not_found" });
-  const savedAmount = Math.max(0, Number(req.body?.savedAmount) || 0);
+  const cost = positiveNumber(item.cost);
+  // Валидация: накопление не может быть отрицательным или абсурдно больше цели.
+  const savedAmount = Math.min(
+    positiveNumber(req.body?.savedAmount),
+    Math.max(cost * 2, cost + 1_000_000),
+  );
   stmt.updateItemSavings.run({ id, savedAmount });
   const existingGoal = stmt.goalByItem.get(id);
   const goalPayload = {
     itemId: id,
-    targetAmount: Number(item.cost) || 0,
+    targetAmount: cost,
     savedAmount,
-    monthlyContribution: Math.max(
-      0,
-      Number(
-        req.body?.monthlyContribution ??
-          existingGoal?.monthly_contribution ??
-          0,
-      ),
+    monthlyContribution: positiveNumber(
+      req.body?.monthlyContribution ?? existingGoal?.monthly_contribution ?? 0,
     ),
-    deadline: req.body?.deadline || existingGoal?.deadline || item.deadline,
-    status: savedAmount >= (Number(item.cost) || 0) ? "complete" : "active",
+    deadline:
+      isoDateValue(req.body?.deadline) ||
+      existingGoal?.deadline ||
+      item.deadline,
+    status: savedAmount >= cost ? "complete" : "active",
   };
   stmt.upsertGoal.run(goalPayload);
   const goal = stmt.goalByItem.get(id);
-  if (Number(req.body?.contributionAmount) > 0) {
+  if (positiveNumber(req.body?.contributionAmount) > 0) {
     stmt.insertGoalContribution.run({
       goalId: goal.id,
       planId: currentPlanId(),
-      amount: Math.max(0, Number(req.body.contributionAmount) || 0),
-      date: req.body?.date || todayISO(),
-      note: req.body?.note || "",
+      amount: positiveNumber(req.body.contributionAmount),
+      date: isoDateValue(req.body?.date, todayISO()),
+      note: textValue(req.body?.note, "", 500),
     });
   }
   res.json({ item: rowToItem(stmt.itemById.get(id)) });
+});
+
+// История взносов по желанию (таймлайн накоплений).
+app.get("/api/items/:id/contributions", requireAuth, (req, res) => {
+  const id = Number(req.params.id);
+  const item = stmt.itemById.get(id);
+  if (!item) return res.status(404).json({ error: "not_found" });
+  const goal = stmt.goalByItem.get(id);
+  const contributions = goal
+    ? stmt.contributionsByGoal.all(goal.id).map(rowToGoalContribution)
+    : [];
+  res.json({
+    itemId: id,
+    goal: goal ? rowToGoal(goal) : null,
+    contributions,
+  });
+});
+
+// Ручная проверка цены по ссылке желания.
+app.post("/api/items/:id/check-price", requireAuth, aiRateLimit, async (req, res) => {
+  const id = Number(req.params.id);
+  const item = stmt.itemById.get(id);
+  if (!item) return res.status(404).json({ error: "not_found" });
+  if (!item.url) return res.status(400).json({ error: "no_url" });
+  const result = await checkPrice(item.url);
+  if (result.found) {
+    stmt.updateItemLinkPrice.run({ id, linkPrice: result.price });
+  }
+  res.json({ ...result, item: rowToItem(stmt.itemById.get(id)) });
 });
 
 app.get("/api/goals", requireAuth, (req, res) => {
@@ -956,18 +1196,15 @@ app.post("/api/goals", requireAuth, (req, res) => {
   const itemId = Number(req.body?.itemId);
   const item = stmt.itemById.get(itemId);
   if (!item) return res.status(404).json({ error: "item_not_found" });
-  const savedAmount = Math.max(0, Number(req.body?.savedAmount) || 0);
+  const savedAmount = positiveNumber(req.body?.savedAmount);
   stmt.upsertGoal.run({
     itemId,
-    targetAmount: Math.max(0, Number(req.body?.targetAmount ?? item.cost) || 0),
+    targetAmount: positiveNumber(req.body?.targetAmount ?? item.cost),
     savedAmount,
-    monthlyContribution: Math.max(
-      0,
-      Number(req.body?.monthlyContribution) || 0,
-    ),
-    deadline: req.body?.deadline || item.deadline || null,
+    monthlyContribution: positiveNumber(req.body?.monthlyContribution),
+    deadline: isoDateValue(req.body?.deadline) || item.deadline || null,
     status:
-      req.body?.status ||
+      oneOf(req.body?.status, ["active", "complete", "archived"], null) ||
       (savedAmount >= Number(item.cost) ? "complete" : "active"),
   });
   stmt.updateItemSavings.run({ id: itemId, savedAmount });
@@ -1166,7 +1403,13 @@ async function fetchYahooPrice(ticker) {
   });
   if (!resp.ok) return null;
   const data = await resp.json();
-  return data?.chart?.result?.[0]?.meta?.regularMarketPrice || null;
+  const meta = data?.chart?.result?.[0]?.meta;
+  if (!meta?.regularMarketPrice) return null;
+  // Берём валюту котировки из ответа: акции бывают и в EUR/GBP/UAH, не только USD.
+  return {
+    price: meta.regularMarketPrice,
+    currency: String(meta.currency || "USD").toUpperCase(),
+  };
 }
 
 async function fetchCgPrice(cgId) {
@@ -1180,25 +1423,35 @@ async function fetchCgPrice(cgId) {
   return data?.[cgId]?.usd || null;
 }
 
-async function valuationForAsset(asset, priceUsd) {
-  if (!priceUsd || priceUsd <= 0) return;
+async function valuationForAsset(asset, price, quoteCurrencyRaw) {
+  if (!price || price <= 0) return false;
   const txs = stmt.transactionsByAsset.all(asset.id);
   const qty = txs.reduce(
     (s, t) => s + (t.type === "buy" ? t.quantity : -t.quantity),
     0,
   );
-  if (qty <= 0) return;
-  const quoteCurrency = String(asset.currency || "USD").toUpperCase();
-  const rate = quoteCurrency === "UAH" ? 1 : currencyRate();
-  const valueUah = qty * priceUsd * rate;
+  if (qty <= 0) return false;
+  // Валюта котировки приходит от прайс-фида (Yahoo meta.currency / CoinGecko=USD),
+  // а не из asset.currency — иначе UAH-актив с USD-котировкой считался без курса.
+  const quoteCurrency = String(
+    quoteCurrencyRaw || asset.currency || "USD",
+  ).toUpperCase();
+  const rate =
+    quoteCurrency === "UAH"
+      ? 1
+      : quoteCurrency === "EUR"
+        ? eurRate()
+        : currencyRate();
+  const valueUah = qty * price * rate;
   stmt.insertValuation.run({
     id: String(Date.now() + "-" + Math.random().toString(36).slice(2, 8)),
     asset_id: asset.id,
     date: todayISO(),
     value: Math.round(valueUah * 100) / 100,
     quantity: qty,
-    note: `PriceFeed auto (${quoteCurrency} ${priceUsd})`,
+    note: `PriceFeed auto (${quoteCurrency} ${price})`,
   });
+  return true;
 }
 
 app.post("/api/investments/refresh-prices", requireAuth, async (req, res) => {
@@ -1207,31 +1460,47 @@ app.post("/api/investments/refresh-prices", requireAuth, async (req, res) => {
   const errors = [];
 
   for (const asset of assets) {
+    const ticker = asset.ticker.trim().toUpperCase();
     try {
-      const ticker = asset.ticker.trim().toUpperCase();
       const type = (asset.type || "").toLowerCase();
       let price = null;
+      let quoteCurrency = "USD";
 
       if (type === "crypto") {
         const cgId = CG_MAP[ticker.toLowerCase()];
-        if (cgId) price = await fetchCgPrice(cgId);
+        if (!cgId) {
+          errors.push({ ticker, reason: "unknown_crypto_ticker" });
+          continue;
+        }
+        price = await fetchCgPrice(cgId);
+        if (price == null)
+          errors.push({ ticker, reason: "coingecko_no_price" });
       } else {
         // stock, etf, bond, other — через Yahoo Finance
-        price = await fetchYahooPrice(ticker);
+        const quote = await fetchYahooPrice(ticker);
+        if (!quote) {
+          errors.push({ ticker, reason: "yahoo_no_price" });
+          continue;
+        }
+        price = quote.price;
+        quoteCurrency = quote.currency;
       }
 
       if (price != null && price > 0) {
-        await valuationForAsset(asset, price);
-        updated++;
+        const ok = await valuationForAsset(asset, price, quoteCurrency);
+        if (ok) updated++;
+        else errors.push({ ticker, reason: "no_quantity_held" });
       }
     } catch (e) {
-      errors.push(asset.ticker + ": " + e.message);
+      errors.push({ ticker, reason: String(e.message || e) });
     }
   }
 
-  if (errors.length) console.error("Price refresh errors:", errors.join("; "));
+  if (errors.length)
+    structuredLog("info", "price_refresh_errors", { errors });
   const result = getPortfolio();
-  result._meta = { updated, errors: errors.length };
+  // errors теперь массив с причинами по каждому тикеру — фронт показывает детали.
+  result._meta = { updated, errors };
   res.json(result);
 });
 
@@ -1639,24 +1908,64 @@ function restoreFullBackup(data) {
     });
   }
 
+  // Взносы в цели: восстанавливаем по goal_id (id целей сохраняются) либо
+  // по itemId, если в бэкапе он указан.
+  const goalIdExists = db.prepare("SELECT id FROM goals WHERE id = ?");
+  const goalByItemId = db.prepare("SELECT id FROM goals WHERE item_id = ?");
+  for (const c of data.goalContributions || []) {
+    let goalId = Number(c.goalId ?? c.goal_id) || null;
+    if (goalId && !goalIdExists.get(goalId)) goalId = null;
+    if (!goalId) {
+      const itemId = Number(c.itemId ?? c.item_id);
+      if (itemId) goalId = goalByItemId.get(itemId)?.id || null;
+    }
+    if (!goalId) continue;
+    const planId = Number(c.planId ?? c.plan_id) || null;
+    stmt.insertGoalContributionFull.run({
+      id: Number(c.id) || null,
+      goalId,
+      planId: planId && planIds.has(planId) ? planId : null,
+      amount: Math.max(0, Number(c.amount) || 0),
+      date: c.date || todayISO(),
+      note: c.note ? String(c.note) : "",
+      createdAt: c.createdAt || c.created_at || now,
+    });
+  }
+
   const activePlanId =
     Number((data.plans || []).find((p) => p.status === "active")?.id) || null;
+  // Дедупликация решений: UNIQUE(plan_id,item_id,source) не ловит NULL plan_id
+  // (в SQLite NULL != NULL), поэтому дедупим в JS — последняя запись побеждает.
+  const decisionByKey = new Map();
   for (const d of data.allocationDecisions || []) {
     const itemId = Number(d.itemId ?? d.item_id);
     if (!itemIds.has(itemId)) continue;
-    const planId = Number(d.planId ?? d.plan_id) || activePlanId;
-    stmt.upsertDecision.run({
-      planId: planId && planIds.has(planId) ? planId : null,
+    const rawPlanId = Number(d.planId ?? d.plan_id) || activePlanId;
+    const planId = rawPlanId && planIds.has(rawPlanId) ? rawPlanId : null;
+    decisionByKey.set(`${planId}|${itemId}`, {
+      planId,
       itemId,
       amount: Math.max(0, Number(d.amount) || 0),
       scenario: d.scenario || "manual",
     });
   }
+  for (const decision of decisionByKey.values()) {
+    stmt.upsertDecision.run(decision);
+  }
+}
+
+function goalContributionsWithItems() {
+  const goals = stmt.allGoals.all();
+  const goalItem = new Map(goals.map((g) => [g.id, g.item_id]));
+  return stmt.allGoalContributions.all().map((row) => ({
+    ...rowToGoalContribution(row),
+    itemId: goalItem.get(row.goal_id) || null,
+  }));
 }
 
 function exportPayload() {
   return {
-    version: 4,
+    version: 5,
     exportedAt: new Date().toISOString(),
     plans: db.prepare("SELECT * FROM plans ORDER BY id").all().map(rowToPlan),
     items: stmt.allItems.all().map(rowToItem),
@@ -1668,6 +1977,7 @@ function exportPayload() {
     assetValuations: rawAssetValuations(),
     portfolio: getPortfolio(),
     allocationDecisions: stmt.allDecisions.all().map(rowToAllocationDecision),
+    goalContributions: goalContributionsWithItems(),
   };
 }
 
@@ -1809,12 +2119,25 @@ async function writeBackup(reason = "scheduled") {
   await fs.mkdir(BACKUP_DIR, { recursive: true });
   const payload = exportPayload();
   const filePath = path.join(BACKUP_DIR, backupFileName(reason));
-  await fs.writeFile(filePath, JSON.stringify(payload, null, 2));
+  const json = JSON.stringify(payload, null, 2);
+  await fs.writeFile(filePath, json);
   await pruneBackups();
+  // Offsite-копия в GitHub (если настроена) — не валим основной бэкап при сбое.
+  let offsite = null;
+  if (offsiteEnabled()) {
+    try {
+      offsite = await uploadOffsiteBackup(json);
+    } catch (error) {
+      structuredLog("error", "offsite_backup_failed", {
+        error: String(error.message || error),
+      });
+    }
+  }
   return {
     file: path.basename(filePath),
     path: filePath,
     exportedAt: payload.exportedAt,
+    offsite,
   };
 }
 function scheduleBackups() {
@@ -2085,16 +2408,347 @@ app.post("/api/ai/chat", requireAuth, aiRateLimit, async (req, res) => {
 });
 
 app.post("/api/ai/chat/stream", requireAuth, aiRateLimit, async (req, res) => {
+  // Настоящий стриминг: куски ответа провайдера летят клиенту по мере генерации.
   try {
     const messages = sanitizeMessages(req.body?.messages);
-    const out = await askAssistant(messages, buildAIContext("balanced"));
+    if (!aiEnabled()) {
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      return res.end(
+        "AI-ассистент не настроен. Добавьте AI_PROVIDER и AI_API_KEY в окружении.",
+      );
+    }
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
-    for (const word of String(out.reply || "").split(/(\s+)/)) res.write(word);
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders?.();
+    await askAssistantStream(messages, buildAIContext("balanced"), (delta) =>
+      res.write(delta),
+    );
     res.end();
   } catch (e) {
-    res.status(500).end(`Ошибка ассистента: ${String(e.message || e)}`);
+    if (res.headersSent) res.end(`\n[Ошибка ассистента: ${String(e.message || e)}]`);
+    else res.status(500).end(`Ошибка ассистента: ${String(e.message || e)}`);
   }
 });
+
+// «Ритуал» 1: разбор закрытого месяца.
+app.post("/api/ai/month-review", requireAuth, aiRateLimit, async (req, res) => {
+  try {
+    const planId = Number(req.body?.planId);
+    const row = planId
+      ? stmt.planById.get(planId)
+      : stmt.closedPlans.all()[0];
+    const plan = rowToPlan(row);
+    if (!plan || plan.status !== "closed")
+      return res.status(404).json({ error: "closed_plan_not_found" });
+    const out = await askAssistantText(
+      monthReviewPrompt(plan),
+      buildAIContext("balanced"),
+    );
+    res.json(out);
+  } catch (e) {
+    res
+      .status(500)
+      .json({ error: "ai_failed", detail: String(e.message || e) });
+  }
+});
+
+// «Ритуал» 2: отговори меня от покупки.
+app.post("/api/ai/talk-me-out", requireAuth, aiRateLimit, async (req, res) => {
+  try {
+    const item = stmt.itemById.get(Number(req.body?.itemId));
+    if (!item) return res.status(404).json({ error: "not_found" });
+    const out = await askAssistantText(
+      talkMeOutPrompt(rowToItem(item)),
+      buildAIContext("balanced"),
+    );
+    res.json(out);
+  } catch (e) {
+    res
+      .status(500)
+      .json({ error: "ai_failed", detail: String(e.message || e) });
+  }
+});
+
+// ================= WHAT-IF СИМУЛЯТОР =================
+// Виртуальное распределение с переопределёнными параметрами плана — ничего не сохраняет.
+app.get("/api/allocation/simulate", requireAuth, (req, res) => {
+  const plan = getActivePlan();
+  if (!plan) return res.status(400).json({ error: "no_active_plan" });
+  const overrides = {};
+  for (const key of ["salary", "survivalCost", "buffer", "investmentFixed"]) {
+    if (req.query[key] != null) overrides[key] = positiveNumber(req.query[key]);
+  }
+  const simPlan = { ...plan, ...overrides };
+  const scenario = req.query.scenario || "balanced";
+  const allocation = allocate(simPlan, getActiveItems(), {
+    scenario,
+    includeIds: scenario === "custom" ? customIds() : null,
+  });
+  res.json({ plan: simPlan, overrides, allocation });
+});
+
+// ================= ГОДОВОЙ ОТЧЁТ =================
+app.get("/api/export/report/:year", requireAuth, (req, res) => {
+  const year = String(req.params.year || "");
+  if (!/^\d{4}$/.test(year)) return res.status(400).json({ error: "bad_year" });
+  const plans = stmt.closedPlans
+    .all()
+    .map(rowToPlan)
+    .filter((p) => String(p.closedAt || p.payday || "").startsWith(year))
+    .sort((a, b) => String(a.payday).localeCompare(String(b.payday)));
+
+  const rows = [];
+  let totals = { salary: 0, allocated: 0, remaining: 0, purchased: 0 };
+  for (const plan of plans) {
+    const s = plan.snapshot || {};
+    const t = s.totals || {};
+    const purchasedList = (s.approved || []).filter((a) => a.purchased !== false);
+    const purchasedSum = purchasedList.reduce(
+      (sum, a) => sum + (Number(a.allocatedAmount ?? a.cost) || 0),
+      0,
+    );
+    const salary = Number(t.salary ?? plan.salary) || 0;
+    const allocated = Number(t.allocated) || 0;
+    const remaining = Number(t.remaining) || 0;
+    totals.salary += salary;
+    totals.allocated += allocated;
+    totals.remaining += remaining;
+    totals.purchased += purchasedSum;
+    rows.push(
+      csvLine([
+        String(plan.payday || "").slice(0, 7),
+        plan.name,
+        salary,
+        allocated,
+        remaining,
+        purchasedSum,
+        purchasedList.map((a) => a.title).join("; "),
+        (s.deferred || []).map((d) => d.title).join("; "),
+      ]),
+    );
+  }
+  rows.push(
+    csvLine([
+      "ИТОГО",
+      "",
+      totals.salary,
+      totals.allocated,
+      totals.remaining,
+      totals.purchased,
+      "",
+      "",
+    ]),
+  );
+  const headers = [
+    "month",
+    "plan",
+    "salary",
+    "allocated",
+    "remaining",
+    "purchased_sum",
+    "purchased_items",
+    "deferred_items",
+  ];
+  const csv = "\uFEFF" + csvLine(headers) + "\n" + rows.join("\n");
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="report-${year}.csv"`,
+  );
+  res.send(csv);
+});
+
+// ================= ДАННЫЕ ДЛЯ ГРАФИКОВ ИСТОРИИ =================
+app.get("/api/history/charts", requireAuth, (req, res) => {
+  // Динамика капитала: сумма последних оценок всех активов на каждую дату.
+  const valuations = stmt.allValuations.all();
+  const dates = [...new Set(valuations.map((v) => v.date))].sort();
+  const latestByAsset = new Map();
+  const netWorthSeries = [];
+  for (const date of dates) {
+    for (const v of valuations.filter((x) => x.date === date)) {
+      latestByAsset.set(v.asset_id, Number(v.value) || 0);
+    }
+    netWorthSeries.push({
+      date,
+      value:
+        Math.round(
+          [...latestByAsset.values()].reduce((s, x) => s + x, 0) * 100,
+        ) / 100,
+    });
+  }
+  // Свободный остаток по закрытым месяцам.
+  const monthly = stmt.closedPlans
+    .all()
+    .map(rowToPlan)
+    .map((p) => ({
+      month: String(p.payday || "").slice(0, 7),
+      name: p.name,
+      salary: Number(p.snapshot?.totals?.salary ?? p.salary) || 0,
+      allocated: Number(p.snapshot?.totals?.allocated) || 0,
+      remaining: Number(p.snapshot?.totals?.remaining) || 0,
+    }))
+    .reverse();
+  res.json({ netWorth: netWorthSeries, monthly });
+});
+
+// ================= MONOBANK (план vs факт) =================
+app.get("/api/monobank/summary", requireAuth, async (req, res) => {
+  if (!monobankEnabled())
+    return res.json({ enabled: false });
+  try {
+    const summary = await getMonthSummary({
+      month: /^\d{4}-\d{2}$/.test(String(req.query.month || ""))
+        ? String(req.query.month)
+        : undefined,
+      refresh: req.query.refresh === "1",
+    });
+    const plan = getActivePlan();
+    res.json({
+      ...summary,
+      plan: plan
+        ? {
+            salary: plan.salary,
+            survivalCost: plan.survivalCost,
+            buffer: plan.buffer,
+            investmentFixed: plan.investmentFixed,
+          }
+        : null,
+    });
+  } catch (e) {
+    res
+      .status(502)
+      .json({ error: "monobank_failed", detail: String(e.message || e) });
+  }
+});
+
+// ================= PUSH-УВЕДОМЛЕНИЯ =================
+app.get("/api/push/vapid-key", requireAuth, (req, res) => {
+  res.json({ publicKey: getVapidKeys().publicKey });
+});
+app.post("/api/push/subscribe", requireAuth, (req, res) => {
+  const sub = req.body?.subscription || req.body || {};
+  const endpoint = String(sub.endpoint || "");
+  const p256dh = String(sub.keys?.p256dh || "");
+  const auth = String(sub.keys?.auth || "");
+  if (!endpoint.startsWith("https://") || !p256dh || !auth)
+    return res.status(400).json({ error: "bad_subscription" });
+  stmt.insertPushSubscription.run({ endpoint, p256dh, auth });
+  res.json({ ok: true });
+});
+app.post("/api/push/unsubscribe", requireAuth, (req, res) => {
+  const endpoint = String(req.body?.endpoint || "");
+  if (endpoint) stmt.deletePushSubscription.run(endpoint);
+  res.json({ ok: true });
+});
+
+async function sendPushToAll(payload) {
+  const subs = stmt.pushSubscriptions.all();
+  let sent = 0;
+  for (const sub of subs) {
+    try {
+      const result = await sendPush(
+        { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+        payload,
+      );
+      if (result?.gone) stmt.deletePushSubscription.run(sub.endpoint);
+      else sent++;
+    } catch (error) {
+      structuredLog("error", "push_send_failed", {
+        error: String(error.message || error),
+      });
+    }
+  }
+  return sent;
+}
+
+app.post("/api/push/test", requireAuth, async (req, res) => {
+  const sent = await sendPushToAll({
+    title: "Capital Queue",
+    body: "Push-уведомления работают 🎉",
+    url: "/",
+  });
+  res.json({ ok: true, sent });
+});
+
+// ---------- планировщик напоминаний и проверки цен ----------
+function reminderAlreadySent(key) {
+  return getSetting(`notified_${key}`) != null;
+}
+function markReminderSent(key) {
+  setSetting(`notified_${key}`, new Date().toISOString());
+}
+
+async function runReminderSweep() {
+  if (!stmt.pushSubscriptions.all().length) return;
+  const today = todayISO();
+  const plan = getActivePlan();
+  // Напоминание в день зарплаты: пора распределить деньги.
+  if (plan?.payday === today && !reminderAlreadySent(`payday_${plan.id}_${today}`)) {
+    await sendPushToAll({
+      title: "День зарплаты 💰",
+      body: `Пора распределить ${plan.salary} грн по плану «${plan.name}».`,
+      url: "/",
+    });
+    markReminderSent(`payday_${plan.id}_${today}`);
+  }
+  // Дедлайны желаний в ближайшие 3 дня.
+  const soon = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+  for (const item of getActiveItems()) {
+    if (!item.deadline || item.deadline < today || item.deadline > soon) continue;
+    const key = `deadline_${item.id}_${item.deadline}`;
+    if (reminderAlreadySent(key)) continue;
+    await sendPushToAll({
+      title: "Дедлайн близко ⏰",
+      body: `«${item.title}» — дедлайн ${item.deadline}, накоплено ${item.savedAmount || 0} из ${item.cost} грн.`,
+      url: "/",
+    });
+    markReminderSent(key);
+  }
+}
+
+async function runDailyPriceSweep() {
+  const today = todayISO();
+  if (getSetting("price_sweep_date") === today) return;
+  setSetting("price_sweep_date", today);
+  for (const row of stmt.itemsWithUrl.all()) {
+    try {
+      const result = await checkPrice(row.url);
+      if (!result.found) continue;
+      const oldPrice = Number(row.link_price) || Number(row.cost) || 0;
+      stmt.updateItemLinkPrice.run({ id: row.id, linkPrice: result.price });
+      // Push при удешевлении ≥5% относительно прошлой известной цены.
+      if (oldPrice > 0 && result.price <= oldPrice * 0.95) {
+        await sendPushToAll({
+          title: "Цена упала 📉",
+          body: `«${row.title}»: ${result.price} (было ${oldPrice}). Проверь ссылку!`,
+          url: "/",
+        });
+      }
+    } catch {}
+  }
+}
+
+let remindersScheduled = false;
+function scheduleReminders() {
+  if (
+    remindersScheduled ||
+    process.env.NODE_ENV === "test" ||
+    process.env.PUSH_REMINDERS_ENABLED === "false"
+  )
+    return;
+  remindersScheduled = true;
+  const sweep = () => {
+    runReminderSweep().catch((e) =>
+      structuredLog("error", "reminder_sweep_failed", { error: String(e.message || e) }),
+    );
+    runDailyPriceSweep().catch((e) =>
+      structuredLog("error", "price_sweep_failed", { error: String(e.message || e) }),
+    );
+  };
+  setTimeout(sweep, 60_000).unref?.();
+  setInterval(sweep, 30 * 60 * 1000).unref?.();
+}
 
 // ---------- API errors and static frontend ----------
 app.use("/api", (req, res) => {
@@ -2114,20 +2768,54 @@ app.use((error, req, res, next) => {
   next(error);
 });
 
-app.use((req, res, next) => {
-  if (req.path === "/" || req.path === "/index.html" || req.path === "/sw.js") {
-    res.setHeader("Cache-Control", "no-store, must-revalidate");
+// ---------- единая версия статики ----------
+// Версия вычисляется из содержимого файлов: меняется код → меняется версия
+// везде одновременно (index.html, sw.js, app.js). Никакого ручного дрейфа.
+import { readFileSync } from "node:fs";
+const PUBLIC_DIR = path.join(__dirname, "public");
+function computeStaticVersion() {
+  const hash = crypto.createHash("sha256");
+  for (const name of ["app.js", "styles.css", "index.html", "sw.js"]) {
+    try {
+      hash.update(readFileSync(path.join(PUBLIC_DIR, name)));
+    } catch {}
   }
-  next();
-});
-app.use(express.static(path.join(__dirname, "public")));
-app.get("*", (req, res) => {
+  return hash.digest("hex").slice(0, 12);
+}
+export const STATIC_VERSION = computeStaticVersion();
+const renderedStatic = new Map();
+function renderStatic(name) {
+  if (!renderedStatic.has(name)) {
+    renderedStatic.set(
+      name,
+      readFileSync(path.join(PUBLIC_DIR, name), "utf8").replaceAll(
+        "__STATIC_VERSION__",
+        STATIC_VERSION,
+      ),
+    );
+  }
+  return renderedStatic.get(name);
+}
+function sendRendered(res, name, type) {
   res.setHeader("Cache-Control", "no-store, must-revalidate");
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
+  res.setHeader("Content-Type", type);
+  res.send(renderStatic(name));
+}
+
+app.get(["/", "/index.html"], (req, res) =>
+  sendRendered(res, "index.html", "text/html; charset=utf-8"),
+);
+app.get("/sw.js", (req, res) =>
+  sendRendered(res, "sw.js", "application/javascript; charset=utf-8"),
+);
+app.use(express.static(PUBLIC_DIR));
+app.get("*", (req, res) =>
+  sendRendered(res, "index.html", "text/html; charset=utf-8"),
+);
 
 export function startServer(port = process.env.PORT || 3000) {
   scheduleBackups();
+  scheduleReminders();
   return app.listen(port, () =>
     console.log(`Salary Allocation Planner на http://localhost:${port}`),
   );

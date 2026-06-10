@@ -34,8 +34,21 @@ export function verifyPin(pin) {
   return bcrypt.compareSync(String(pin), hash);
 }
 
+// Версия токенов: при смене PIN или «выйти на всех устройствах» версия
+// инкрементируется, и все ранее выданные токены перестают действовать.
+export function tokenVersion() {
+  const v = parseInt(getSetting("token_version") || "1", 10);
+  return Number.isFinite(v) && v > 0 ? v : 1;
+}
+
+export function bumpTokenVersion() {
+  setSetting("token_version", String(tokenVersion() + 1));
+}
+
 export function issueToken(res) {
-  const token = jwt.sign({ sub: "owner" }, SECRET, { expiresIn: MAX_AGE });
+  const token = jwt.sign({ sub: "owner", tv: tokenVersion() }, SECRET, {
+    expiresIn: MAX_AGE,
+  });
   res.cookie(COOKIE, token, { ...COOKIE_OPTIONS, maxAge: MAX_AGE * 1000 });
 }
 
@@ -47,8 +60,10 @@ export function isAuthed(req) {
   const token = req.cookies?.[COOKIE];
   if (!token) return false;
   try {
-    jwt.verify(token, SECRET);
-    return true;
+    const payload = jwt.verify(token, SECRET);
+    // Старые токены без tv считаем версией 1 (не разлогиниваем при деплое).
+    const tv = payload?.tv ?? 1;
+    return tv === tokenVersion();
   } catch {
     return false;
   }

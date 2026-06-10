@@ -190,7 +190,24 @@ ensureColumn("band", "TEXT NOT NULL DEFAULT 'small'");
 ensureColumn("score_type", "TEXT NOT NULL DEFAULT 'none'");
 ensureColumn("scores", "TEXT");
 ensureColumn("saved_amount", "REAL NOT NULL DEFAULT 0");
+ensureColumn("recurring", "INTEGER NOT NULL DEFAULT 0");
+ensureColumn("url", "TEXT");
+ensureColumn("currency", "TEXT NOT NULL DEFAULT 'UAH'");
+ensureColumn("cost_original", "REAL");
+ensureColumn("link_price", "REAL");
+ensureColumn("link_price_at", "TEXT");
 ensurePlanColumn("investment_fixed", "REAL NOT NULL DEFAULT 0");
+
+// Подписки Web Push (PWA-напоминания).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    endpoint TEXT NOT NULL UNIQUE,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+`);
 
 if (!hadBand) {
   // Перенос старых значений в новую таксономию (слой капитала + категория покупки).
@@ -306,6 +323,26 @@ if (!hadBand) {
   }
 })();
 
+// ---- Дедуп оценок активов по (asset_id, date) + индексы под частые запросы ----
+(function dedupeValuationsAndIndex() {
+  // Оставляем самую свежую запись на каждую пару (asset_id, date).
+  db.exec(`
+    DELETE FROM asset_valuations
+    WHERE rowid NOT IN (
+      SELECT MAX(rowid) FROM asset_valuations GROUP BY asset_id, date
+    );
+  `);
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_asset_valuations_asset_date
+      ON asset_valuations(asset_id, date);
+    CREATE INDEX IF NOT EXISTS idx_asset_transactions_asset
+      ON asset_transactions(asset_id);
+    CREATE INDEX IF NOT EXISTS idx_items_status ON items(status);
+    CREATE INDEX IF NOT EXISTS idx_goal_contributions_goal
+      ON goal_contributions(goal_id);
+  `);
+})();
+
 // ---- settings helpers ----
 const getSettingStmt = db.prepare("SELECT value FROM settings WHERE key = ?");
 const setSettingStmt = db.prepare(
@@ -351,6 +388,12 @@ export function rowToItem(r) {
     scoreType: r.score_type,
     scores,
     savedAmount: r.saved_amount || 0,
+    recurring: !!r.recurring,
+    url: r.url || null,
+    currency: r.currency || "UAH",
+    costOriginal: r.cost_original ?? null,
+    linkPrice: r.link_price ?? null,
+    linkPriceAt: r.link_price_at || null,
     priority: r.priority,
     type: r.type,
     deadline: r.deadline,
@@ -366,6 +409,15 @@ export function rowToItem(r) {
 
 export function rowToPlan(r) {
   if (!r) return null;
+  let snapshot = null;
+  if (r.snapshot) {
+    // Битый JSON в снимке не должен ронять /api/history и /api/state.
+    try {
+      snapshot = JSON.parse(r.snapshot);
+    } catch {
+      snapshot = null;
+    }
+  }
   return {
     id: r.id,
     name: r.name,
@@ -375,7 +427,7 @@ export function rowToPlan(r) {
     buffer: r.buffer,
     investmentFixed: r.investment_fixed || 0,
     status: r.status,
-    snapshot: r.snapshot ? JSON.parse(r.snapshot) : null,
+    snapshot,
     createdAt: r.created_at,
     closedAt: r.closed_at,
   };
@@ -439,4 +491,28 @@ export function currencyRate() {
 }
 export function setCurrencyRate(rate) {
   setSetting("currency_rate", String(Math.max(1, Number(rate) || 43.5)));
+}
+export function eurRate() {
+  const v = getSetting("currency_rate_eur");
+  return v ? parseFloat(v) : 47;
+}
+export function setEurRate(rate) {
+  setSetting("currency_rate_eur", String(Math.max(1, Number(rate) || 47)));
+}
+export function rateForCurrency(code) {
+  if (code === "USD") return currencyRate();
+  if (code === "EUR") return eurRate();
+  return 1;
+}
+
+export function rowToGoalContribution(r) {
+  return {
+    id: r.id,
+    goalId: r.goal_id,
+    planId: r.plan_id,
+    amount: r.amount,
+    date: r.date,
+    note: r.note || "",
+    createdAt: r.created_at,
+  };
 }

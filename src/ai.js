@@ -177,3 +177,153 @@ export async function askAssistant(messages, context) {
 export async function askAssistantText(prompt, context) {
   return askAssistant([{ role: "user", content: prompt }], context);
 }
+
+// ---------- Реальный стриминг (SSE от провайдеров → колбэк по кускам) ----------
+
+async function* sseLines(res) {
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for await (const chunk of res.body) {
+    buffer += decoder.decode(chunk, { stream: true });
+    let idx;
+    while ((idx = buffer.indexOf("\n")) >= 0) {
+      yield buffer.slice(0, idx).replace(/\r$/, "");
+      buffer = buffer.slice(idx + 1);
+    }
+  }
+  if (buffer) yield buffer;
+}
+
+function sseData(line) {
+  if (!line.startsWith("data:")) return null;
+  const payload = line.slice(5).trim();
+  if (!payload || payload === "[DONE]") return null;
+  try {
+    return JSON.parse(payload);
+  } catch {
+    return null;
+  }
+}
+
+async function streamOpenAI(system, messages, model, onDelta) {
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${API_KEY}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: "system", content: system }, ...messages],
+      temperature: 0.4,
+      stream: true,
+    }),
+  });
+  if (!res.ok) throw new Error(`OpenAI ${res.status}: ${await res.text()}`);
+  for await (const line of sseLines(res)) {
+    const data = sseData(line);
+    const delta = data?.choices?.[0]?.delta?.content;
+    if (delta) onDelta(delta);
+  }
+}
+
+async function streamAnthropic(system, messages, model, onDelta) {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": API_KEY,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 800,
+      system,
+      stream: true,
+      messages: messages.map((m) => ({
+        role: m.role === "assistant" ? "assistant" : "user",
+        content: m.content,
+      })),
+    }),
+  });
+  if (!res.ok) throw new Error(`Anthropic ${res.status}: ${await res.text()}`);
+  for await (const line of sseLines(res)) {
+    const data = sseData(line);
+    if (data?.type === "content_block_delta" && data.delta?.text)
+      onDelta(data.delta.text);
+  }
+}
+
+async function streamGemini(system, messages, model, onDelta) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${API_KEY}`;
+  const contents = messages.map((m) => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: [{ text: m.content }],
+  }));
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: system }] },
+      contents,
+    }),
+  });
+  if (!res.ok) throw new Error(`Gemini ${res.status}: ${await res.text()}`);
+  for await (const line of sseLines(res)) {
+    const data = sseData(line);
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (text) onDelta(text);
+  }
+}
+
+/**
+ * Стриминговый ответ ассистента: куски текста приходят в onDelta по мере генерации.
+ * Возвращает полный собранный ответ.
+ */
+export async function askAssistantStream(messages, context, onDelta) {
+  if (!aiEnabled()) throw new Error("ai_disabled");
+  const model = process.env.AI_MODEL || DEFAULT_MODELS[PROVIDER];
+  const system = buildSystemPrompt(context);
+  let full = "";
+  const emit = (text) => {
+    full += text;
+    onDelta(text);
+  };
+  if (PROVIDER === "openai") await streamOpenAI(system, messages, model, emit);
+  else if (PROVIDER === "anthropic")
+    await streamAnthropic(system, messages, model, emit);
+  else if (PROVIDER === "gemini")
+    await streamGemini(system, messages, model, emit);
+  else throw new Error(`Неизвестный провайдер: ${PROVIDER}`);
+  return full;
+}
+
+// ---------- Промпты «ритуалов» ----------
+
+export function monthReviewPrompt(plan) {
+  const s = plan?.snapshot || {};
+  const t = s.totals || {};
+  const purchased = (s.approved || [])
+    .map((x) => `${x.title} (${x.cost} грн)`)
+    .join(", ");
+  const deferred = (s.deferred || [])
+    .map((x) => `${x.title} (${x.cost} грн)`)
+    .join(", ");
+  return [
+    `Месяц «${plan?.name || ""}» закрыт. Сделай короткий разбор месяца (5-7 предложений).`,
+    `Зарплата: ${t.salary ?? plan?.salary ?? 0} грн, распределено: ${t.allocated ?? 0} грн, свободный остаток: ${t.remaining ?? 0} грн.`,
+    `Куплено: ${purchased || "ничего"}.`,
+    `Отложено: ${deferred || "ничего"}.`,
+    "Отметь: что было сильным решением, где возможна утечка денег, и один конкретный совет на следующий месяц. Без воды.",
+  ].join("\n");
+}
+
+export function talkMeOutPrompt(item) {
+  return [
+    `Я хочу купить: «${item.title}» за ${item.cost} грн (категория: ${item.category}, тип: ${item.type}, приоритет ${item.priority}/5, эмоциональность ${item.emotional}/5).`,
+    item.notes ? `Мои заметки: ${item.notes}` : "",
+    "Твоя задача — попробовать отговорить меня от этой покупки: приведи 3-4 сильных рациональных аргумента против, предложи дешёвую альтернативу и вопрос-проверку «нужно ли это мне через месяц». Будь честным: если покупка объективно разумная — так и скажи в конце.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
