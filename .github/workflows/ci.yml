@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   test:
-    name: Test and audit
+    name: Test
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -26,9 +26,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Audit dependencies
-        run: npm audit --audit-level=moderate
-
       - name: Run unit/API tests
         run: npm test
 
@@ -37,6 +34,29 @@ jobs:
 
       - name: Run UI smoke test
         run: npm run test:e2e
+
+  # npm audit отдельным job: уязвимость в зависимостях не блокирует деплой,
+  # но остаётся видимой в статусах PR.
+  audit:
+    name: Audit dependencies (non-blocking)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=moderate
 
   deploy:
     name: Deploy to Fly.io
