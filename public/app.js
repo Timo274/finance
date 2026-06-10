@@ -1,55 +1,37 @@
 // Salary Allocation Planner — фронтенд (vanilla JS).
+// План 11.1 этап 1: библиотеки вынесены в lib/ (api, dom, format, charts).
+import { api, configureApi } from "./lib/api.js?v=__STATIC_VERSION__";
+import { $, $$, toast, confettiBurst } from "./lib/dom.js?v=__STATIC_VERSION__";
+import {
+  fmt,
+  fmtShort,
+  fmtDate,
+  roundPercents,
+  escapeHtml,
+  escapeAttr,
+  TYPE_LABELS,
+  STATUS_LABELS,
+  VERDICT_LABELS,
+  queueStatusLabel,
+  wishEmojiTag,
+} from "./lib/format.js?v=__STATIC_VERSION__";
+import {
+  cssVar,
+  drawDonut,
+  drawLine,
+  drawBars,
+} from "./lib/charts.js?v=__STATIC_VERSION__";
 
-const $ = (sel, root = document) => root.querySelector(sel);
-const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+// Инъекция зависимостей в HTTP-клиент: демо-режим, auth-гейт, тосты,
+// уведомление вкладок об изменении данных.
+configureApi({
+  isDemo: () => state.demo,
+  onDemoWrite: () => toast("Это демо — изменения не сохраняются"),
+  onUnauthorized: () => showAuthGate(),
+  onMutation: () => notifyDataChanged(),
+});
 
-// Серверные коды ошибок -> человеческие сообщения (аудит 16.4).
-const API_ERRORS = {
-  validation_failed: "Проверьте введённые данные",
-  not_found: "Запись не найдена — обновите страницу",
-  bad_origin: "Запрос отклонён по соображениям безопасности",
-  sell_exceeds_holdings: "Продажа превышает остаток актива",
-  nbu_unavailable: "Сервис НБУ недоступен, попробуйте позже",
-  rate_limited: "Слишком много запросов — подождите немного",
-  internal_error: "Ошибка сервера, попробуйте ещё раз",
-  asset_not_found: "Актив не найден",
-  bad_pin: "Неверный PIN",
-  pin_too_short: "PIN слишком короткий — минимум 6 цифр",
-};
-function friendlyError(data) {
-  if (!data?.error) return null;
-  let msg = API_ERRORS[data.error] || data.error;
-  if (data.error === "sell_exceeds_holdings" && data.held != null)
-    msg += ` (в наличии: ${data.held})`;
-  return msg;
-}
-const api = {
-  async req(method, url, body) {
-    if (state.demo) {
-      // Демо-режим: ничего не пишем и не читаем с сервера (аудит 3.9).
-      if (method !== "GET") toast("Это демо — изменения не сохраняются");
-      throw new Error("demo");
-    }
-    const opts = { method, headers: {} };
-    if (body !== undefined) {
-      opts.headers["Content-Type"] = "application/json";
-      opts.body = JSON.stringify(body);
-    }
-    const res = await fetch(url, opts);
-    if (res.status === 401) {
-      showAuthGate();
-      throw new Error("unauthorized");
-    }
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(friendlyError(data) || res.statusText);
-    if (method !== "GET") notifyDataChanged();
-    return data;
-  },
-  get: (u) => api.req("GET", u),
-  post: (u, b) => api.req("POST", u, b),
-  put: (u, b) => api.req("PUT", u, b),
-  del: (u) => api.req("DELETE", u),
-};
+
 
 // ---------- state ----------
 const state = {
@@ -81,57 +63,10 @@ const state = {
 };
 
 // ---------- helpers ----------
-const fmt = (n) => Math.round(Number(n) || 0).toLocaleString("ru-RU") + " грн";
-const fmtShort = (n) => Math.round(Number(n) || 0).toLocaleString("ru-RU");
 const fmtUsd = (n) =>
   state.currencyRate > 0
     ? `(~$${((Number(n) || 0) / state.currencyRate).toLocaleString("ru-RU", { maximumFractionDigits: 0 })})`
     : "";
-function fmtDate(d) {
-  if (!d) return "—";
-  const dt = new Date(d);
-  return dt.toLocaleDateString("ru-RU", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
-// Проценты, дающие в сумме ровно 100 (метод наибольших остатков):
-// иначе независимые Math.round дают 99/101% (аудит 7.1).
-function roundPercents(values, total) {
-  if (!total || total <= 0) return values.map(() => 0);
-  const raw = values.map((v) => (Math.max(0, Number(v) || 0) / total) * 100);
-  const floors = raw.map(Math.floor);
-  let left = Math.round(raw.reduce((s, v) => s + v, 0)) - floors.reduce((s, v) => s + v, 0);
-  const order = raw
-    .map((v, i) => ({ i, frac: v - Math.floor(v) }))
-    .sort((a, b) => b.frac - a.frac);
-  for (const { i } of order) {
-    if (left <= 0) break;
-    floors[i] += 1;
-    left -= 1;
-  }
-  return floors;
-}
-function toast(msg, opts = {}) {
-  const t = $("#toast");
-  t.textContent = msg;
-  if (opts.action) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "toast-action";
-    btn.textContent = opts.action.label;
-    btn.addEventListener("click", () => {
-      t.classList.add("hidden");
-      clearTimeout(toast._t);
-      opts.action.onClick();
-    });
-    t.appendChild(btn);
-  }
-  t.classList.remove("hidden");
-  clearTimeout(toast._t);
-  toast._t = setTimeout(() => t.classList.add("hidden"), opts.duration || 2400);
-}
 function layerLabel(key) {
   const l = state.meta?.layers?.[key];
   return l ? `${l.ru}` : key;
@@ -150,82 +85,10 @@ function catLabelShort(id) {
   return c ? c.ru : id;
 }
 
-// --- эмодзи-приколюхи: подбираем иконку желания по названию ---
-const WISH_EMOJI_RULES = [
-  [/macbook|ноутбук|laptop|компьютер|видеокарт|\bпк\b|\bpc\b/i, "💻"],
-  [/iphone|айфон|телефон|смартфон|pixel|galaxy/i, "📱"],
-  [/playstation|\bps[45]\b|xbox|nintendo|switch|steam *deck|консол|игров/i, "🎮"],
-  [/кроссовк|кеды|ботин|обувь|туфл|sneaker/i, "👟"],
-  [/куртк|пальто|джинс|худи|футболк|одежд|костюм|плать/i, "🧥"],
-  [/резин|шин[аы]|колес|колёс/i, "🛞"],
-  [/машин|\bавто\b|bmw|audi|tesla|toyota/i, "🚗"],
-  [/велосипед|самокат|\bbike\b/i, "🚲"],
-  [/подарок|подарк|\bgift\b/i, "🎁"],
-  [/путешеств|отпуск|поездк|билет|trip|мор[ея]/i, "✈️"],
-  [/час(ы|ов)\b|watch/i, "⌚"],
-  [/наушник|airpods|колонк|саундбар/i, "🎧"],
-  [/камер|фотоаппарат|объектив|gopro/i, "📷"],
-  [/телевизор|монитор|\bтв\b|\btv\b|oled/i, "📺"],
-  [/ремонт|мебел|диван|кресл|шкаф|матрас/i, "🛋️"],
-  [/курс|обучен|книг|учеб|школ/i, "📚"],
-  [/спортзал|тренаж|гантел|абонемент|фитнес/i, "🏋️"],
-  [/кофемашин|кофеварк|кофе/i, "☕"],
-  [/собак|кошк|\bкот\b|питомц/i, "🐾"],
-  [/дрель|шуруповёрт|инструмент|перфоратор/i, "🛠️"],
-  [/страховк|депозит|резерв|подушк/i, "🛡️"],
-];
-const CATEGORY_EMOJI = {
-  asset: "💎",
-  tool: "🛠️",
-  infrastructure: "🏗️",
-  growth: "🚀",
-  experience: "🌍",
-  lifestyle: "🛋️",
-  status: "👑",
-  dopamine: "🍩",
-  waste: "🗑️",
-};
-function wishEmoji(item) {
-  const title = String(item?.title || "");
-  for (const [re, emoji] of WISH_EMOJI_RULES) if (re.test(title)) return emoji;
-  return CATEGORY_EMOJI[item?.category] || "✨";
-}
-function wishEmojiTag(item) {
-  return `<span class="wish-emoji" aria-hidden="true">${wishEmoji(item)}</span>`;
-}
-// --- конфетти при покупках и закрытии месяца ---
-function confettiBurst(x, y, count = 26) {
-  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-  const host = document.createElement("div");
-  host.className = "confetti-host";
-  const colors = ["#f8d29a", "#0e5f68", "#d33223", "#0c7a55", "#b5710a", "#2f6bff", "#7aa2ff"];
-  for (let i = 0; i < count; i++) {
-    const p = document.createElement("i");
-    const ang = Math.random() * Math.PI * 2;
-    const dist = 60 + Math.random() * 140;
-    p.style.setProperty("--dx", `${(Math.cos(ang) * dist).toFixed(0)}px`);
-    p.style.setProperty("--dy", `${(Math.sin(ang) * dist - 90).toFixed(0)}px`);
-    p.style.setProperty("--rot", `${Math.round(Math.random() * 720 - 360)}deg`);
-    p.style.background = colors[i % colors.length];
-    p.style.left = `${x}px`;
-    p.style.top = `${y}px`;
-    p.style.animationDelay = `${(Math.random() * 0.1).toFixed(2)}s`;
-    if (Math.random() < 0.35) p.style.borderRadius = "50%";
-    host.appendChild(p);
-  }
-  document.body.appendChild(host);
-  setTimeout(() => host.remove(), 1400);
-}
 function bandLabel(id) {
   const b = state.meta?.bands?.find((x) => x.id === id);
   return b ? b.ru || b.label : id;
 }
-const TYPE_LABELS = { must: "Обязательно", should: "Желательно", nice: "По желанию" };
-const STATUS_LABELS = {
-  safe: "Безопасно",
-  tight: "Впритык",
-  overallocated: "Перерасход",
-};
 function overallocTitle(t) {
   return t.statusReason === "must_unfunded" ? "Не хватает на обязательное." : "Перерасход.";
 }
@@ -237,189 +100,6 @@ function overallocText(t) {
     return `Свободного бюджета не хватает на: ${names || "обязательные покупки"}. Остаток уходит в накопление на них — желания подождут.`;
   }
   return "Распределено больше, чем доступно — откройте «План распределения» и перенесите лишнее.";
-}
-const VERDICT_LABELS = {
-  keep: "Брать",
-  reconsider: "Подумать",
-  drop: "Отказаться",
-};
-const queueStatusLabel = {
-  all: "Все",
-  funded: "Копится",
-  complete: "Накоплено",
-  planned: "В плане",
-};
-
-// ---------- charts (vanilla canvas, без библиотек) ----------
-function cssVar(name, fallback = "#888") {
-  const v = getComputedStyle(document.documentElement)
-    .getPropertyValue(name)
-    .trim();
-  return v || fallback;
-}
-function setupCanvas(canvas) {
-  const dpr = window.devicePixelRatio || 1;
-  const w = canvas.clientWidth || canvas.parentElement.clientWidth || 300;
-  const h = canvas.clientHeight || 200;
-  canvas.width = Math.round(w * dpr);
-  canvas.height = Math.round(h * dpr);
-  const ctx = canvas.getContext("2d");
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, w, h);
-  return { ctx, w, h };
-}
-function drawDonut(canvas, segments, center = null) {
-  const { ctx, w, h } = setupCanvas(canvas);
-  const total = segments.reduce((s, x) => s + x.value, 0);
-  if (total <= 0) return;
-  const cx = w / 2,
-    cy = h / 2;
-  const r = Math.min(w, h) / 2 - 6;
-  const inner = r * 0.62;
-  let a = -Math.PI / 2;
-  segments.forEach((seg) => {
-    const ang = (seg.value / total) * Math.PI * 2;
-    if (ang <= 0) return;
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.arc(cx, cy, r, a, a + ang);
-    ctx.closePath();
-    ctx.fillStyle = seg.color;
-    ctx.fill();
-    a += ang;
-  });
-  // вырезаем центр (донат)
-  ctx.globalCompositeOperation = "destination-out";
-  ctx.beginPath();
-  ctx.arc(cx, cy, inner, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.globalCompositeOperation = "source-over";
-  // подпись в центре
-  ctx.fillStyle = cssVar("--text", "#111");
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.font = "700 18px Inter, sans-serif";
-  ctx.fillText(center?.title ?? fmtShort(total), cx, cy - 4);
-  ctx.fillStyle = cssVar("--muted", "#888");
-  ctx.font = "500 11px Inter, sans-serif";
-  ctx.fillText(center?.sub ?? "грн всего", cx, cy + 13);
-}
-function drawLine(canvas, points, opts = {}) {
-  const { ctx, w, h } = setupCanvas(canvas);
-  if (points.length < 2) return;
-  const padL = 8,
-    padR = 8,
-    padT = 14,
-    padB = 22;
-  const vals = points.map((p) => p.value);
-  const maxV = Math.max(...vals, 0);
-  const minV = Math.min(...vals, 0);
-  const span = maxV - minV || 1;
-  const innerW = w - padL - padR;
-  const innerH = h - padT - padB;
-  const x = (i) => padL + (innerW * i) / (points.length - 1);
-  const y = (v) => padT + innerH - ((v - minV) / span) * innerH;
-  const accent = cssVar("--accent", "#2f6bff");
-  // нулевая линия
-  if (minV < 0) {
-    ctx.strokeStyle = cssVar("--border", "#ddd");
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath();
-    ctx.moveTo(padL, y(0));
-    ctx.lineTo(w - padR, y(0));
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
-  // smooth curve helper
-  const pts = points.map((p, i) => ({ x: x(i), y: y(p.value) }));
-  function smoothPath(ctx, pts) {
-    ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y);
-    for (let i = 1; i < pts.length - 1; i++) {
-      const cx = (pts[i].x + pts[i + 1].x) / 2;
-      const cy = (pts[i].y + pts[i + 1].y) / 2;
-      ctx.quadraticCurveTo(pts[i].x, pts[i].y, cx, cy);
-    }
-    ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
-  }
-  // заливка под линией
-  const grad = ctx.createLinearGradient(0, padT, 0, padT + innerH);
-  grad.addColorStop(0, accent + "55");
-  grad.addColorStop(1, accent + "00");
-  ctx.beginPath();
-  smoothPath(ctx, pts);
-  ctx.lineTo(pts[pts.length - 1].x, padT + innerH);
-  ctx.lineTo(pts[0].x, padT + innerH);
-  ctx.closePath();
-  ctx.fillStyle = grad;
-  ctx.fill();
-  // линия
-  ctx.beginPath();
-  smoothPath(ctx, pts);
-  ctx.strokeStyle = accent;
-  ctx.lineWidth = 2.5;
-  ctx.lineJoin = "round";
-  ctx.stroke();
-  // точки
-  pts.forEach((p, i) => {
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, 3.2, 0, Math.PI * 2);
-    ctx.fillStyle = points[i].value < 0 ? cssVar("--color-risk", "#e44") : accent;
-    ctx.fill();
-    ctx.strokeStyle = cssVar("--panel", "#fff");
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-  });
-  // Подписи осей: без min/max и последнего значения график нечитаем (аудит 8.1).
-  ctx.fillStyle = cssVar("--muted", "#888");
-  ctx.font = "500 10px Inter, sans-serif";
-  ctx.textBaseline = "alphabetic";
-  if (maxV !== minV) {
-    ctx.textAlign = "left";
-    ctx.fillText(fmtShort(maxV), padL, padT - 4);
-    ctx.fillText(fmtShort(minV), padL, h - padB + 12);
-  }
-  if (opts.xStart || opts.xEnd) {
-    ctx.textAlign = "center";
-    if (opts.xStart) {
-      ctx.textAlign = "left";
-      ctx.fillText(String(opts.xStart), padL, h - 2);
-    }
-    if (opts.xEnd) {
-      ctx.textAlign = "right";
-      ctx.fillText(String(opts.xEnd), w - padR, h - 2);
-    }
-  }
-  // Текущее значение у последней точки.
-  const lastP = pts[pts.length - 1];
-  ctx.textAlign = lastP.x > w - 60 ? "right" : "center";
-  ctx.font = "700 11px Inter, sans-serif";
-  ctx.fillStyle = cssVar("--text", "#111");
-  ctx.fillText(
-    fmtShort(points[points.length - 1].value),
-    Math.min(lastP.x, w - padR),
-    Math.max(10, lastP.y - 8),
-  );
-}
-function drawBars(canvas, segments) {
-  const { ctx, w, h } = setupCanvas(canvas);
-  const maxV = Math.max(...segments.map((s) => s.value), 1);
-  const pad = 18;
-  const gap = 10;
-  const barW =
-    (w - pad * 2 - gap * (segments.length - 1)) / Math.max(segments.length, 1);
-  segments.forEach((seg, i) => {
-    const x = pad + i * (barW + gap);
-    const bh = ((h - 44) * seg.value) / maxV;
-    const y = h - 26 - bh;
-    ctx.fillStyle = seg.color || cssVar("--accent", "#2f6bff");
-    ctx.fillRect(x, y, Math.max(8, barW), bh);
-    ctx.fillStyle = cssVar("--muted", "#888");
-    ctx.textAlign = "center";
-    ctx.font = "600 10px Inter, sans-serif";
-    ctx.fillText(seg.label, x + barW / 2, h - 8);
-  });
 }
 function drawCharts() {
   const donut = $("#donutAlloc");
@@ -3826,18 +3506,6 @@ async function renderPriceTrend(itemId) {
 }
 
 // ---------- util ----------
-function escapeHtml(s) {
-  return String(s ?? "").replace(
-    /[&<>"']/g,
-    (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
-        c
-      ],
-  );
-}
-function escapeAttr(s) {
-  return escapeHtml(s).replace(/"/g, "&quot;");
-}
 
 let deferredInstallPrompt = null;
 window.addEventListener("beforeinstallprompt", (event) => {

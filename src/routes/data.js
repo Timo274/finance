@@ -180,9 +180,7 @@ export default function registerDataRoutes(app) {
       prefs.chatHistory = b.chatHistory
         .filter(
           (m) =>
-            m &&
-            (m.role === "user" || m.role === "assistant") &&
-            typeof m.content === "string",
+            m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string",
         )
         .slice(-50)
         .map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }));

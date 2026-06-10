@@ -6,6 +6,10 @@ const STATIC = [
   `/styles.css?v=${VERSION}`,
   `/fonts/fonts.css?v=${VERSION}`,
   `/app.js?v=${VERSION}`,
+  `/lib/api.js?v=${VERSION}`,
+  `/lib/dom.js?v=${VERSION}`,
+  `/lib/format.js?v=${VERSION}`,
+  `/lib/charts.js?v=${VERSION}`,
   "/logo.svg",
   "/manifest.webmanifest",
   "/icon-192.png",
@@ -22,9 +26,7 @@ self.addEventListener("activate", (event) => {
     caches
       .keys()
       .then((keys) =>
-        Promise.all(
-          keys.filter((key) => key !== CACHE).map((key) => caches.delete(key)),
-        ),
+        Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))),
       ),
   );
   self.clients.claim();
@@ -71,9 +73,7 @@ self.addEventListener("fetch", (event) => {
 
   // Остальное — network-first без записи в кеш: случайные URL
   // (например /admin.php -> index.html) не должны замусоривать кеш.
-  event.respondWith(
-    fetch(event.request).catch(() => caches.match(event.request)),
-  );
+  event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
 });
 
 // ---------- Push-уведомления ----------

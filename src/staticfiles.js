@@ -3,16 +3,31 @@
 // версия везде одновременно, без ручного дрейфа.
 import path from "node:path";
 import crypto from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import express from "express";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const PUBLIC_DIR = path.join(__dirname, "..", "public");
 
+// JS-модули фронтенда: app.js + всё из lib/ и views/. Они проходят через
+// renderStatic (подстановка __STATIC_VERSION__ в import-URL) и участвуют
+// в хэше версии (план 11.1: распил монолита на ES-модули).
+function jsModuleFiles() {
+  const files = ["app.js"];
+  for (const dir of ["lib", "views"]) {
+    try {
+      for (const f of readdirSync(path.join(PUBLIC_DIR, dir))) {
+        if (f.endsWith(".js")) files.push(`${dir}/${f}`);
+      }
+    } catch {}
+  }
+  return files;
+}
+
 function computeStaticVersion() {
   const hash = crypto.createHash("sha256");
-  for (const name of ["app.js", "styles.css", "index.html", "sw.js"]) {
+  for (const name of [...jsModuleFiles(), "styles.css", "index.html", "sw.js"]) {
     try {
       hash.update(readFileSync(path.join(PUBLIC_DIR, name)));
     } catch {}
@@ -47,6 +62,18 @@ export function registerStatic(app) {
   app.get("/sw.js", (req, res) =>
     sendRendered(res, "sw.js", "application/javascript; charset=utf-8"),
   );
+  // JS-модули рендерятся (подстановка версии в import-URL). URL версионирован
+  // через ?v= → можно кэшировать надолго; без ?v= — no-store (dev).
+  for (const name of jsModuleFiles()) {
+    app.get(`/${name}`, (req, res) => {
+      res.setHeader(
+        "Cache-Control",
+        req.query.v ? "public, max-age=604800, immutable" : "no-store, must-revalidate",
+      );
+      res.setHeader("Content-Type", "application/javascript; charset=utf-8");
+      res.send(renderStatic(name));
+    });
+  }
   // Статика версионируется через ?v=STATIC_VERSION → можно кэшировать
   // надолго: смена кода меняет URL (аудит 17.4).
   app.use(
