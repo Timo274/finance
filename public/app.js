@@ -2643,7 +2643,7 @@ function openSimulatorModal() {
   const p = state.plan;
   if (!p) return toast("Сначала настройте план");
   const slider = (name, label, value, max) => `<div class="field full"><label>${label}: <b data-sim-val="${name}">${fmtShort(value)}</b> грн</label>
-    <input type="range" data-sim="${name}" min="0" max="${max}" step="100" value="${value} w-full" /></div>`;
+    <input type="range" data-sim="${name}" min="0" max="${max}" step="100" value="${value}" class="w-full" /></div>`;
   openModal(`<div class="modal narrow">
     <div class="modal-head"><h2>Что если…</h2><button class="close-x" data-close-modal>×</button></div>
     <p class="muted small">Виртуальный расчёт — ничего не сохраняется.</p>
@@ -2653,7 +2653,7 @@ function openSimulatorModal() {
       ${slider("buffer", "Страховка", p.buffer || 0, Math.max(20000, (p.salary || 0)))}
       ${slider("investmentFixed", "Инвестиции", p.investmentFixed || 0, Math.max(20000, (p.salary || 0)))}
     </div>
-    <div id="simResult mt-12"><p class="muted small">Двигайте ползунки…</p></div>
+    <div id="simResult" class="mt-12"><p class="muted small">Двигайте ползунки…</p></div>
     <div class="modal-foot"><button type="button" class="btn btn-ghost" data-close-modal>Закрыть</button></div>
   </div>`);
   let timer = null;
@@ -3387,22 +3387,29 @@ function openItemModal(item, prefill) {
         `<option value="${k}" ${k === (i.layer || i.bucket) ? "selected" : ""}>${v.ru} · ${v.label}</option>`,
     )
     .join("");
+  // Сегмент-контрол 1–5 вместо ползунка: на таче один тап точнее перетаскивания (аудит 9.4).
+  const segBtns = (val) =>
+    [1, 2, 3, 4, 5]
+      .map(
+        (n) =>
+          `<button type="button" class="seg-btn${n === Number(val) ? " active" : ""}" data-val="${n}" aria-pressed="${n === Number(val)}">${n}</button>`,
+      )
+      .join("");
   const range = (
     name,
     val,
     label,
-  ) => `<div class="field"><label>${label}</label><div class="range-row">
-      <input type="range" name="${name}" class="js-range" min="1" max="5" value="${val}">
-      <span class="range-val">${val}</span></div></div>`;
+  ) => `<div class="field"><label>${label}</label><div class="seg-scale" role="group" aria-label="${label}">
+      <input type="hidden" name="${name}" value="${val}">${segBtns(val)}</div></div>`;
   const critRow = (c) => `<div class="score-row" data-crit="${c.id}">
       <div><div class="sr-label">${c.ru} ${c.dir === "neg" ? '<span class="muted small">(чем меньше — тем лучше)</span>' : ""}</div><div class="sr-hint">${c.hint}</div></div>
-      <div class="range-row"><input type="range" class="score-input" data-id="${c.id}" data-dir="${c.dir}" min="1" max="5" value="${scores[c.id] || 3}">
-        <span class="range-val">${scores[c.id] || 3}</span></div>
+      <div class="seg-scale" role="group" aria-label="${c.ru}"><input type="hidden" class="score-input" data-id="${c.id}" data-dir="${c.dir}" value="${scores[c.id] || 3}">${segBtns(scores[c.id] || 3)}</div>
     </div>`;
   const quickRows = state.meta.scoreCriteria.quick.map(critRow).join("");
   const fullRows = state.meta.scoreCriteria.full.map(critRow).join("");
 
-  openModal(`<div class="modal">
+  // modal-sheet: на мобильном раскрывается на весь экран со sticky-футером (аудит 9.3).
+  openModal(`<div class="modal modal-sheet">
     <div class="modal-head"><h2>${item ? "Редактировать желание" : "Новое желание"}</h2><button class="close-x" data-close-modal>×</button></div>
     <form id="itemForm" class="form-grid">
       <div class="field full"><label>Название</label><input name="title" value="${escapeAttr(i.title)}" required /></div>
@@ -3596,18 +3603,20 @@ async function renderPriceTrend(itemId) {
     layerTouched = true;
   });
   scoreTypeSel.addEventListener("change", refreshScoreSections);
-  $$(".score-input").forEach((el) =>
-    el.addEventListener("input", (e) => {
-      e.target.nextElementSibling.textContent = e.target.value;
-      refreshVerdict();
-    }),
-  );
-  // CSP блокирует inline-обработчики (script-src-attr 'none') — слушатель вместо oninput (аудит 3.5).
-  $$(".js-range").forEach((el) =>
-    el.addEventListener("input", (e) => {
-      e.target.nextElementSibling.textContent = e.target.value;
-    }),
-  );
+  // Один делегированный обработчик на все сегмент-шкалы формы (аудит 9.4).
+  $("#itemForm").addEventListener("click", (e) => {
+    const btn = e.target.closest(".seg-btn");
+    if (!btn) return;
+    const scale = btn.closest(".seg-scale");
+    const input = scale.querySelector("input[type=hidden]");
+    input.value = btn.dataset.val;
+    scale.querySelectorAll(".seg-btn").forEach((b) => {
+      const on = b === btn;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", String(on));
+    });
+    if (input.classList.contains("score-input")) refreshVerdict();
+  });
   refreshBand();
   refreshScoreSections();
 

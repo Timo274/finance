@@ -623,9 +623,21 @@ tbody tr:last-child td { border-bottom: none; }
 
   .modal-overlay { padding: 0; place-items: end stretch; }
   .modal { max-width: 100%; max-height: 94vh; border-radius: 18px 18px 0 0; padding: 20px 18px calc(20px + env(safe-area-inset-bottom)); }
+  /* Длинные формы (желание) — полноэкранный sheet: шапка и футер всегда видны (аудит 9.3). */
+  .modal.modal-sheet { height: 100dvh; max-height: 100dvh; border-radius: 0; padding-top: 0; padding-bottom: 0; }
+  .modal.modal-sheet .modal-head {
+    position: sticky; top: 0; z-index: 3; background: var(--panel);
+    padding: 16px 0 10px; margin-bottom: 10px; border-bottom: 1px solid var(--border-soft);
+  }
+  .modal.modal-sheet .modal-foot {
+    position: sticky; bottom: 0; z-index: 3; background: var(--panel);
+    padding: 12px 0 calc(12px + env(safe-area-inset-bottom)); margin-top: 14px;
+    border-top: 1px solid var(--border-soft);
+  }
 
   .score-row { grid-template-columns: 1fr; }
-  .score-row .range-row { width: 100%; }
+  .score-row .range-row,
+  .score-row .seg-scale { width: 100%; }
 
   .chat { height: calc(100dvh - 270px); min-height: 200px; margin-top: 0; }
   .msg { max-width: 88%; }
@@ -2756,3 +2768,15 @@ body.eco .bg-orb { filter: none !important; }
 .w-full { width: 100%; }
 .check-18 { width: 18px; height: 18px; accent-color: var(--accent); }
 .check-20 { width: 20px; height: 20px; accent-color: var(--accent); }
+
+/* Сегмент-контрол 1–5 вместо range-слайдера (аудит 9.4) */
+.seg-scale { display: flex; gap: 6px; align-items: center; }
+.seg-btn {
+  flex: 1; min-height: 38px; min-width: 34px; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--panel-2); color: var(--muted); font-weight: 600; font-size: 0.9375rem;
+  transition: background var(--dur-fast, .15s) ease, color var(--dur-fast, .15s) ease;
+}
+.seg-btn:hover { border-color: var(--accent); color: var(--text); }
+.seg-btn.active { background: var(--accent); border-color: var(--accent); color: var(--nav-active-text, #fff); }
+.score-row .seg-scale { width: 200px; }
