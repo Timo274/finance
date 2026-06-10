@@ -6,9 +6,7 @@ const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_MAX_ATTEMPTS = 20;
 
 export function authClientKey(req) {
-  const forwarded = String(
-    req.headers["fly-client-ip"] || req.headers["x-forwarded-for"] || "",
-  )
+  const forwarded = String(req.headers["fly-client-ip"] || req.headers["x-forwarded-for"] || "")
     .split(",")[0]
     .trim();
   return forwarded || req.ip || req.socket?.remoteAddress || "unknown";
@@ -78,9 +76,7 @@ export function rateLimit({ name, windowMs, max }) {
     const now = Date.now();
     const current = rateLimitBuckets.get(key);
     const entry =
-      current && current.resetAt > now
-        ? current
-        : { count: 0, resetAt: now + windowMs };
+      current && current.resetAt > now ? current : { count: 0, resetAt: now + windowMs };
     if (entry.count >= max) {
       const retryAfter = Math.max(1, Math.ceil((entry.resetAt - now) / 1000));
       res.setHeader("Retry-After", String(retryAfter));

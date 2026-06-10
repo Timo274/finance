@@ -28,7 +28,6 @@ export async function sendPushToAll(payload) {
   return sent;
 }
 
-
 // ---------- планировщик напоминаний и проверки цен ----------
 function reminderAlreadySent(key) {
   return getSetting(`notified_${key}`) != null;
@@ -118,4 +117,3 @@ export function scheduleReminders() {
   setTimeout(sweep, 60_000).unref?.();
   setInterval(sweep, 30 * 60 * 1000).unref?.();
 }
-

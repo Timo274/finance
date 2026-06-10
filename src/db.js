@@ -177,12 +177,10 @@ function planColumns() {
     .map((c) => c.name);
 }
 function ensureColumn(col, def) {
-  if (!itemColumns().includes(col))
-    db.exec(`ALTER TABLE items ADD COLUMN ${col} ${def}`);
+  if (!itemColumns().includes(col)) db.exec(`ALTER TABLE items ADD COLUMN ${col} ${def}`);
 }
 function ensurePlanColumn(col, def) {
-  if (!planColumns().includes(col))
-    db.exec(`ALTER TABLE plans ADD COLUMN ${col} ${def}`);
+  if (!planColumns().includes(col)) db.exec(`ALTER TABLE plans ADD COLUMN ${col} ${def}`);
 }
 
 const hadBand = itemColumns().includes("band");
@@ -272,9 +270,7 @@ if (!hadBand) {
     "waste",
   ]);
   const rows = db.prepare("SELECT id, bucket, category, cost FROM items").all();
-  const upd = db.prepare(
-    "UPDATE items SET bucket=?, category=?, band=? WHERE id=?",
-  );
+  const upd = db.prepare("UPDATE items SET bucket=?, category=?, band=? WHERE id=?");
   const run = db.transaction(() => {
     for (const r of rows) {
       const category = NEW_CATEGORIES.has(r.category)
@@ -293,13 +289,8 @@ if (!hadBand) {
     .prepare("SELECT name FROM sqlite_master WHERE type='table'")
     .all()
     .map((r) => r.name);
-  if (
-    tables.includes("investment_updates") &&
-    tables.includes("investment_assets")
-  ) {
-    const assets = db
-      .prepare("SELECT COUNT(*) as cnt FROM investment_assets")
-      .get();
+  if (tables.includes("investment_updates") && tables.includes("investment_assets")) {
+    const assets = db.prepare("SELECT COUNT(*) as cnt FROM investment_assets").get();
     if (assets.cnt === 0) {
       const oldAccounts = db.prepare("SELECT * FROM investment_accounts").all();
       const oldUpdates = db.prepare("SELECT * FROM investment_updates").all();

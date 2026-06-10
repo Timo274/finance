@@ -15,21 +15,14 @@ export const SETTINGS = {
 };
 
 export const stmt = {
-  authAttemptByKey: db.prepare(
-    "SELECT key, count, reset_at FROM auth_attempts WHERE key = ?",
-  ),
-  upsertAuthAttempt:
-    db.prepare(`INSERT INTO auth_attempts (key, count, reset_at, updated_at)
+  authAttemptByKey: db.prepare("SELECT key, count, reset_at FROM auth_attempts WHERE key = ?"),
+  upsertAuthAttempt: db.prepare(`INSERT INTO auth_attempts (key, count, reset_at, updated_at)
     VALUES (@key, @count, @resetAt, datetime('now'))
     ON CONFLICT(key) DO UPDATE SET count=excluded.count, reset_at=excluded.reset_at, updated_at=datetime('now')`),
   deleteAuthAttempt: db.prepare("DELETE FROM auth_attempts WHERE key = ?"),
-  deleteExpiredAuthAttempts: db.prepare(
-    "DELETE FROM auth_attempts WHERE reset_at <= ?",
-  ),
+  deleteExpiredAuthAttempts: db.prepare("DELETE FROM auth_attempts WHERE reset_at <= ?"),
 
-  activePlan: db.prepare(
-    "SELECT * FROM plans WHERE status = 'active' ORDER BY id DESC LIMIT 1",
-  ),
+  activePlan: db.prepare("SELECT * FROM plans WHERE status = 'active' ORDER BY id DESC LIMIT 1"),
   planById: db.prepare("SELECT * FROM plans WHERE id = ?"),
   insertPlan: db.prepare(
     "INSERT INTO plans (name, payday, salary, survival_cost, buffer, investment_fixed) VALUES (@name, @payday, @salary, @survivalCost, @buffer, @investmentFixed)",
@@ -40,13 +33,9 @@ export const stmt = {
   closePlan: db.prepare(
     "UPDATE plans SET status='closed', snapshot=@snapshot, closed_at=datetime('now') WHERE id=@id",
   ),
-  closedPlans: db.prepare(
-    "SELECT * FROM plans WHERE status='closed' ORDER BY closed_at DESC",
-  ),
+  closedPlans: db.prepare("SELECT * FROM plans WHERE status='closed' ORDER BY closed_at DESC"),
 
-  activeItems: db.prepare(
-    "SELECT * FROM items WHERE status='active' ORDER BY id DESC",
-  ),
+  activeItems: db.prepare("SELECT * FROM items WHERE status='active' ORDER BY id DESC"),
   allItems: db.prepare("SELECT * FROM items ORDER BY id DESC"),
   itemById: db.prepare("SELECT * FROM items WHERE id = ?"),
   insertItem: db.prepare(`INSERT INTO items
@@ -88,14 +77,11 @@ export const stmt = {
   walletsByPlan: db.prepare(
     "SELECT * FROM wallets WHERE plan_id IS @planId ORDER BY created_at DESC",
   ),
-  upsertWallet:
-    db.prepare(`INSERT INTO wallets (id, plan_id, name, purpose, amount, month)
+  upsertWallet: db.prepare(`INSERT INTO wallets (id, plan_id, name, purpose, amount, month)
     VALUES (@id, @planId, @name, @purpose, @amount, @month)
     ON CONFLICT(id) DO UPDATE SET name=excluded.name, purpose=excluded.purpose,
       amount=excluded.amount, month=excluded.month, updated_at=datetime('now')`),
-  deleteWalletsForPlan: db.prepare(
-    "DELETE FROM wallets WHERE plan_id IS @planId",
-  ),
+  deleteWalletsForPlan: db.prepare("DELETE FROM wallets WHERE plan_id IS @planId"),
 
   goalsByItems: db.prepare(
     "SELECT * FROM goals WHERE item_id IN (SELECT id FROM items) ORDER BY updated_at DESC",
@@ -113,28 +99,21 @@ export const stmt = {
   contributionsByGoal: db.prepare(
     "SELECT * FROM goal_contributions WHERE goal_id = ? ORDER BY date DESC, id DESC",
   ),
-  allGoalContributions: db.prepare(
-    "SELECT * FROM goal_contributions ORDER BY id",
-  ),
+  allGoalContributions: db.prepare("SELECT * FROM goal_contributions ORDER BY id"),
   insertGoalContributionFull:
     db.prepare(`INSERT INTO goal_contributions (id, goal_id, plan_id, amount, date, note, created_at)
     VALUES (@id, @goalId, @planId, @amount, @date, @note, @createdAt)`),
 
   pushSubscriptions: db.prepare("SELECT * FROM push_subscriptions"),
-  insertPushSubscription:
-    db.prepare(`INSERT INTO push_subscriptions (endpoint, p256dh, auth)
+  insertPushSubscription: db.prepare(`INSERT INTO push_subscriptions (endpoint, p256dh, auth)
     VALUES (@endpoint, @p256dh, @auth)
     ON CONFLICT(endpoint) DO UPDATE SET p256dh=excluded.p256dh, auth=excluded.auth`),
-  deletePushSubscription: db.prepare(
-    "DELETE FROM push_subscriptions WHERE endpoint = ?",
-  ),
+  deletePushSubscription: db.prepare("DELETE FROM push_subscriptions WHERE endpoint = ?"),
 
-  investmentUpdates:
-    db.prepare(`SELECT iu.*, ia.name AS account_name, ia.type AS account_type
+  investmentUpdates: db.prepare(`SELECT iu.*, ia.name AS account_name, ia.type AS account_type
     FROM investment_updates iu JOIN investment_accounts ia ON ia.id = iu.account_id
     ORDER BY iu.date DESC, iu.created_at DESC`),
-  upsertInvestmentAccount:
-    db.prepare(`INSERT INTO investment_accounts (id, name, type)
+  upsertInvestmentAccount: db.prepare(`INSERT INTO investment_accounts (id, name, type)
     VALUES (@id, @name, @type)
     ON CONFLICT(id) DO UPDATE SET name=excluded.name, type=excluded.type, updated_at=datetime('now')`),
   upsertInvestmentUpdate:
@@ -162,19 +141,14 @@ export const stmt = {
   deleteGoalByItem: db.prepare("DELETE FROM goals WHERE item_id = ?"),
   allGoals: db.prepare("SELECT * FROM goals ORDER BY updated_at DESC"),
   allWallets: db.prepare("SELECT * FROM wallets ORDER BY created_at DESC"),
-  allDecisions: db.prepare(
-    "SELECT * FROM allocation_decisions ORDER BY updated_at DESC",
-  ),
-  allInvestmentAccounts: db.prepare(
-    "SELECT * FROM investment_accounts ORDER BY name",
-  ),
+  allDecisions: db.prepare("SELECT * FROM allocation_decisions ORDER BY updated_at DESC"),
+  allInvestmentAccounts: db.prepare("SELECT * FROM investment_accounts ORDER BY name"),
   deleteWalletById: db.prepare("DELETE FROM wallets WHERE id = ?"),
 
   // New investment model
   allAssets: db.prepare("SELECT * FROM investment_assets ORDER BY name"),
   assetById: db.prepare("SELECT * FROM investment_assets WHERE id = ?"),
-  insertAsset:
-    db.prepare(`INSERT INTO investment_assets (id, name, type, ticker, currency)
+  insertAsset: db.prepare(`INSERT INTO investment_assets (id, name, type, ticker, currency)
     VALUES (@id, @name, @type, @ticker, @currency)
     ON CONFLICT(id) DO UPDATE SET name=excluded.name, type=excluded.type,
       ticker=excluded.ticker, currency=excluded.currency, updated_at=datetime('now')`),
@@ -194,9 +168,7 @@ export const stmt = {
   valuationsByAsset: db.prepare(
     "SELECT * FROM asset_valuations WHERE asset_id = ? ORDER BY date DESC, created_at DESC",
   ),
-  allValuations: db.prepare(
-    "SELECT * FROM asset_valuations ORDER BY date DESC, created_at DESC",
-  ),
+  allValuations: db.prepare("SELECT * FROM asset_valuations ORDER BY date DESC, created_at DESC"),
   // Одна оценка на (актив, дату): повторная запись за тот же день обновляет значение.
   insertValuation:
     db.prepare(`INSERT INTO asset_valuations (id, asset_id, date, value, quantity, note)

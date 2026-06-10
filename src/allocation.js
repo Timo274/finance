@@ -69,9 +69,7 @@ export function scoreVerdict(item) {
   const type = item.scoreType || "none";
   if (type === "none") return null;
   const crit =
-    type === "full"
-      ? [...SCORE_CRITERIA.quick, ...SCORE_CRITERIA.full]
-      : SCORE_CRITERIA.quick;
+    type === "full" ? [...SCORE_CRITERIA.quick, ...SCORE_CRITERIA.full] : SCORE_CRITERIA.quick;
   // Каждый критерий приводим «к лучшему»: для negative инвертируем (6 - v).
   let sum = 0;
   let count = 0;
@@ -136,10 +134,7 @@ function emptyBuckets() {
 function policyTargets(available, weights) {
   if (!weights) return null;
   const totalWeight =
-    Object.values(weights).reduce(
-      (sum, value) => sum + Number(value || 0),
-      0,
-    ) || 1;
+    Object.values(weights).reduce((sum, value) => sum + Number(value || 0), 0) || 1;
   return Object.fromEntries(
     Object.keys(LAYERS).map((layer) => [
       layer,
@@ -185,9 +180,7 @@ export function allocate(plan, items, options = {}) {
   const deferred = [];
   const buckets = emptyBuckets();
   const targets =
-    scenarioKey === "custom"
-      ? null
-      : policyTargets(availableToAllocate, scenario.weights);
+    scenarioKey === "custom" ? null : policyTargets(availableToAllocate, scenario.weights);
   let spent = 0;
 
   for (const { item } of ranked) {
@@ -209,8 +202,7 @@ export function allocate(plan, items, options = {}) {
     const layerTarget = targets?.[item.layer] ?? availableToAllocate;
     const protectedItem = item.type === "must" || !item.canDefer;
     const fits = remainingCost <= remainingBudget;
-    const fitsPolicy =
-      !targets || protectedItem || layerSpent + remainingCost <= layerTarget;
+    const fitsPolicy = !targets || protectedItem || layerSpent + remainingCost <= layerTarget;
     if (fits && fitsPolicy) {
       approved.push({
         item: itemForResult,
@@ -259,8 +251,7 @@ export function allocate(plan, items, options = {}) {
       deferred.push({
         item: itemForResult,
         remainingCost,
-        reason:
-          "Не помещается в излишки после стабильных пунктов — перенесено на потом",
+        reason: "Не помещается в излишки после стабильных пунктов — перенесено на потом",
       });
     }
   }
@@ -319,15 +310,12 @@ export function allocate(plan, items, options = {}) {
   const scheduled = approved
     .map((a, idx) => {
       const earliest =
-        a.item.earliestDate &&
-        new Date(a.item.earliestDate) > new Date(plan.payday)
+        a.item.earliestDate && new Date(a.item.earliestDate) > new Date(plan.payday)
           ? a.item.earliestDate
           : plan.payday;
       return { ...a, date: earliest, order: idx };
     })
-    .sort((a, b) =>
-      a.date < b.date ? -1 : a.date > b.date ? 1 : a.order - b.order,
-    );
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.order - b.order));
 
   for (const a of scheduled) {
     const amount = a.allocatedAmount ?? amountToFund(a.item);
@@ -456,9 +444,7 @@ export function allocationFromManualPlan(plan, items, manualPlan = [], options =
           : plan.payday;
       return { ...a, date: earliest, order: idx };
     })
-    .sort((a, b) =>
-      a.date < b.date ? -1 : a.date > b.date ? 1 : a.order - b.order,
-    );
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.order - b.order));
   for (const a of scheduled) {
     balance -= a.allocatedAmount;
     timeline.push({

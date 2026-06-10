@@ -5,15 +5,13 @@ import { getSetting, setSetting, setCurrencyRate, setEurRate } from "./db.js";
 import { todayISO } from "./sanitize.js";
 import { structuredLog } from "./log.js";
 
-const NBU_API =
-  "https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?json";
+const NBU_API = "https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?json";
 
 export async function fetchNbuRates() {
   const res = await fetch(NBU_API, { signal: AbortSignal.timeout(10000) });
   if (!res.ok) throw new Error(`nbu_http_${res.status}`);
   const list = await res.json();
-  const find = (cc) =>
-    Number(list.find?.((r) => r.cc === cc)?.rate) || null;
+  const find = (cc) => Number(list.find?.((r) => r.cc === cc)?.rate) || null;
   const usd = find("USD");
   const eur = find("EUR");
   if (!usd || !eur) throw new Error("nbu_missing_rates");
@@ -35,8 +33,7 @@ export function markRatesManual() {
 export async function refreshRatesFromNbu({ force = false } = {}) {
   const today = todayISO();
   if (!force) {
-    if (rateSource() === "manual")
-      return { updated: false, reason: "manual_override" };
+    if (rateSource() === "manual") return { updated: false, reason: "manual_override" };
     if (getSetting("rate_refresh_date") === today)
       return { updated: false, reason: "already_refreshed_today" };
   }

@@ -10,7 +10,9 @@
     "test": "node --test",
     "test:e2e": "playwright test",
     "test:all": "npm test && npm run test:e2e",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "format": "prettier --write src test server.js",
+    "format:check": "prettier --check src test server.js"
   },
   "engines": {
     "node": ">=18"
@@ -28,6 +30,7 @@
     "@eslint/js": "^9.39.4",
     "@playwright/test": "^1.60.0",
     "eslint": "^9.39.4",
-    "globals": "^17.6.0"
+    "globals": "^17.6.0",
+    "prettier": "^3.8.4"
   }
 }

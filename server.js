@@ -52,14 +52,8 @@ app.use((req, res, next) => {
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "same-origin");
   if (process.env.NODE_ENV === "production")
-    res.setHeader(
-      "Strict-Transport-Security",
-      "max-age=31536000; includeSubDomains",
-    );
-  res.setHeader(
-    "Permissions-Policy",
-    "camera=(), microphone=(), geolocation=()",
-  );
+    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   next();
 });
 
@@ -97,8 +91,7 @@ app.use(cookieParser());
 app.use(
   compression({
     // SSE нельзя буферизовать — события должны уходить сразу (аудит 17.2).
-    filter: (req, res) =>
-      req.path === "/api/events" ? false : compression.filter(req, res),
+    filter: (req, res) => (req.path === "/api/events" ? false : compression.filter(req, res)),
   }),
 );
 // Мутации принимаем только со своего Origin (аудит 16.3).

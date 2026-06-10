@@ -79,9 +79,7 @@ describe("allocate", () => {
   });
 
   it("partially funds must items that exceed budget", () => {
-    const items = [
-      makeItem({ id: 1, title: "Big", cost: 25000, type: "must", priority: 5 }),
-    ];
+    const items = [makeItem({ id: 1, title: "Big", cost: 25000, type: "must", priority: 5 })];
     const r = allocate(basePlan, items);
     // Весь свободный бюджет резервируется под must как накопление.
     assert.equal(r.approved.length, 1);
@@ -311,7 +309,14 @@ describe("tradeoff", () => {
   it("never displaces protected items", () => {
     const items = [
       makeItem({ id: 1, title: "Must", cost: 15000, type: "must", priority: 1 }),
-      makeItem({ id: 2, title: "Locked", cost: 1000, type: "should", canDefer: false, priority: 1 }),
+      makeItem({
+        id: 2,
+        title: "Locked",
+        cost: 1000,
+        type: "should",
+        canDefer: false,
+        priority: 1,
+      }),
       makeItem({ id: 3, title: "Wish", cost: 10000, type: "nice", priority: 5 }),
     ];
     const t = tradeoff(3, basePlan, items, {});

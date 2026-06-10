@@ -19,15 +19,7 @@ export function aiStatus() {
 }
 
 function buildSystemPrompt(context) {
-  const {
-    plan,
-    allocation,
-    goals,
-    wallets,
-    portfolio,
-    manualPlan,
-    itemsCount,
-  } = context || {};
+  const { plan, allocation, goals, wallets, portfolio, manualPlan, itemsCount } = context || {};
   const lines = [
     "Ты — спокойный, прагматичный финансовый ассистент.",
     "Помогаешь распределить зарплату по приоритетам.",
@@ -52,9 +44,7 @@ function buildSystemPrompt(context) {
     lines.push(`Доступно на желания: ${t.availableToAllocate || 0} грн`);
     if (allocation.approved?.length) {
       lines.push("Купить сейчас:");
-      allocation.approved.forEach((a) =>
-        lines.push(`  - ${a.title} (${a.cost} грн)`),
-      );
+      allocation.approved.forEach((a) => lines.push(`  - ${a.title} (${a.cost} грн)`));
     }
     if (allocation.deferred?.length) {
       lines.push("Отложено:");
@@ -70,9 +60,7 @@ function buildSystemPrompt(context) {
     lines.push(`Вложено: ${portfolio.totalInvested} грн`);
     lines.push(`P&L: ${portfolio.totalPnL} грн`);
     if (portfolio.assets?.length) {
-      portfolio.assets.forEach((a) =>
-        lines.push(`  - ${a.name} (${a.type}): ${a.value} грн`),
-      );
+      portfolio.assets.forEach((a) => lines.push(`  - ${a.name} (${a.type}): ${a.value} грн`));
     }
   }
   if (wallets?.length) {
@@ -83,9 +71,7 @@ function buildSystemPrompt(context) {
   if (manualPlan?.length) {
     lines.push("");
     lines.push("=== РУЧНОЙ ПЛАН ===");
-    manualPlan.forEach((m) =>
-      lines.push(`  - ${m.title || "#" + m.itemId}: ${m.amount} грн`),
-    );
+    manualPlan.forEach((m) => lines.push(`  - ${m.title || "#" + m.itemId}: ${m.amount} грн`));
   }
   lines.push("");
   lines.push(`Всего желаний: ${itemsCount || 0}`);
@@ -157,8 +143,7 @@ export async function askAssistant(messages, context) {
   if (!aiEnabled()) {
     return {
       enabled: false,
-      reply:
-        "AI-ассистент не настроен. Добавьте AI_PROVIDER и AI_API_KEY в окружении.",
+      reply: "AI-ассистент не настроен. Добавьте AI_PROVIDER и AI_API_KEY в окружении.",
     };
   }
   const model = process.env.AI_MODEL || DEFAULT_MODELS[PROVIDER];
@@ -166,10 +151,8 @@ export async function askAssistant(messages, context) {
 
   let reply;
   if (PROVIDER === "openai") reply = await callOpenAI(system, messages, model);
-  else if (PROVIDER === "anthropic")
-    reply = await callAnthropic(system, messages, model);
-  else if (PROVIDER === "gemini")
-    reply = await callGemini(system, messages, model);
+  else if (PROVIDER === "anthropic") reply = await callAnthropic(system, messages, model);
+  else if (PROVIDER === "gemini") reply = await callGemini(system, messages, model);
   else throw new Error(`Неизвестный провайдер: ${PROVIDER}`);
 
   return { enabled: true, reply };
@@ -250,8 +233,7 @@ async function streamAnthropic(system, messages, model, onDelta) {
   if (!res.ok) throw new Error(`Anthropic ${res.status}: ${await res.text()}`);
   for await (const line of sseLines(res)) {
     const data = sseData(line);
-    if (data?.type === "content_block_delta" && data.delta?.text)
-      onDelta(data.delta.text);
+    if (data?.type === "content_block_delta" && data.delta?.text) onDelta(data.delta.text);
   }
 }
 
@@ -291,10 +273,8 @@ export async function askAssistantStream(messages, context, onDelta) {
     onDelta(text);
   };
   if (PROVIDER === "openai") await streamOpenAI(system, messages, model, emit);
-  else if (PROVIDER === "anthropic")
-    await streamAnthropic(system, messages, model, emit);
-  else if (PROVIDER === "gemini")
-    await streamGemini(system, messages, model, emit);
+  else if (PROVIDER === "anthropic") await streamAnthropic(system, messages, model, emit);
+  else if (PROVIDER === "gemini") await streamGemini(system, messages, model, emit);
   else throw new Error(`Неизвестный провайдер: ${PROVIDER}`);
   return full;
 }
@@ -304,12 +284,8 @@ export async function askAssistantStream(messages, context, onDelta) {
 export function monthReviewPrompt(plan) {
   const s = plan?.snapshot || {};
   const t = s.totals || {};
-  const purchased = (s.approved || [])
-    .map((x) => `${x.title} (${x.cost} грн)`)
-    .join(", ");
-  const deferred = (s.deferred || [])
-    .map((x) => `${x.title} (${x.cost} грн)`)
-    .join(", ");
+  const purchased = (s.approved || []).map((x) => `${x.title} (${x.cost} грн)`).join(", ");
+  const deferred = (s.deferred || []).map((x) => `${x.title} (${x.cost} грн)`).join(", ");
   return [
     `Месяц «${plan?.name || ""}» закрыт. Сделай короткий разбор месяца (5-7 предложений).`,
     `Зарплата: ${t.salary ?? plan?.salary ?? 0} грн, распределено: ${t.allocated ?? 0} грн, свободный остаток: ${t.remaining ?? 0} грн.`,

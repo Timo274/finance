@@ -10,8 +10,7 @@ const dayFormatter = new Intl.DateTimeFormat("en-CA", {
   day: "2-digit",
 });
 export const todayISO = () => dayFormatter.format(new Date());
-export const monthForPlan = (plan) =>
-  String(plan?.payday || todayISO()).slice(0, 7);
+export const monthForPlan = (plan) => String(plan?.payday || todayISO()).slice(0, 7);
 
 export function textValue(value, fallback = "", maxLength = 500) {
   const text = String(value ?? "")
@@ -35,10 +34,7 @@ export function isoDateValue(value, fallback = null) {
   const text = String(value || "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return fallback;
   const date = new Date(`${text}T00:00:00.000Z`);
-  return Number.isNaN(date.getTime()) ||
-    date.toISOString().slice(0, 10) !== text
-    ? fallback
-    : text;
+  return Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== text ? fallback : text;
 }
 
 export function sanitizeEntries(entries, fields) {
@@ -47,16 +43,13 @@ export function sanitizeEntries(entries, fields) {
     .map((entry) => {
       const out = { id: String(entry.id || Date.now() + Math.random()) };
       for (const field of fields) {
-        if (field.type === "number")
-          out[field.key] = Math.max(0, Number(entry[field.key]) || 0);
+        if (field.type === "number") out[field.key] = Math.max(0, Number(entry[field.key]) || 0);
         else out[field.key] = String(entry[field.key] || "").trim();
       }
       return out;
     })
     .filter((entry) =>
-      fields.some((field) =>
-        field.type === "number" ? entry[field.key] > 0 : entry[field.key],
-      ),
+      fields.some((field) => (field.type === "number" ? entry[field.key] > 0 : entry[field.key])),
     );
 }
 export function sanitizeManualPlan(entries) {

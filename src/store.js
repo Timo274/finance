@@ -23,22 +23,12 @@ import {
   layerForCategory,
   bandForCost,
 } from "./categories.js";
-import {
-  allocate,
-  allocationFromManualPlan,
-  SCENARIOS,
-} from "./allocation.js";
+import { allocate, allocationFromManualPlan, SCENARIOS } from "./allocation.js";
 import { aiStatus } from "./ai.js";
 import { monobankEnabled } from "./monobank.js";
 import { offsiteEnabled } from "./offsite.js";
 import { getVapidKeys } from "./webpush.js";
-import {
-  textValue,
-  positiveNumber,
-  boundedInteger,
-  oneOf,
-  isoDateValue,
-} from "./sanitize.js";
+import { textValue, positiveNumber, boundedInteger, oneOf, isoDateValue } from "./sanitize.js";
 
 export function getActivePlan() {
   return rowToPlan(stmt.activePlan.get());
@@ -79,9 +69,7 @@ export function getPortfolio() {
       .sort(
         (left, right) =>
           String(left.date || "").localeCompare(String(right.date || "")) ||
-          String(left.created_at || "").localeCompare(
-            String(right.created_at || ""),
-          ),
+          String(left.created_at || "").localeCompare(String(right.created_at || "")),
       );
     const vals = allVal.filter((v) => v.asset_id === a.id);
 
@@ -105,8 +93,7 @@ export function getPortfolio() {
       } else if (tx.type === "sell") {
         const sellQty = Math.min(qty, quantityHeld);
         if (sellQty <= 0) continue;
-        const sellTotal =
-          (storedTotal > 0 ? storedTotal : Math.max(0, gross - fee)) * fxRate;
+        const sellTotal = (storedTotal > 0 ? storedTotal : Math.max(0, gross - fee)) * fxRate;
         const sellProceeds = qty > 0 ? sellTotal * (sellQty / qty) : 0;
         const avgCost = quantityHeld > 0 ? costBasis / quantityHeld : 0;
         const soldBasis = avgCost * sellQty;
@@ -138,8 +125,7 @@ export function getPortfolio() {
     else if (latestVal) {
       const valTotal = Number(latestVal.value) || 0;
       const qtyAtVal = quantityAt(latestVal.date);
-      currentValue =
-        qtyAtVal > 0 ? (valTotal / qtyAtVal) * quantityHeld : valTotal;
+      currentValue = qtyAtVal > 0 ? (valTotal / qtyAtVal) * quantityHeld : valTotal;
     } else currentValue = costBasis;
     const unrealizedPnL = currentValue - costBasis;
 
@@ -158,12 +144,8 @@ export function getPortfolio() {
     };
   });
 
-  const totalValue = roundMoney(
-    assetData.reduce((s, a) => s + a.currentValue, 0),
-  );
-  const totalInvestedAll = roundMoney(
-    assetData.reduce((s, a) => s + a.totalInvested, 0),
-  );
+  const totalValue = roundMoney(assetData.reduce((s, a) => s + a.currentValue, 0));
+  const totalInvestedAll = roundMoney(assetData.reduce((s, a) => s + a.totalInvested, 0));
   const totalPnL = roundMoney(assetData.reduce((s, a) => s + a.totalPnL, 0));
 
   return {
@@ -201,9 +183,7 @@ export function getPortfolio() {
 }
 export function getWallets() {
   const plan = getActivePlan();
-  const rows = stmt.walletsByPlan
-    .all({ planId: plan?.id || null })
-    .map(rowToWallet);
+  const rows = stmt.walletsByPlan.all({ planId: plan?.id || null }).map(rowToWallet);
   if (rows.length) {
     markLegacyDone("wallets");
     return rows;
@@ -212,9 +192,7 @@ export function getWallets() {
   return getJSON(SETTINGS.monthlyWallets, []);
 }
 export function getManualPlan() {
-  const rows = stmt.decisionsByPlan
-    .all({ planId: currentPlanId() })
-    .map(rowToAllocationDecision);
+  const rows = stmt.decisionsByPlan.all({ planId: currentPlanId() }).map(rowToAllocationDecision);
   if (rows.length) {
     markLegacyDone("manual_plan");
     return rows.map(({ itemId, amount }) => ({ itemId, amount }));
@@ -286,18 +264,11 @@ export const VALID_LAYERS = new Set(Object.keys(LAYERS));
 export function normalizeItemInput(b) {
   const category = VALID_CATEGORIES.has(b.category) ? b.category : "lifestyle";
   // Слой по умолчанию берётся из категории, но пользователь может переопределить.
-  const layer = VALID_LAYERS.has(b.layer)
-    ? b.layer
-    : layerForCategory(category);
+  const layer = VALID_LAYERS.has(b.layer) ? b.layer : layerForCategory(category);
   // Мультивалютность: канонический cost всегда в грн. Для USD/EUR храним
   // оригинальную сумму (costOriginal) и пересчитываем по текущему курсу.
-  const currency = oneOf(
-    String(b.currency || "UAH").toUpperCase(),
-    ["UAH", "USD", "EUR"],
-    "UAH",
-  );
-  const costOriginal =
-    currency === "UAH" ? null : positiveNumber(b.costOriginal ?? b.cost);
+  const currency = oneOf(String(b.currency || "UAH").toUpperCase(), ["UAH", "USD", "EUR"], "UAH");
+  const costOriginal = currency === "UAH" ? null : positiveNumber(b.costOriginal ?? b.cost);
   const cost =
     currency === "UAH"
       ? positiveNumber(b.cost)
@@ -341,15 +312,13 @@ export function normalizeItemInput(b) {
   };
 }
 
-
 export function recomputeForeignCurrencyCosts() {
   const rows = stmt.nonUahItems.all();
   const update = db.transaction(() => {
     for (const row of rows) {
       const original = Number(row.cost_original) || 0;
       if (original <= 0) continue;
-      const cost =
-        Math.round(original * rateForCurrency(row.currency) * 100) / 100;
+      const cost = Math.round(original * rateForCurrency(row.currency) * 100) / 100;
       stmt.updateItemCostBand.run({ id: row.id, cost, band: bandForCost(cost) });
       // Цель накопления привязана к цене — пересчитываем target вместе с курсом.
       const goal = stmt.goalByItem.get(row.id);
@@ -369,11 +338,9 @@ export function recomputeForeignCurrencyCosts() {
   return rows.length;
 }
 
-
 export function customIds() {
   return getJSON("custom_include", null);
 }
-
 
 export function rawInvestmentAssets() {
   return stmt.allAssets.all().map((a) => ({
@@ -412,7 +379,6 @@ export function rawAssetValuations() {
   }));
 }
 
-
 export function goalContributionsWithItems() {
   const goals = stmt.allGoals.all();
   const goalItem = new Map(goals.map((g) => [g.id, g.item_id]));
@@ -440,7 +406,6 @@ export function exportPayload() {
   };
 }
 
-
 export function metaPayload() {
   return {
     categories: CATEGORIES,
@@ -461,4 +426,3 @@ export function metaPayload() {
     push: { enabled: true, publicKey: getVapidKeys().publicKey },
   };
 }
-

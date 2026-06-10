@@ -4,9 +4,7 @@ import { getSetting, setSetting } from "./db.js";
 
 const SECRET =
   process.env.SESSION_SECRET ||
-  (process.env.NODE_ENV === "production"
-    ? ""
-    : "dev-insecure-secret-change-me");
+  (process.env.NODE_ENV === "production" ? "" : "dev-insecure-secret-change-me");
 if (!SECRET) {
   throw new Error("SESSION_SECRET is required in production");
 }

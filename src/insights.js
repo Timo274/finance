@@ -105,7 +105,9 @@ export function buildDecisionInsights(plan, items, allocation, options = {}) {
     .map(({ item, reason }) => ({ ...compactItem(item, today), reason }));
 
   const postpone = deferredRanked
-    .filter(({ item }) => item.type !== "must" && item.canDefer !== false && !approvedIds.has(item.id))
+    .filter(
+      ({ item }) => item.type !== "must" && item.canDefer !== false && !approvedIds.has(item.id),
+    )
     .slice(0, 4)
     .map(({ item, reason }) => ({ ...compactItem(item, today), reason }));
 
@@ -135,18 +137,33 @@ export function buildDecisionInsights(plan, items, allocation, options = {}) {
 
   const actions = [];
   if (remaining < 0) {
-    actions.push({ tone: "danger", text: `Освободи минимум ${Math.abs(Math.round(remaining)).toLocaleString("ru-RU")} грн из желаний.` });
+    actions.push({
+      tone: "danger",
+      text: `Освободи минимум ${Math.abs(Math.round(remaining)).toLocaleString("ru-RU")} грн из желаний.`,
+    });
   } else if (remaining > 0) {
-    actions.push({ tone: "good", text: `Оставь ${Math.round(remaining).toLocaleString("ru-RU")} грн свободными или докинь в цель.` });
+    actions.push({
+      tone: "good",
+      text: `Оставь ${Math.round(remaining).toLocaleString("ru-RU")} грн свободными или докинь в цель.`,
+    });
   }
   if (urgentDeferred[0]) {
-    actions.push({ tone: "warn", text: `Проверь срочное: «${urgentDeferred[0].title}» — ${urgentDeferred[0].reason}.` });
+    actions.push({
+      tone: "warn",
+      text: `Проверь срочное: «${urgentDeferred[0].title}» — ${urgentDeferred[0].reason}.`,
+    });
   }
   if (largestLeakage[0]) {
-    actions.push({ tone: "neutral", text: `Самая крупная утечка: «${largestLeakage[0].title}» на ${Math.round(largestLeakage[0].remainingCost).toLocaleString("ru-RU")} грн.` });
+    actions.push({
+      tone: "neutral",
+      text: `Самая крупная утечка: «${largestLeakage[0].title}» на ${Math.round(largestLeakage[0].remainingCost).toLocaleString("ru-RU")} грн.`,
+    });
   }
   if (!actions.length) {
-    actions.push({ tone: "neutral", text: "Очередь спокойная: добавь желание или закрой месяц в истории." });
+    actions.push({
+      tone: "neutral",
+      text: "Очередь спокойная: добавь желание или закрой месяц в истории.",
+    });
   }
 
   return {

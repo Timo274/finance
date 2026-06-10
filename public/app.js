@@ -358,7 +358,7 @@ function drawLine(canvas, points, opts = {}) {
   pts.forEach((p, i) => {
     ctx.beginPath();
     ctx.arc(p.x, p.y, 3.2, 0, Math.PI * 2);
-    ctx.fillStyle = points[i].value < 0 ? cssVar("--red", "#e44") : accent;
+    ctx.fillStyle = points[i].value < 0 ? cssVar("--color-risk", "#e44") : accent;
     ctx.fill();
     ctx.strokeStyle = cssVar("--panel", "#fff");
     ctx.lineWidth = 1.5;
@@ -419,9 +419,9 @@ function drawCharts() {
   if (donut && state.allocation) {
     const t = state.allocation.totals;
     const segs = [
-      { value: t.survival, color: "#64708f" },
+      { value: t.survival, color: cssVar("--layer-base", "#64708f") },
       { value: t.reserve, color: cssVar("--accent", "#2f6bff") },
-      { value: t.fixedInvestment, color: cssVar("--green", "#16a34a") },
+      { value: t.fixedInvestment, color: cssVar("--color-positive", "#16a34a") },
     ];
     Object.entries(committedBuckets())
       .filter(([, v]) => v > 0)
@@ -1351,21 +1351,21 @@ function allocationLayerCard(t, segs, stablePct) {
       </div>
 
       <div class="legend legend-col allocation-legend">
-        <span><span class="dot" style="background:#64708f"></span>Обязательные <b>${fmt(t.survival)}</b></span>
+        <span><span class="dot" style="background:var(--layer-base)"></span>Обязательные <b>${fmt(t.survival)}</b></span>
         <span><span class="dot" style="background:var(--accent)"></span>Страховка <b>${fmt(t.reserve)}</b></span>
-        <span><span class="dot" style="background:var(--green)"></span>Инвестиции <b>${fmt(t.fixedInvestment)}</b></span>
+        <span><span class="dot" style="background:var(--color-positive)"></span>Инвестиции <b>${fmt(t.fixedInvestment)}</b></span>
         ${layerRows}
         <span><span class="dot" style="background:var(--border)"></span>Останется <b>${fmt(remaining)}</b></span>
       </div>
     </div>
 
     <div class="alloc-bar allocation-main-bar" aria-label="Полоса распределения зарплаты">
-      <div class="alloc-seg" style="width:${stablePct(t.survival)}%;background:#64708f" title="Обязательные"></div>
+      <div class="alloc-seg" style="width:${stablePct(t.survival)}%;background:var(--layer-base)" title="Обязательные"></div>
       <div class="alloc-seg" style="width:${stablePct(t.reserve)}%;background:var(--accent)" title="Страховка"></div>
-      <div class="alloc-seg" style="width:${stablePct(t.fixedInvestment)}%;background:var(--green)" title="Инвестиции"></div>${segs}
+      <div class="alloc-seg" style="width:${stablePct(t.fixedInvestment)}%;background:var(--color-positive)" title="Инвестиции"></div>${segs}
     </div>
     <div class="allocation-axis"><span>обязательное</span><span>защита</span><span>рост</span><span>желания</span><span>остаток</span></div>
-    ${t.status === "overallocated" ? `<div class="tradeoff" style="background:color-mix(in srgb,var(--red) 10%,transparent);border-color:var(--red)"><b style="color:var(--red)">${overallocTitle(t)}</b> ${overallocText(t)}</div>` : ""}
+    ${t.status === "overallocated" ? `<div class="tradeoff" style="background:color-mix(in srgb,var(--color-risk) 10%,transparent);border-color:var(--color-risk)"><b style="color:var(--color-risk)">${overallocTitle(t)}</b> ${overallocText(t)}</div>` : ""}
   </section>`;
 }
 
@@ -1765,14 +1765,14 @@ function viewInvestments() {
     </div>
     <div class="investment-pulse-bar"><div style="width:${st.monthlyTarget ? st.monthlyProgress : 8}%"></div></div>
   </section>
-  <div class="chip-row investment-tabs" style="margin-bottom:14px">${tabBtns}</div>
+  <div class="chip-row investment-tabs mb-14">${tabBtns}</div>
   <div id="investContent">${content}</div>`;
 }
 function investOverview(p) {
   if (!p || !p.assets.length)
     return `<div class="investment-empty-grid">
       ${richEmpty("↗", "Портфель пока пустой", "Добавьте первый актив, чтобы отслеживать вложения, текущую стоимость и прибыль/убыток.", "add-asset", "+ Добавить актив")}
-      <div class="card pad-lg investment-guide"><div class="section-title" style="margin-top:0">Как лучше заполнить</div>
+      <div class="card pad-lg investment-guide"><div class="section-title mt-0">Как лучше заполнить</div>
         <ol>
           <li><b>Актив</b> — название, тип и тикер для автоцен.</li>
           <li><b>Операция</b> — покупка или продажа в гривнах.</li>
@@ -1785,7 +1785,7 @@ function investOverview(p) {
   const pnlClass = total.totalPnL >= 0 ? "green-num" : "red-num";
   // Стрелка дублирует цвет — важно для дальтоников (аудит 6.1/10.4).
   const pnlBadge = st.pnlPct != null
-    ? `<span style="color:${total.totalPnL >= 0 ? "var(--green)" : "var(--red)"};font-size:14px;font-weight:800">${total.totalPnL >= 0 ? "▲" : "▼"} ${signedPct(st.pnlPct)}</span>`
+    ? `<span style="color:${total.totalPnL >= 0 ? "var(--color-positive)" : "var(--color-risk)"};font-size:14px;font-weight:800">${total.totalPnL >= 0 ? "▲" : "▼"} ${signedPct(st.pnlPct)}</span>`
     : "";
   const insights = investmentInsights(p)
     .map((tip) => `<div class="investment-tip ${tip.tone}">
@@ -1806,7 +1806,7 @@ function investOverview(p) {
     .join("");
   const chartHtml = st.valuations.length
     ? `<div class="card pad-lg"><div class="stat-label">Динамика портфеля по месяцам</div><canvas id="portChart" class="chart-line"></canvas></div>`
-    : `<div class="card pad-lg investment-guide"><div class="section-title" style="margin-top:0">Динамика появится после оценок</div><p class="muted">Добавляйте одну оценку стоимости активов в месяц — здесь будет график портфеля.</p><button class="btn btn-outline btn-sm" data-act="add-valuation">+ Оценка</button></div>`;
+    : `<div class="card pad-lg investment-guide"><div class="section-title mt-0">Динамика появится после оценок</div><p class="muted">Добавляйте одну оценку стоимости активов в месяц — здесь будет график портфеля.</p><button class="btn btn-outline btn-sm" data-act="add-valuation">+ Оценка</button></div>`;
   return `
   <div class="grid cards investment-kpis">
     <div class="card"><div class="stat-label"><span class="stat-ico">💼</span> Стоимость портфеля</div><div class="stat-value">${fmt(total.totalValue)}</div><div class="stat-sub">${fmtUsd(total.totalValue)} · ${p.assets.length} активов</div></div>
@@ -1816,12 +1816,12 @@ function investOverview(p) {
   </div>
   <div class="investment-layout">
     <div class="investment-left">
-      <div class="card pad-lg"><div class="row-between"><div class="section-title" style="margin:0">Следующие действия</div><button class="btn btn-sm btn-outline" data-act="refresh-prices">🔄 Обновить цены</button></div><div class="investment-tips">${insights}</div></div>
+      <div class="card pad-lg"><div class="row-between"><div class="section-title m-0">Следующие действия</div><button class="btn btn-sm btn-outline" data-act="refresh-prices">🔄 Обновить цены</button></div><div class="investment-tips">${insights}</div></div>
       ${chartHtml}
     </div>
     <div class="investment-right">
-      <div class="card pad-lg"><div class="section-title" style="margin-top:0">Аллокация по типам</div>${typeRows || '<p class="muted">Нет стоимости по типам.</p>'}</div>
-      <div class="card pad-lg"><div class="row-between"><div class="section-title" style="margin:0">Крупнейшие позиции</div><button class="btn btn-sm btn-outline" data-act="set-inv-tab" data-inv-target="assets">Все</button></div><div class="investment-mini-list">${assetRows}</div></div>
+      <div class="card pad-lg"><div class="section-title mt-0">Аллокация по типам</div>${typeRows || '<p class="muted">Нет стоимости по типам.</p>'}</div>
+      <div class="card pad-lg"><div class="row-between"><div class="section-title m-0">Крупнейшие позиции</div><button class="btn btn-sm btn-outline" data-act="set-inv-tab" data-inv-target="assets">Все</button></div><div class="investment-mini-list">${assetRows}</div></div>
     </div>
   </div>`;
 }
@@ -1845,8 +1845,8 @@ function investAssets(p) {
         })
         .join("")
     : "";
-  return `<div class="card pad-lg"><div class="row-between"><div><div class="section-title" style="margin:0">Активы</div><p class="muted small" style="margin:4px 0 0">Доля, P/L, количество и дата последней оценки по каждой позиции.</p></div><button class="btn btn-primary btn-sm" data-act="add-asset">+ Актив</button></div>
-    <div style="margin-top:14px">${rows || richEmpty("↗", "Нет активов", "Добавьте первый актив, затем покупки и оценки стоимости.", "add-asset", "+ Актив")}</div></div>`;
+  return `<div class="card pad-lg"><div class="row-between"><div><div class="section-title m-0">Активы</div><p class="muted small mt-4-clear">Доля, P/L, количество и дата последней оценки по каждой позиции.</p></div><button class="btn btn-primary btn-sm" data-act="add-asset">+ Актив</button></div>
+    <div class="mt-14">${rows || richEmpty("↗", "Нет активов", "Добавьте первый актив, затем покупки и оценки стоимости.", "add-asset", "+ Актив")}</div></div>`;
 }
 function investTransactions(p) {
   if (!p?.assets?.length) return richEmpty("↗", "Сначала нужен актив", "Операции привязываются к активу — добавьте ETF, акцию, крипту или депозит.", "add-asset", "+ Актив");
@@ -1866,8 +1866,8 @@ function investTransactions(p) {
         .join("")
     : "";
   const monthTotal = investmentStats(p).monthlyBuy;
-  return `<div class="card pad-lg"><div class="row-between"><div><div class="section-title" style="margin:0">Операции покупки/продажи</div><p class="muted small" style="margin:4px 0 0">Покупки за текущий месяц: ${fmt(monthTotal)}</p></div><button class="btn btn-primary btn-sm" data-act="add-tx">+ Операция</button></div>
-    <div style="margin-top:14px">${rows || '<p class="muted">Нет операций.</p>'}</div></div>`;
+  return `<div class="card pad-lg"><div class="row-between"><div><div class="section-title m-0">Операции покупки/продажи</div><p class="muted small mt-4-clear">Покупки за текущий месяц: ${fmt(monthTotal)}</p></div><button class="btn btn-primary btn-sm" data-act="add-tx">+ Операция</button></div>
+    <div class="mt-14">${rows || '<p class="muted">Нет операций.</p>'}</div></div>`;
 }
 function investValuations(p) {
   if (!p?.assets?.length) return richEmpty("↗", "Сначала нужен актив", "Оценки показывают текущую стоимость активов и строят график портфеля.", "add-asset", "+ Актив");
@@ -1883,8 +1883,8 @@ function investValuations(p) {
         })
         .join("")
     : "";
-  return `<div class="card pad-lg"><div class="row-between"><div><div class="section-title" style="margin:0">Ежемесячные оценки</div><p class="muted small" style="margin:4px 0 0">Одна актуальная оценка в месяц делает P/L и график полезными.</p></div><button class="btn btn-primary btn-sm" data-act="add-valuation">+ Оценка</button></div>
-    <div style="margin-top:14px">${rows || '<p class="muted">Добавьте оценку стоимости актива.</p>'}</div></div>`;
+  return `<div class="card pad-lg"><div class="row-between"><div><div class="section-title m-0">Ежемесячные оценки</div><p class="muted small mt-4-clear">Одна актуальная оценка в месяц делает P/L и график полезными.</p></div><button class="btn btn-primary btn-sm" data-act="add-valuation">+ Оценка</button></div>
+    <div class="mt-14">${rows || '<p class="muted">Добавьте оценку стоимости актива.</p>'}</div></div>`;
 }
 
 function viewWallets() {
@@ -1908,7 +1908,7 @@ function viewWallets() {
     <div class="card"><div class="stat-label">Излишки после стабильных пунктов</div><div class="stat-value sm">${fmt(available)}</div><div class="stat-sub">${total > available ? "кошельки выше излишков" : "в пределах излишков"}</div></div>
     <div class="card"><div class="stat-label">Свободно из излишков</div><div class="stat-value sm ${remainingSurplus() < 0 ? "red-num" : ""}">${fmt(remainingSurplus())}</div><div class="stat-sub">та же формула, что в кабинете и плане</div></div>
   </div>
-  <div class="card pad-lg" style="margin-top:16px"><div class="section-title" style="margin-top:0">Карманы</div>${rows || richEmpty("◫", "Кошельков ещё нет", "Создайте карманы для еды, транспорта, инвестиций и свободных трат — так остаток не смешивается.", "add-wallet", "+ Кошелёк")}</div>`;
+  <div class="card pad-lg" style="margin-top:16px"><div class="section-title mt-0">Карманы</div>${rows || richEmpty("◫", "Кошельков ещё нет", "Создайте карманы для еды, транспорта, инвестиций и свободных трат — так остаток не смешивается.", "add-wallet", "+ Кошелёк")}</div>`;
 }
 
 function viewPlan() {
@@ -1934,15 +1934,15 @@ function viewPlan() {
   return `
   <div class="view-head row-between">
     <div><h1>План распределения</h1><p>Распределяйте только излишки после обязательных расходов, страховки и инвестиций; авто-план остаётся подсказкой рядом.</p></div>
-    <div style="display:flex;gap:8px"><button class="btn btn-ghost" data-act="what-if">Что если…</button>
+    <div class="row-gap-8"><button class="btn btn-ghost" data-act="what-if">Что если…</button>
     <button class="btn btn-outline" data-act="close-month">Закрыть месяц</button></div>
   </div>
-  ${state.meta?.monobank?.enabled ? `<div class="card pad-lg" style="margin-bottom:16px" id="monoCard"><div class="row-between"><div class="section-title" style="margin:0">План vs факт (Monobank)</div><button class="btn btn-sm btn-outline" data-act="load-mono">Показать</button></div><div id="monoBody"></div></div>` : ""}
-  <div class="card pad-lg" style="margin-bottom:16px">
-    <div class="row-between"><div><div class="section-title" style="margin:0">Ручной план</div><p class="muted small" style="margin:4px 0 0">Введите, сколько отправить на каждое желание в этом месяце.</p></div>
+  ${state.meta?.monobank?.enabled ? `<div class="card pad-lg mb-16" id="monoCard"><div class="row-between"><div class="section-title m-0">План vs факт (Monobank)</div><button class="btn btn-sm btn-outline" data-act="load-mono">Показать</button></div><div id="monoBody"></div></div>` : ""}
+  <div class="card pad-lg mb-16">
+    <div class="row-between"><div><div class="section-title m-0">Ручной план</div><p class="muted small mt-4-clear">Введите, сколько отправить на каждое желание в этом месяце.</p></div>
       <div><div class="stat-value sm ${planned > available ? "red-num" : "green-num"}" data-manual-total>${fmt(planned)}</div><div class="muted small">из ${fmt(available)}</div></div></div>
     <div class="manual-list">${manualRows || richEmpty("🎯", "Пока нечего распределять", "Добавьте желания в очередь — здесь появится ручной план распределения излишков.", "add-item", "+ Добавить желание")}</div>
-    <div class="row-between" style="margin-top:12px">
+    <div class="row-between mt-12">
       <span class="${remainingSurplus() < 0 ? "red-num" : "muted"}" data-manual-remaining>${remainingSurplus() < 0 ? "План выше доступного бюджета" : `Свободно ещё ${fmt(remainingSurplus())}${planned > 0 ? "" : " (авто-распределение)"}`}</span>
       <button class="btn btn-primary" data-act="save-manual-plan">Сохранить ручной план</button>
     </div>
@@ -1953,14 +1953,14 @@ function viewPlan() {
 // Кошельки участвуют в распределении, поэтому видны прямо на «Плане» (аудит 2.4).
 function planWalletsStrip() {
   if (!state.wallets.length)
-    return `<div class="card pad-lg plan-wallets"><div class="row-between"><div><div class="section-title" style="margin:0">Кошельки месяца</div><p class="muted small" style="margin:4px 0 0">Карманов пока нет — заведите их, чтобы видеть, где лежат деньги месяца.</p></div><button class="btn btn-outline btn-sm" data-act="go-view" data-target-view="wallets">Открыть кошельки</button></div></div>`;
+    return `<div class="card pad-lg plan-wallets"><div class="row-between"><div><div class="section-title m-0">Кошельки месяца</div><p class="muted small mt-4-clear">Карманов пока нет — заведите их, чтобы видеть, где лежат деньги месяца.</p></div><button class="btn btn-outline btn-sm" data-act="go-view" data-target-view="wallets">Открыть кошельки</button></div></div>`;
   const total = state.wallets.reduce((sum, w) => sum + Number(w.amount || 0), 0);
   const chips = state.wallets
     .slice(0, 6)
     .map((w) => `<div class="stat-chip"><span>${escapeHtml(w.name)}</span><b>${fmt(Number(w.amount || 0))}</b></div>`)
     .join("");
   return `<div class="card pad-lg plan-wallets">
-    <div class="row-between"><div><div class="section-title" style="margin:0">Кошельки месяца</div><p class="muted small" style="margin:4px 0 0">Всего по карманам: <b>${fmt(total)}</b></p></div>
+    <div class="row-between"><div><div class="section-title m-0">Кошельки месяца</div><p class="muted small mt-4-clear">Всего по карманам: <b>${fmt(total)}</b></p></div>
     <button class="btn btn-outline btn-sm" data-act="go-view" data-target-view="wallets">Открыть кошельки</button></div>
     <div class="stat-chips" style="margin:10px 0 0">${chips}</div>
   </div>`;
@@ -1969,13 +1969,13 @@ function planWalletsStrip() {
 function viewMore() {
   return `<div class="view-head"><h1>Ещё</h1><p>Редкие разделы и настройки собраны здесь, чтобы нижняя навигация не перегружала телефон.</p></div>
     <div class="more-grid">
-      <button class="card more-tile" data-act="go-view" data-target-view="wallets"><span>◫</span><b>Кошельки</b><p>Карманы текущего месяца</p></button>
-      <button class="card more-tile" data-act="go-view" data-target-view="history"><span>↺</span><b>История</b><p>Закрытые месяцы и решения</p></button>
-      <button class="card more-tile" data-act="go-view" data-target-view="assistant"><span>✦</span><b>AI-ассистент</b><p>Пояснения и компромиссы</p></button>
-      <button class="card more-tile" data-act="open-plan"><span>✎</span><b>Настройки плана</b><p>Зарплата, расходы, резерв</p></button>
-      <button class="card more-tile" data-act="go-view" data-target-view="settings"><span>⚙</span><b>Настройки</b><p>Безопасность, валюты, данные</p></button>
-      <button class="card more-tile" data-act="toggle-theme"><span>◐</span><b>Тема</b><p>Светлая / тёмная / авто</p></button>
-      <button class="card more-tile danger" id="logoutBtnMobileMore" type="button"><span>⏻</span><b>Выйти</b><p>Завершить сессию</p></button>
+      <button class="card more-tile" data-act="go-view" data-target-view="wallets"><span class="tile-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-wallet"/></svg></span><b>Кошельки</b><p>Карманы текущего месяца</p></button>
+      <button class="card more-tile" data-act="go-view" data-target-view="history"><span class="tile-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-history"/></svg></span><b>История</b><p>Закрытые месяцы и решения</p></button>
+      <button class="card more-tile" data-act="go-view" data-target-view="assistant"><span class="tile-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-spark"/></svg></span><b>AI-ассистент</b><p>Пояснения и компромиссы</p></button>
+      <button class="card more-tile" data-act="open-plan"><span class="tile-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-pencil"/></svg></span><b>Настройки плана</b><p>Зарплата, расходы, резерв</p></button>
+      <button class="card more-tile" data-act="go-view" data-target-view="settings"><span class="tile-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-gear"/></svg></span><b>Настройки</b><p>Безопасность, валюты, данные</p></button>
+      <button class="card more-tile" data-act="toggle-theme"><span class="tile-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-theme"/></svg></span><b>Тема</b><p>Светлая / тёмная / авто</p></button>
+      <button class="card more-tile danger" id="logoutBtnMobileMore" type="button"><span class="tile-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-power"/></svg></span><b>Выйти</b><p>Завершить сессию</p></button>
     </div>`;
 }
 
@@ -2011,9 +2011,9 @@ function viewHistory() {
       100;
     const best = months.reduce((a, b) => (b.remaining > a.remaining ? b : a));
     const worst = months.reduce((a, b) => (b.remaining < a.remaining ? b : a));
-    summaryBlock = `<div class="card pad-lg" style="margin-bottom:16px">
-      <div class="section-title" style="margin-top:0">Итоги за ${months.length} мес.</div>
-      <div class="grid cards" style="margin-top:10px">
+    summaryBlock = `<div class="card pad-lg mb-16">
+      <div class="section-title mt-0">Итоги за ${months.length} мес.</div>
+      <div class="grid cards mt-10">
         <div class="card"><div class="stat-label">Средний остаток</div><div class="stat-value sm ${avgRemaining < 0 ? "red-num" : "green-num"}">${fmt(Math.round(avgRemaining))}</div></div>
         <div class="card"><div class="stat-label">Распределяется в среднем</div><div class="stat-value sm">${Math.round(avgWishShare)}%</div><div class="stat-sub">от зарплаты</div></div>
         <div class="card"><div class="stat-label">Лучший месяц</div><div class="stat-value sm green-num">${fmt(best.remaining)}</div><div class="stat-sub">${escapeHtml(best.name)}</div></div>
@@ -2023,29 +2023,29 @@ function viewHistory() {
   }
   return `<div class="view-head row-between">
     <div><h1>История решений</h1><p>Что ты решал в прошлые месяцы: купленное, отложенное, остаток.</p></div>
-    <div style="display:flex;gap:8px">${years.map((y) => `<button class="btn btn-outline btn-sm" data-act="year-report" data-year="${y}">Отчёт ${y} CSV</button>`).join("")}</div>
+    <div class="row-gap-8">${years.map((y) => `<button class="btn btn-outline btn-sm" data-act="year-report" data-year="${y}">Отчёт ${y} CSV</button>`).join("")}</div>
   </div>
   ${summaryBlock}
-  <div class="grid cards" style="margin-bottom:16px">
-    <div class="card pad-lg"><div class="section-title" style="margin-top:0">Портфель по оценкам</div><canvas id="nwChart" height="160"></canvas><p class="muted small" id="nwHint"></p></div>
-    <div class="card pad-lg"><div class="section-title" style="margin-top:0">Свободный остаток по месяцам</div><canvas id="monthChart" height="160"></canvas><p class="muted small" id="monthHint"></p></div>
+  <div class="grid cards mb-16">
+    <div class="card pad-lg"><div class="section-title mt-0">Портфель по оценкам</div><canvas id="nwChart" height="160"></canvas><p class="muted small" id="nwHint"></p></div>
+    <div class="card pad-lg"><div class="section-title mt-0">Свободный остаток по месяцам</div><canvas id="monthChart" height="160"></canvas><p class="muted small" id="monthHint"></p></div>
   </div>
     ${state.history
       .map((h) => {
         const s = h.snapshot || {};
         const t = s.totals || {};
-        return `<div class="card pad-lg" style="margin-bottom:14px">
+        return `<div class="card pad-lg mb-14">
         <div class="row-between"><div><b>${escapeHtml(h.name)}</b> <span class="muted small">· зарплата ${fmtDate(h.payday)} · закрыт ${fmtDate(h.closedAt)}</span></div>
           <span class="status-badge status-${t.status || "safe"}">${STATUS_LABELS[t.status] || ""}</span></div>
-        <div class="grid cards" style="margin-top:12px">
+        <div class="grid cards mt-12">
           <div class="card"><div class="stat-label">Зарплата</div><div class="stat-value sm">${fmt(t.salary || h.salary)}</div></div>
           <div class="card"><div class="stat-label">Распределено</div><div class="stat-value sm">${fmt(t.allocated)}</div></div>
           <div class="card"><div class="stat-label">Осталось</div><div class="stat-value sm green-num">${fmt(t.remaining)}</div></div>
         </div>
-        <div style="margin-top:12px"><span class="muted small">Куплено:</span> ${(s.approved || []).filter((x) => x.purchased !== false).map((x) => escapeHtml(x.title)).join(", ") || "—"}</div>
-        ${(s.approved || []).some((x) => x.purchased === false) ? `<div style="margin-top:6px"><span class="muted small">Не куплено (ушло в накопление):</span> ${(s.approved || []).filter((x) => x.purchased === false).map((x) => escapeHtml(x.title)).join(", ")}</div>` : ""}
-        <div style="margin-top:6px"><span class="muted small">Отложено:</span> ${(s.deferred || []).map((x) => escapeHtml(x.title)).join(", ") || "—"}</div>
-        ${state.meta?.ai?.enabled ? `<div style="margin-top:10px"><button class="btn btn-ghost btn-sm" data-act="month-review" data-id="${h.id}">✦ AI-разбор месяца</button></div>` : ""}
+        <div class="mt-12"><span class="muted small">Куплено:</span> ${(s.approved || []).filter((x) => x.purchased !== false).map((x) => escapeHtml(x.title)).join(", ") || "—"}</div>
+        ${(s.approved || []).some((x) => x.purchased === false) ? `<div class="mt-6"><span class="muted small">Не куплено (ушло в накопление):</span> ${(s.approved || []).filter((x) => x.purchased === false).map((x) => escapeHtml(x.title)).join(", ")}</div>` : ""}
+        <div class="mt-6"><span class="muted small">Отложено:</span> ${(s.deferred || []).map((x) => escapeHtml(x.title)).join(", ") || "—"}</div>
+        ${state.meta?.ai?.enabled ? `<div class="mt-10"><button class="btn btn-ghost btn-sm" data-act="month-review" data-id="${h.id}">✦ AI-разбор месяца</button></div>` : ""}
       </div>`;
       })
       .join("")}`;
@@ -2094,7 +2094,7 @@ function md(text) {
 function viewAssistant() {
   const enabled = state.meta?.ai?.enabled;
   return `<div class="view-head"><h1>AI-ассистент</h1><p>Советует, что купить первым, что отложить, и поясняет компромиссы на основе твоего плана.</p></div>
-  ${!enabled ? `<div class="tradeoff" style="background:rgba(245,177,61,.1);border-color:var(--amber)"><b style="color:var(--amber)">AI выключен.</b> Добавьте AI_PROVIDER и AI_API_KEY в окружение сервера, чтобы включить ассистента. Остальное приложение работает без него.</div>` : ""}
+  ${!enabled ? `<div class="tradeoff" style="background:rgba(245,177,61,.1);border-color:var(--color-warning)"><b style="color:var(--color-warning)">AI выключен.</b> Добавьте AI_PROVIDER и AI_API_KEY в окружение сервера, чтобы включить ассистента. Остальное приложение работает без него.</div>` : ""}
   ${enabled ? `<div class="tradeoff"><b>Приватность:</b> вопросы и краткий контекст плана (суммы, покупки, кошельки, портфель) отправляются выбранному AI-провайдеру. Не пишите PIN, ключи или другие секреты.</div>` : ""}
   <div class="chat" id="assistantRoot">
     <div class="chip-row">
@@ -2593,16 +2593,16 @@ async function closeMonth() {
       (a) => `<label class="wallet-row" style="cursor:pointer">
         <div><b>${escapeHtml(a.title)}</b>
           <div class="muted small">${fmt(a.allocatedAmount)} из ${fmt(a.cost)}${a.recurring ? " · 🔁 регулярное" : ""}${a.fullyFunded ? "" : " · накоплено не всё"}</div></div>
-        <input type="checkbox" class="close-purchase" data-id="${a.itemId}" ${a.fullyFunded ? "checked" : ""} style="width:20px;height:20px;accent-color:var(--accent)" />
+        <input type="checkbox" class="close-purchase check-20" data-id="${a.itemId}" ${a.fullyFunded ? "checked" : ""} />
       </label>`,
     )
     .join("");
   openModal(`<div class="modal narrow">
     <div class="modal-head"><h2>Закрыть месяц</h2><button class="close-x" data-close-modal>×</button></div>
     <p class="muted small">Отметь, что реально куплено. Неотмеченное останется в очереди, а выделенные на него деньги превратятся в накопление. Отложенных желаний: ${preview.deferredCount}.</p>
-    <p class="small" style="color:var(--amber)">⚠️ Закрытие месяца необратимо: план уйдёт в историю, а текущие распределения зафиксируются.</p>
+    <p class="small" style="color:var(--color-warning)">⚠️ Закрытие месяца необратимо: план уйдёт в историю, а текущие распределения зафиксируются.</p>
     <div>${rows || '<p class="muted">В этом месяце ничего не было одобрено.</p>'}</div>
-    <div class="modal-foot" style="margin-top:14px">
+    <div class="modal-foot mt-14">
       <button type="button" class="btn btn-ghost" data-close-modal>Отмена</button>
       <button type="button" class="btn btn-primary" id="confirmCloseBtn">Закрыть месяц</button>
     </div>
@@ -2643,7 +2643,7 @@ function openSimulatorModal() {
   const p = state.plan;
   if (!p) return toast("Сначала настройте план");
   const slider = (name, label, value, max) => `<div class="field full"><label>${label}: <b data-sim-val="${name}">${fmtShort(value)}</b> грн</label>
-    <input type="range" data-sim="${name}" min="0" max="${max}" step="100" value="${value}" style="width:100%" /></div>`;
+    <input type="range" data-sim="${name}" min="0" max="${max}" step="100" value="${value} w-full" /></div>`;
   openModal(`<div class="modal narrow">
     <div class="modal-head"><h2>Что если…</h2><button class="close-x" data-close-modal>×</button></div>
     <p class="muted small">Виртуальный расчёт — ничего не сохраняется.</p>
@@ -2653,7 +2653,7 @@ function openSimulatorModal() {
       ${slider("buffer", "Страховка", p.buffer || 0, Math.max(20000, (p.salary || 0)))}
       ${slider("investmentFixed", "Инвестиции", p.investmentFixed || 0, Math.max(20000, (p.salary || 0)))}
     </div>
-    <div id="simResult" style="margin-top:12px"><p class="muted small">Двигайте ползунки…</p></div>
+    <div id="simResult mt-12"><p class="muted small">Двигайте ползунки…</p></div>
     <div class="modal-foot"><button type="button" class="btn btn-ghost" data-close-modal>Закрыть</button></div>
   </div>`);
   let timer = null;
@@ -2669,8 +2669,8 @@ function openSimulatorModal() {
         <div class="card"><div class="stat-label">На желания</div><div class="stat-value sm">${fmt(t.availableToAllocate)}</div></div>
         <div class="card"><div class="stat-label">Остаток</div><div class="stat-value sm ${t.remaining < 0 ? "red-num" : "green-num"}">${fmt(t.remaining)}</div></div>
       </div>
-      <div style="margin-top:10px"><span class="muted small">Купится:</span> ${(allocation.approved || []).map((a) => escapeHtml(a.item.title)).join(", ") || "—"}</div>
-      <div style="margin-top:6px"><span class="muted small">Отложится:</span> ${(allocation.deferred || []).map((d) => escapeHtml(d.item.title)).join(", ") || "—"}</div>`;
+      <div class="mt-10"><span class="muted small">Купится:</span> ${(allocation.approved || []).map((a) => escapeHtml(a.item.title)).join(", ") || "—"}</div>
+      <div class="mt-6"><span class="muted small">Отложится:</span> ${(allocation.deferred || []).map((d) => escapeHtml(d.item.title)).join(", ") || "—"}</div>`;
     } catch {}
   }
   $$("[data-sim]").forEach((el) =>
@@ -2801,13 +2801,13 @@ async function loadMonobankSummary(btn) {
     }
     const plannedSpend = Number(s.plan?.survivalCost) || 0;
     const diff = (s.totals?.spent || 0) - plannedSpend;
-    box.innerHTML = `<div class="grid cards" style="margin-top:12px">
+    box.innerHTML = `<div class="grid cards mt-12">
       <div class="card"><div class="stat-label">Потрачено (${s.month})</div><div class="stat-value sm">${fmt(s.totals?.spent)}</div></div>
       <div class="card"><div class="stat-label">План обязательных</div><div class="stat-value sm">${fmt(plannedSpend)}</div></div>
       <div class="card"><div class="stat-label">Разница</div><div class="stat-value sm ${diff > 0 ? "red-num" : "green-num"}">${diff > 0 ? "+" : ""}${fmtShort(diff)} грн</div></div>
     </div>
-    <div style="margin-top:10px"><span class="muted small">Топ категорий:</span> ${(s.topCategories || []).map((c) => `${escapeHtml(c.label)} ${fmtShort(c.amount)}`).join(" · ") || "—"}</div>
-    ${s.biggest?.length ? `<div style="margin-top:6px"><span class="muted small">Самая крупная трата:</span> ${escapeHtml(s.biggest[0].description || "")} — ${fmt(s.biggest[0].amount)}</div>` : ""}`;
+    <div class="mt-10"><span class="muted small">Топ категорий:</span> ${(s.topCategories || []).map((c) => `${escapeHtml(c.label)} ${fmtShort(c.amount)}`).join(" · ") || "—"}</div>
+    ${s.biggest?.length ? `<div class="mt-6"><span class="muted small">Самая крупная трата:</span> ${escapeHtml(s.biggest[0].description || "")} — ${fmt(s.biggest[0].amount)}</div>` : ""}`;
   } catch (ex) {
     const box = $("#monoBody");
     if (box) box.innerHTML = `<p class="muted small">Ошибка Monobank: ${escapeHtml(ex.message)}</p>`;
@@ -2933,7 +2933,7 @@ function openQuickItemModal() {
       <div class="field full"><label>Название</label><input name="title" required /></div>
       <div class="field"><label>Сумма</label><input name="cost" type="number" min="0" required /></div>
       <div class="field"><label>Тип</label><select name="type"><option value="should">Желательно</option><option value="must">Обязательно</option><option value="nice">По желанию</option></select></div>
-      <div class="modal-foot field full" style="flex-direction:row"><button type="button" class="btn btn-ghost" data-close-modal>Отмена</button><button class="btn btn-primary">Добавить</button></div>
+      <div class="modal-foot field full flex-row"><button type="button" class="btn btn-ghost" data-close-modal>Отмена</button><button class="btn btn-primary">Добавить</button></div>
     </form></div>`);
   $("#quickItemForm").addEventListener("submit", quickAddItem);
 }
@@ -2943,7 +2943,7 @@ function viewSettings() {
   return `<div class="view-head"><h1>Настройки</h1><p>Безопасность, валюты, уведомления и данные — каждая группа на своём месте.</p></div>
   <div class="settings-grid">
     <section class="card pad-lg">
-      <div class="section-title" style="margin-top:0">Безопасность</div>
+      <div class="section-title mt-0">Безопасность</div>
       <p class="muted small">PIN — минимум 6 цифр. «Выйти везде» разлогинит все устройства, кроме текущего.</p>
       <div class="settings-actions">
         <button class="btn btn-outline btn-sm" id="changePinBtn">Сменить PIN</button>
@@ -2951,7 +2951,7 @@ function viewSettings() {
       </div>
     </section>
     <section class="card pad-lg">
-      <div class="section-title" style="margin-top:0">Курсы валют (грн)</div>
+      <div class="section-title mt-0">Курсы валют (грн)</div>
       <p class="muted small">Валютные желания пересчитываются автоматически при изменении курса.</p>
       <div class="settings-actions">
         <label class="muted small">USD <input type="number" id="currencyRateInput" class="settings-input" value="${state.currencyRate}" min="1" step="0.1" /></label>
@@ -2961,7 +2961,7 @@ function viewSettings() {
       </div>
     </section>
     <section class="card pad-lg">
-      <div class="section-title" style="margin-top:0">Уведомления</div>
+      <div class="section-title mt-0">Уведомления</div>
       <p class="muted small">День зарплаты, дедлайны желаний, падение цен по ссылкам.</p>
       <div class="settings-actions">
         <button class="btn btn-outline btn-sm" id="pushToggleBtn">…</button>
@@ -2969,14 +2969,14 @@ function viewSettings() {
       </div>
     </section>
     <section class="card pad-lg">
-      <div class="section-title" style="margin-top:0">Оформление</div>
+      <div class="section-title mt-0">Оформление</div>
       <p class="muted small">Тема и палитра. Палитры доступны в меню сверху.</p>
       <div class="settings-actions">
         <button class="btn btn-outline btn-sm" data-act="toggle-theme">Переключить тему</button>
       </div>
     </section>
     <section class="card pad-lg">
-      <div class="section-title" style="margin-top:0">Данные</div>
+      <div class="section-title mt-0">Данные</div>
       <p class="muted small">Экспорт — полный снимок в JSON. Импорт заменяет все данные.</p>
       <div class="settings-actions">
         <button class="btn btn-primary btn-sm" id="exportBtn" type="button">Экспорт JSON</button>
@@ -2988,7 +2988,7 @@ function viewSettings() {
       </div>
     </section>
     <section class="card pad-lg">
-      <div class="section-title" style="margin-top:0">Цели-накопления</div>
+      <div class="section-title mt-0">Цели-накопления</div>
       <p class="muted small">Цели живут в очереди желаний: фильтр «Копится» покажет всё, на что вы откладываете.</p>
       <div class="settings-actions">
         <button class="btn btn-outline btn-sm" data-act="go-view" data-target-view="queue">Открыть очередь</button>
@@ -3089,7 +3089,7 @@ function openChangePinModal() {
       <div class="field full"><label>Текущий PIN</label><input type="password" name="currentPin" inputmode="numeric" autocomplete="current-password" required /></div>
       <div class="field full"><label>Новый PIN (4–12 цифр)</label><input type="password" name="newPin" inputmode="numeric" autocomplete="new-password" minlength="4" maxlength="12" required /></div>
       <div class="field full"><span class="muted small">После смены PIN остальные устройства будут разлогинены.</span></div>
-      <div class="modal-foot field full" style="flex-direction:row">
+      <div class="modal-foot field full flex-row">
         <button type="button" class="btn btn-ghost" data-close-modal>Отмена</button>
         <button type="submit" class="btn btn-primary">Сменить</button>
       </div>
@@ -3135,7 +3135,7 @@ function openPlanModal() {
       <div class="field"><label>Инвестиции, грн</label><input type="number" name="investmentFixed" value="${p.investmentFixed || 0}" min="0" />
         <span class="muted small">стабильно отложить с зарплаты. Сейчас ~${investPct}% от зп</span></div>
       <div class="field full"><span class="muted small">Излишки после этих пунктов пойдут в желания, кошельки и ручной план распределения.</span></div>
-      <div class="modal-foot field full" style="flex-direction:row">
+      <div class="modal-foot field full flex-row">
         <button type="button" class="btn btn-ghost" data-close-modal>Отмена</button>
         <button type="submit" class="btn btn-primary">Сохранить</button>
       </div>
@@ -3171,7 +3171,7 @@ function openSavingsModal(item) {
         <span class="muted small">Запишется в историю взносов отдельной строкой.</span></div>
       <div class="field full"><div class="goal-mini big"><div style="width:${gp.pct}%"></div></div><span class="muted small">${gp.pct}% · осталось ${fmt(gp.left)}</span></div>
       <div class="field full"><div class="section-title" style="margin:6px 0">История взносов</div><div id="contribTimeline"><p class="muted small">Загрузка…</p></div></div>
-      <div class="modal-foot field full" style="flex-direction:row">
+      <div class="modal-foot field full flex-row">
         <button type="button" class="btn btn-ghost" data-close-modal>Отмена</button>
         <button type="submit" class="btn btn-primary">Сохранить</button>
       </div>
@@ -3221,7 +3221,7 @@ function openAssetModal() {
       <div class="field"><label>Тикер (опц.)</label><input name="ticker" placeholder="BTC, AAPL..." /></div>
       <div class="field full"><label>Валюта автоцен</label><select name="currency"><option value="USD">USD — внешние цены конвертировать в грн</option><option value="UAH">UAH — цена уже в гривне</option></select>
         <span class="hint">Покупки и ручные оценки вводите в гривнах; поле нужно для автообновления цен.</span></div>
-      <div class="modal-foot field full" style="flex-direction:row">
+      <div class="modal-foot field full flex-row">
         <button type="button" class="btn btn-ghost" data-close-modal>Отмена</button>
         <button type="submit" class="btn btn-primary">Сохранить</button>
       </div>
@@ -3259,7 +3259,7 @@ function openTxModal() {
       <div class="field"><label>Цена за единицу</label><input type="number" name="price" min="0" step="any" required /></div>
       <div class="field"><label>Комиссия</label><input type="number" name="fee" min="0" step="any" value="0" /></div>
       <div class="field full"><label>Заметка</label><input name="note" /></div>
-      <div class="modal-foot field full" style="flex-direction:row">
+      <div class="modal-foot field full flex-row">
         <button type="button" class="btn btn-ghost" data-close-modal>Отмена</button>
         <button type="submit" class="btn btn-primary">Сохранить</button>
       </div>
@@ -3297,7 +3297,7 @@ function openValuationModal() {
       <div class="field"><label>Дата</label><input type="date" name="date" value="${new Date().toISOString().slice(0, 10)}" /></div>
       <div class="field"><label>Текущая стоимость</label><input type="number" name="value" min="0" required /></div>
       <div class="field full"><label>Заметка</label><input name="note" /></div>
-      <div class="modal-foot field full" style="flex-direction:row">
+      <div class="modal-foot field full flex-row">
         <button type="button" class="btn btn-ghost" data-close-modal>Отмена</button>
         <button type="submit" class="btn btn-primary">Сохранить</button>
       </div>
@@ -3324,7 +3324,7 @@ function openWalletModal() {
       <div class="field full"><label>Название кармана</label><input name="name" placeholder="На AirPods / еда / транспорт" required /></div>
       <div class="field"><label>Сумма, грн</label><input type="number" name="amount" min="0" required /></div>
       <div class="field"><label>На что пойдёт</label><input name="purpose" placeholder="цель на этот месяц" /></div>
-      <div class="modal-foot field full" style="flex-direction:row">
+      <div class="modal-foot field full flex-row">
         <button type="button" class="btn btn-ghost" data-close-modal>Отмена</button>
         <button type="submit" class="btn btn-primary">Сохранить</button>
       </div>
@@ -3429,8 +3429,8 @@ function openItemModal(item, prefill) {
       <div class="field"><label>Не раньше даты (если есть)</label><input type="date" name="earliestDate" value="${i.earliestDate || ""}" /></div>
       ${range("emotional", i.emotional, "Эмоциональное желание 1–5")}
       ${range("trajectory", i.trajectory, "Долгосрочная ценность 1–5")}
-      <div class="field full"><label class="switch-row"><input type="checkbox" name="canDefer" ${i.canDefer ? "checked" : ""} style="width:18px;height:18px;accent-color:var(--accent)"> Можно отложить на следующую зарплату</label></div>
-      <div class="field full"><label class="switch-row"><input type="checkbox" name="recurring" ${i.recurring ? "checked" : ""} style="width:18px;height:18px;accent-color:var(--accent)"> 🔁 Регулярное (после покупки вернётся в очередь)</label></div>
+      <div class="field full"><label class="switch-row"><input type="checkbox" name="canDefer" ${i.canDefer ? "checked" : ""} class="check-18"> Можно отложить на следующую зарплату</label></div>
+      <div class="field full"><label class="switch-row"><input type="checkbox" name="recurring" ${i.recurring ? "checked" : ""} class="check-18"> 🔁 Регулярное (после покупки вернётся в очередь)</label></div>
       <div class="field full"><label>Заметки</label><textarea name="notes">${escapeHtml(i.notes || "")}</textarea></div>
 
       <div class="subhead">Оценка покупки</div>
@@ -3441,7 +3441,7 @@ function openItemModal(item, prefill) {
       </select><span class="hint" id="scoreHint"></span></div>
       <div class="field full hidden" id="verdictBanner"></div>
       <div class="field full hidden" id="quickWrap"><div class="score-grid">${quickRows}</div></div>
-      <div class="field full hidden" id="fullWrap"><div class="subhead" style="margin-top:0">Дополнительно (Full)</div><div class="score-grid">${fullRows}</div></div>
+      <div class="field full hidden" id="fullWrap"><div class="subhead mt-0">Дополнительно (Full)</div><div class="score-grid">${fullRows}</div></div>
 
       ${item ? `<div class="field full" style="display:flex;gap:10px;flex-wrap:wrap">
         ${item.url ? `<button type="button" class="btn btn-outline btn-sm" id="checkPriceBtn">Проверить цену по ссылке</button>` : ""}
@@ -3513,10 +3513,10 @@ function openItemModal(item, prefill) {
     banner.classList.remove("hidden");
     const col =
       v.verdict === "keep"
-        ? "var(--green)"
+        ? "var(--color-positive)"
         : v.verdict === "drop"
-          ? "var(--red)"
-          : "var(--amber)";
+          ? "var(--color-risk)"
+          : "var(--color-warning)";
     banner.innerHTML = `<div class="verdict-banner" style="background:color-mix(in srgb, ${col} 14%, transparent);color:${col}">
       <span>Вердикт: ${VERDICT_LABELS[v.verdict]}</span><span>${v.score}/100</span></div>`;
   }

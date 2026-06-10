@@ -16,8 +16,7 @@ function isPrivateIp(ip) {
   if (net.isIPv6(ip)) {
     const low = ip.toLowerCase();
     if (low === "::1" || low === "::") return true;
-    if (low.startsWith("fe80:") || low.startsWith("fc") || low.startsWith("fd"))
-      return true;
+    if (low.startsWith("fe80:") || low.startsWith("fc") || low.startsWith("fd")) return true;
     // IPv4-mapped (::ffff:127.0.0.1)
     const mapped = low.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
     if (mapped) return isPrivateIp(mapped[1]);
@@ -43,8 +42,7 @@ export async function assertPublicHttpUrl(rawUrl) {
   } catch {
     throw new Error("invalid_url");
   }
-  if (u.protocol !== "http:" && u.protocol !== "https:")
-    throw new Error("unsupported_protocol");
+  if (u.protocol !== "http:" && u.protocol !== "https:") throw new Error("unsupported_protocol");
   // У IPv6 в URL hostname приходит в скобках: [::1]
   const host = u.hostname.replace(/^\[|\]$/g, "");
   if (net.isIP(host)) {
@@ -59,8 +57,7 @@ export async function assertPublicHttpUrl(rawUrl) {
   } catch {
     throw new Error("dns_failed");
   }
-  if (!addrs.length || addrs.some((a) => isPrivateIp(a.address)))
-    throw new Error("blocked_host");
+  if (!addrs.length || addrs.some((a) => isPrivateIp(a.address))) throw new Error("blocked_host");
   return u;
 }
 

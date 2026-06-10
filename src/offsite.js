@@ -45,11 +45,7 @@ export function decryptBackup(content, passphrase) {
   const payload = JSON.parse(content);
   if (payload.alg !== "aes-256-gcm") throw new Error("unsupported_backup_format");
   const key = crypto.createHash("sha256").update(passphrase, "utf8").digest();
-  const decipher = crypto.createDecipheriv(
-    "aes-256-gcm",
-    key,
-    Buffer.from(payload.iv, "base64"),
-  );
+  const decipher = crypto.createDecipheriv("aes-256-gcm", key, Buffer.from(payload.iv, "base64"));
   decipher.setAuthTag(Buffer.from(payload.tag, "base64"));
   return Buffer.concat([
     decipher.update(Buffer.from(payload.data, "base64")),
@@ -75,9 +71,7 @@ async function gh(path, options = {}) {
 async function putFile(repo, branch, path, content, message) {
   // Узнаём sha, если файл уже есть (нужен для перезаписи).
   let sha;
-  const existing = await gh(
-    `/repos/${repo}/contents/${path}${branch ? `?ref=${branch}` : ""}`,
-  );
+  const existing = await gh(`/repos/${repo}/contents/${path}${branch ? `?ref=${branch}` : ""}`);
   if (existing.ok) {
     sha = (await existing.json())?.sha;
   }

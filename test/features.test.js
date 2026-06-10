@@ -11,10 +11,7 @@ let server;
 let baseUrl;
 let sessionCookie;
 
-async function request(
-  pathname,
-  { method = "GET", body, cookie = sessionCookie } = {},
-) {
+async function request(pathname, { method = "GET", body, cookie = sessionCookie } = {}) {
   const headers = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (cookie) headers.Cookie = cookie;
@@ -293,9 +290,7 @@ describe("новые фичи", () => {
     // rowToPlan не должен ронять /api/state из-за кривого JSON в snapshot.
     const Database = (await import("better-sqlite3")).default;
     const raw = new Database(process.env.DB_PATH);
-    raw
-      .prepare("UPDATE plans SET snapshot = '{broken' WHERE status = 'closed'")
-      .run();
+    raw.prepare("UPDATE plans SET snapshot = '{broken' WHERE status = 'closed'").run();
     raw.close();
     const state = await request("/api/state");
     assert.equal(state.res.status, 200);

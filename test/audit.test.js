@@ -107,9 +107,7 @@ describe("audit fixes", () => {
       method: "POST",
       body: { name: "Test Stock", type: "stock", currency: "USD" },
     });
-    const asset = created.data.assets.find(
-      (a) => a.name === "Test Stock",
-    );
+    const asset = created.data.assets.find((a) => a.name === "Test Stock");
     const buy = await request("/api/investments/transactions", {
       method: "POST",
       body: { assetId: asset.id, type: "buy", quantity: 5, price: 10 },

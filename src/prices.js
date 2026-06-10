@@ -61,22 +61,12 @@ export async function fetchCgPrice(cgId) {
 export async function valuationForAsset(asset, price, quoteCurrencyRaw) {
   if (!price || price <= 0) return false;
   const txs = stmt.transactionsByAsset.all(asset.id);
-  const qty = txs.reduce(
-    (s, t) => s + (t.type === "buy" ? t.quantity : -t.quantity),
-    0,
-  );
+  const qty = txs.reduce((s, t) => s + (t.type === "buy" ? t.quantity : -t.quantity), 0);
   if (qty <= 0) return false;
   // Валюта котировки приходит от прайс-фида (Yahoo meta.currency / CoinGecko=USD),
   // а не из asset.currency — иначе UAH-актив с USD-котировкой считался без курса.
-  const quoteCurrency = String(
-    quoteCurrencyRaw || asset.currency || "USD",
-  ).toUpperCase();
-  const rate =
-    quoteCurrency === "UAH"
-      ? 1
-      : quoteCurrency === "EUR"
-        ? eurRate()
-        : currencyRate();
+  const quoteCurrency = String(quoteCurrencyRaw || asset.currency || "USD").toUpperCase();
+  const rate = quoteCurrency === "UAH" ? 1 : quoteCurrency === "EUR" ? eurRate() : currencyRate();
   const valueUah = qty * price * rate;
   stmt.insertValuation.run({
     id: String(Date.now() + "-" + Math.random().toString(36).slice(2, 8)),
@@ -88,4 +78,3 @@ export async function valuationForAsset(asset, price, quoteCurrencyRaw) {
   });
   return true;
 }
-

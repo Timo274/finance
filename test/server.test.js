@@ -9,10 +9,7 @@ let server;
 let baseUrl;
 let sessionCookie;
 
-async function request(
-  pathname,
-  { method = "GET", body, cookie = sessionCookie } = {},
-) {
+async function request(pathname, { method = "GET", body, cookie = sessionCookie } = {}) {
   const headers = {};
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (cookie) headers.Cookie = cookie;

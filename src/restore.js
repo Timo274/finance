@@ -1,10 +1,7 @@
 // Валидация и восстановление JSON-бэкапов (полный и частичный режимы).
 import db from "./db.js";
 import { stmt } from "./statements.js";
-import {
-  normalizeItemInput,
-  getActivePlan,
-} from "./store.js";
+import { normalizeItemInput, getActivePlan } from "./store.js";
 import { todayISO, monthForPlan, isoDateValue } from "./sanitize.js";
 
 function addUniqueId(errors, seen, value, label) {
@@ -28,8 +25,7 @@ export function validateFullBackup(data) {
   const assetIds = new Set();
   for (const [idx, plan] of data.plans.entries()) {
     addUniqueId(errors, planIds, plan.id, `plans[${idx}]`);
-    if (plan.payday && !isoDateValue(plan.payday))
-      errors.push(`plans[${idx}]: invalid payday`);
+    if (plan.payday && !isoDateValue(plan.payday)) errors.push(`plans[${idx}]: invalid payday`);
   }
   for (const [idx, item] of data.items.entries()) {
     addUniqueId(errors, itemIds, item.id, `items[${idx}]`);
@@ -44,60 +40,42 @@ export function validateFullBackup(data) {
   const goals = Array.isArray(data.goals) ? data.goals : [];
   for (const [idx, goal] of goals.entries()) {
     const itemId = Number(goal.itemId ?? goal.item_id);
-    if (!itemIds.has(itemId))
-      errors.push(`goals[${idx}]: item ${itemId || "?"} not found`);
+    if (!itemIds.has(itemId)) errors.push(`goals[${idx}]: item ${itemId || "?"} not found`);
   }
   const wallets = Array.isArray(data.wallets) ? data.wallets : [];
   for (const [idx, wallet] of wallets.entries()) {
     const planId = Number(wallet.planId ?? wallet.plan_id) || null;
-    if (planId && !planIds.has(planId))
-      errors.push(`wallets[${idx}]: plan ${planId} not found`);
+    if (planId && !planIds.has(planId)) errors.push(`wallets[${idx}]: plan ${planId} not found`);
   }
   const assets = data.investmentAssets || data.portfolio?.assets || [];
-  if (assets && !Array.isArray(assets))
-    errors.push("investmentAssets must be an array");
+  if (assets && !Array.isArray(assets)) errors.push("investmentAssets must be an array");
   for (const [idx, asset] of (Array.isArray(assets) ? assets : []).entries()) {
     const id = String(asset.id || "").trim();
     if (!id) errors.push(`investmentAssets[${idx}]: missing id`);
-    else if (assetIds.has(id))
-      errors.push(`investmentAssets[${idx}]: duplicate id ${id}`);
+    else if (assetIds.has(id)) errors.push(`investmentAssets[${idx}]: duplicate id ${id}`);
     else assetIds.add(id);
   }
-  const transactions =
-    data.assetTransactions || data.portfolio?.transactions || [];
+  const transactions = data.assetTransactions || data.portfolio?.transactions || [];
   if (transactions && !Array.isArray(transactions))
     errors.push("assetTransactions must be an array");
-  for (const [idx, tx] of (Array.isArray(transactions)
-    ? transactions
-    : []
-  ).entries()) {
+  for (const [idx, tx] of (Array.isArray(transactions) ? transactions : []).entries()) {
     const assetId = String((tx.assetId ?? tx.asset_id) || "");
     if (!assetIds.has(assetId))
-      errors.push(
-        `assetTransactions[${idx}]: asset ${assetId || "?"} not found`,
-      );
+      errors.push(`assetTransactions[${idx}]: asset ${assetId || "?"} not found`);
   }
   const valuations = data.assetValuations || data.portfolio?.valuations || [];
-  if (valuations && !Array.isArray(valuations))
-    errors.push("assetValuations must be an array");
-  for (const [idx, val] of (Array.isArray(valuations)
-    ? valuations
-    : []
-  ).entries()) {
+  if (valuations && !Array.isArray(valuations)) errors.push("assetValuations must be an array");
+  for (const [idx, val] of (Array.isArray(valuations) ? valuations : []).entries()) {
     const assetId = String((val.assetId ?? val.asset_id) || "");
     if (!assetIds.has(assetId))
       errors.push(`assetValuations[${idx}]: asset ${assetId || "?"} not found`);
   }
-  const decisions = Array.isArray(data.allocationDecisions)
-    ? data.allocationDecisions
-    : [];
+  const decisions = Array.isArray(data.allocationDecisions) ? data.allocationDecisions : [];
   for (const [idx, decision] of decisions.entries()) {
     const itemId = Number(decision.itemId ?? decision.item_id);
     const planId = Number(decision.planId ?? decision.plan_id) || null;
     if (!itemIds.has(itemId))
-      errors.push(
-        `allocationDecisions[${idx}]: item ${itemId || "?"} not found`,
-      );
+      errors.push(`allocationDecisions[${idx}]: item ${itemId || "?"} not found`);
     if (planId && !planIds.has(planId))
       errors.push(`allocationDecisions[${idx}]: plan ${planId} not found`);
   }
@@ -109,7 +87,6 @@ export function validateImportData(data) {
   if (isFullBackup) return validateFullBackup(data);
   return { ok: true, mode: "partial", errors: [] };
 }
-
 
 export function restoreFullBackup(data) {
   const now = new Date().toISOString();
@@ -150,10 +127,7 @@ export function restoreFullBackup(data) {
       salary: Math.max(0, Number(p.salary) || 0),
       survivalCost: Math.max(0, Number(p.survivalCost ?? p.survival_cost) || 0),
       buffer: Math.max(0, Number(p.buffer) || 0),
-      investmentFixed: Math.max(
-        0,
-        Number(p.investmentFixed ?? p.investment_fixed) || 0,
-      ),
+      investmentFixed: Math.max(0, Number(p.investmentFixed ?? p.investment_fixed) || 0),
       status: ["active", "closed"].includes(p.status) ? p.status : "closed",
       snapshot,
       createdAt: p.createdAt || p.created_at || now,
@@ -174,20 +148,10 @@ export function restoreFullBackup(data) {
     insertItem.run({
       id,
       ...normalized,
-      savedAmount: Math.max(
-        0,
-        Number(item.savedAmount ?? item.saved_amount) || 0,
-      ),
-      status: ["active", "bought", "archived"].includes(item.status)
-        ? item.status
-        : "active",
+      savedAmount: Math.max(0, Number(item.savedAmount ?? item.saved_amount) || 0),
+      status: ["active", "bought", "archived"].includes(item.status) ? item.status : "active",
       createdAt: item.createdAt || item.created_at || now,
-      updatedAt:
-        item.updatedAt ||
-        item.updated_at ||
-        item.createdAt ||
-        item.created_at ||
-        now,
+      updatedAt: item.updatedAt || item.updated_at || item.createdAt || item.created_at || now,
     });
     itemIds.add(id);
   }
@@ -208,12 +172,9 @@ export function restoreFullBackup(data) {
         Number(g.monthlyContribution ?? g.monthly_contribution) || 0,
       ),
       deadline: g.deadline || null,
-      status: ["active", "complete", "archived"].includes(g.status)
-        ? g.status
-        : "active",
+      status: ["active", "complete", "archived"].includes(g.status) ? g.status : "active",
       createdAt: g.createdAt || g.created_at || now,
-      updatedAt:
-        g.updatedAt || g.updated_at || g.createdAt || g.created_at || now,
+      updatedAt: g.updatedAt || g.updated_at || g.createdAt || g.created_at || now,
     });
   }
 
@@ -238,17 +199,14 @@ export function restoreFullBackup(data) {
       name: String(asset.name || "Актив"),
       type: String(asset.type || "other"),
       ticker: asset.ticker ? String(asset.ticker) : null,
-      currency: ["USD", "UAH"].includes(
-        String(asset.currency || "USD").toUpperCase(),
-      )
+      currency: ["USD", "UAH"].includes(String(asset.currency || "USD").toUpperCase())
         ? String(asset.currency || "USD").toUpperCase()
         : "USD",
     });
     assetIds.add(id);
   }
 
-  const transactions =
-    data.assetTransactions || data.portfolio?.transactions || [];
+  const transactions = data.assetTransactions || data.portfolio?.transactions || [];
   for (const tx of transactions) {
     const assetId = String((tx.assetId ?? tx.asset_id) || "");
     if (!assetIds.has(assetId)) continue;
@@ -262,9 +220,7 @@ export function restoreFullBackup(data) {
         (txType === "buy" ? qty * price + fee : qty * price - fee),
     );
     stmt.insertTransaction.run({
-      id: String(
-        tx.id || Date.now() + "-" + Math.random().toString(36).slice(2, 8),
-      ),
+      id: String(tx.id || Date.now() + "-" + Math.random().toString(36).slice(2, 8)),
       asset_id: assetId,
       type: txType,
       date: tx.date || todayISO(),
@@ -281,14 +237,11 @@ export function restoreFullBackup(data) {
     const assetId = String((val.assetId ?? val.asset_id) || "");
     if (!assetIds.has(assetId)) continue;
     stmt.insertValuation.run({
-      id: String(
-        val.id || Date.now() + "-" + Math.random().toString(36).slice(2, 8),
-      ),
+      id: String(val.id || Date.now() + "-" + Math.random().toString(36).slice(2, 8)),
       asset_id: assetId,
       date: val.date || todayISO(),
       value: Math.max(0, Number(val.value) || 0),
-      quantity:
-        val.quantity != null ? Math.max(0, Number(val.quantity) || 0) : null,
+      quantity: val.quantity != null ? Math.max(0, Number(val.quantity) || 0) : null,
       note: val.note ? String(val.note) : "",
     });
   }
@@ -317,8 +270,7 @@ export function restoreFullBackup(data) {
     });
   }
 
-  const activePlanId =
-    Number((data.plans || []).find((p) => p.status === "active")?.id) || null;
+  const activePlanId = Number((data.plans || []).find((p) => p.status === "active")?.id) || null;
   // Дедупликация решений: UNIQUE(plan_id,item_id,source) не ловит NULL plan_id
   // (в SQLite NULL != NULL), поэтому дедупим в JS — последняя запись побеждает.
   const decisionByKey = new Map();
@@ -338,4 +290,3 @@ export function restoreFullBackup(data) {
     stmt.upsertDecision.run(decision);
   }
 }
-

@@ -47,7 +47,14 @@ describe("buildDecisionInsights", () => {
 
   it("flags urgent deferred items", () => {
     const items = [
-      item({ id: 1, title: "Laptop", cost: 50000, type: "must", deadline: "2026-06-10", canDefer: false }),
+      item({
+        id: 1,
+        title: "Laptop",
+        cost: 50000,
+        type: "must",
+        deadline: "2026-06-10",
+        canDefer: false,
+      }),
       item({ id: 2, title: "Game", cost: 4000, type: "nice", layer: "leakage" }),
     ];
     const allocation = allocate(plan, items);

@@ -12,7 +12,10 @@ function b64url(buf) {
 
 function fromB64(value) {
   // Подписки могут присылать ключи и в base64, и в base64url.
-  const normalized = String(value || "").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  const normalized = String(value || "")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
   return Buffer.from(normalized, "base64url");
 }
 
@@ -71,11 +74,7 @@ export function encryptPayload(plaintext, p256dh, auth) {
   const asPublic = ecdh.getPublicKey();
   const sharedSecret = ecdh.computeSecret(uaPublic);
 
-  const keyInfo = Buffer.concat([
-    Buffer.from("WebPush: info\0"),
-    uaPublic,
-    asPublic,
-  ]);
+  const keyInfo = Buffer.concat([Buffer.from("WebPush: info\0"), uaPublic, asPublic]);
   const ikm = hkdf(authSecret, sharedSecret, keyInfo, 32);
   const salt = crypto.randomBytes(16);
   const cek = hkdf(salt, ikm, Buffer.from("Content-Encoding: aes128gcm\0"), 16);
@@ -83,21 +82,11 @@ export function encryptPayload(plaintext, p256dh, auth) {
 
   const padded = Buffer.concat([Buffer.from(String(plaintext)), Buffer.from([2])]);
   const cipher = crypto.createCipheriv("aes-128-gcm", cek, nonce);
-  const ciphertext = Buffer.concat([
-    cipher.update(padded),
-    cipher.final(),
-    cipher.getAuthTag(),
-  ]);
+  const ciphertext = Buffer.concat([cipher.update(padded), cipher.final(), cipher.getAuthTag()]);
 
   const recordSize = Buffer.alloc(4);
   recordSize.writeUInt32BE(4096);
-  return Buffer.concat([
-    salt,
-    recordSize,
-    Buffer.from([asPublic.length]),
-    asPublic,
-    ciphertext,
-  ]);
+  return Buffer.concat([salt, recordSize, Buffer.from([asPublic.length]), asPublic, ciphertext]);
 }
 
 /**

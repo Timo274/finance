@@ -6,16 +6,9 @@ import { exportPayload } from "./store.js";
 import { offsiteEnabled, uploadOffsiteBackup } from "./offsite.js";
 import { structuredLog } from "./log.js";
 
-export const BACKUP_DIR =
-  process.env.BACKUP_DIR || path.join(path.dirname(DB_PATH), "backups");
-const BACKUP_INTERVAL_HOURS = Math.max(
-  1,
-  Number(process.env.BACKUP_INTERVAL_HOURS) || 24,
-);
-export const BACKUP_RETENTION = Math.max(
-  1,
-  Number(process.env.BACKUP_RETENTION) || 14,
-);
+export const BACKUP_DIR = process.env.BACKUP_DIR || path.join(path.dirname(DB_PATH), "backups");
+const BACKUP_INTERVAL_HOURS = Math.max(1, Number(process.env.BACKUP_INTERVAL_HOURS) || 24);
+export const BACKUP_RETENTION = Math.max(1, Number(process.env.BACKUP_RETENTION) || 14);
 let backupsScheduled = false;
 
 function backupFileName(reason = "scheduled") {
@@ -53,9 +46,7 @@ export async function listBackupFiles() {
 async function pruneBackups() {
   const files = await listBackupFiles();
   await Promise.all(
-    files
-      .slice(BACKUP_RETENTION)
-      .map((file) => fs.unlink(file.path).catch(() => {})),
+    files.slice(BACKUP_RETENTION).map((file) => fs.unlink(file.path).catch(() => {})),
   );
 }
 export async function writeBackup(reason = "scheduled") {
@@ -84,26 +75,15 @@ export async function writeBackup(reason = "scheduled") {
   };
 }
 export function scheduleBackups() {
-  if (
-    backupsScheduled ||
-    process.env.NODE_ENV === "test" ||
-    process.env.BACKUP_ENABLED === "false"
-  )
+  if (backupsScheduled || process.env.NODE_ENV === "test" || process.env.BACKUP_ENABLED === "false")
     return;
   backupsScheduled = true;
   setTimeout(
-    () =>
-      writeBackup("startup").catch((error) =>
-        console.error("Backup failed:", error.message),
-      ),
+    () => writeBackup("startup").catch((error) => console.error("Backup failed:", error.message)),
     30_000,
   ).unref?.();
   setInterval(
-    () =>
-      writeBackup("scheduled").catch((error) =>
-        console.error("Backup failed:", error.message),
-      ),
+    () => writeBackup("scheduled").catch((error) => console.error("Backup failed:", error.message)),
     BACKUP_INTERVAL_HOURS * 60 * 60 * 1000,
   ).unref?.();
 }
-

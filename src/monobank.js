@@ -13,11 +13,22 @@ const MCC_GROUPS = [
   { label: "Продукты", test: (m) => [5411, 5422, 5441, 5451, 5462, 5499, 5921].includes(m) },
   { label: "Кафе и рестораны", test: (m) => (m >= 5811 && m <= 5814) || m === 5462 },
   { label: "Транспорт и такси", test: (m) => [4111, 4112, 4121, 4131, 4789, 4011].includes(m) },
-  { label: "Авто и топливо", test: (m) => [5541, 5542, 5531, 5532, 5533, 7523, 7531, 7538].includes(m) },
+  {
+    label: "Авто и топливо",
+    test: (m) => [5541, 5542, 5531, 5532, 5533, 7523, 7531, 7538].includes(m),
+  },
   { label: "Коммуналка и связь", test: (m) => [4814, 4815, 4899, 4900].includes(m) },
   { label: "Здоровье", test: (m) => (m >= 8011 && m <= 8099) || [5912, 5122].includes(m) },
-  { label: "Развлечения", test: (m) => (m >= 7800 && m <= 7999) || [5815, 5816, 5817, 5818].includes(m) },
-  { label: "Шопинг", test: (m) => (m >= 5611 && m <= 5699) || [5311, 5331, 5399, 5732, 5733, 5734, 5735, 5941, 5942, 5945, 5977].includes(m) },
+  {
+    label: "Развлечения",
+    test: (m) => (m >= 7800 && m <= 7999) || [5815, 5816, 5817, 5818].includes(m),
+  },
+  {
+    label: "Шопинг",
+    test: (m) =>
+      (m >= 5611 && m <= 5699) ||
+      [5311, 5331, 5399, 5732, 5733, 5734, 5735, 5941, 5942, 5945, 5977].includes(m),
+  },
 ];
 
 function mccGroup(mcc) {
@@ -57,8 +68,7 @@ export async function getMonthSummary({ month, refresh = false } = {}) {
 
   lastApiCall = now;
   const monthStart = new Date(`${targetMonth}-01T00:00:00Z`);
-  const monthEndMs =
-    Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 1) - 1000;
+  const monthEndMs = Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 1) - 1000;
   const from = Math.floor(monthStart.getTime() / 1000);
   // Для прошлых месяцев нельзя тянуть диапазон до «сейчас»: API ограничивает
   // выписку 31 днём и вернёт 400. Обрезаем концом месяца.
