@@ -3,6 +3,26 @@
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
+// Серверные коды ошибок -> человеческие сообщения (аудит 16.4).
+const API_ERRORS = {
+  validation_failed: "Проверьте введённые данные",
+  not_found: "Запись не найдена — обновите страницу",
+  bad_origin: "Запрос отклонён по соображениям безопасности",
+  sell_exceeds_holdings: "Продажа превышает остаток актива",
+  nbu_unavailable: "Сервис НБУ недоступен, попробуйте позже",
+  rate_limited: "Слишком много запросов — подождите немного",
+  internal_error: "Ошибка сервера, попробуйте ещё раз",
+  asset_not_found: "Актив не найден",
+  bad_pin: "Неверный PIN",
+  pin_too_short: "PIN слишком короткий — минимум 6 цифр",
+};
+function friendlyError(data) {
+  if (!data?.error) return null;
+  let msg = API_ERRORS[data.error] || data.error;
+  if (data.error === "sell_exceeds_holdings" && data.held != null)
+    msg += ` (в наличии: ${data.held})`;
+  return msg;
+}
 const api = {
   async req(method, url, body) {
     const opts = { method, headers: {} };
@@ -16,7 +36,7 @@ const api = {
       throw new Error("unauthorized");
     }
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || res.statusText);
+    if (!res.ok) throw new Error(friendlyError(data) || res.statusText);
     if (method !== "GET") notifyDataChanged();
     return data;
   },
@@ -68,6 +88,23 @@ function fmtDate(d) {
     month: "short",
     year: "numeric",
   });
+}
+// Проценты, дающие в сумме ровно 100 (метод наибольших остатков):
+// иначе независимые Math.round дают 99/101% (аудит 7.1).
+function roundPercents(values, total) {
+  if (!total || total <= 0) return values.map(() => 0);
+  const raw = values.map((v) => (Math.max(0, Number(v) || 0) / total) * 100);
+  const floors = raw.map(Math.floor);
+  let left = Math.round(raw.reduce((s, v) => s + v, 0)) - floors.reduce((s, v) => s + v, 0);
+  const order = raw
+    .map((v, i) => ({ i, frac: v - Math.floor(v) }))
+    .sort((a, b) => b.frac - a.frac);
+  for (const { i } of order) {
+    if (left <= 0) break;
+    floors[i] += 1;
+    left -= 1;
+  }
+  return floors;
 }
 function toast(msg, opts = {}) {
   const t = $("#toast");
@@ -260,7 +297,7 @@ function drawDonut(canvas, segments, center = null) {
   ctx.font = "500 11px Inter, sans-serif";
   ctx.fillText(center?.sub ?? "грн всего", cx, cy + 13);
 }
-function drawLine(canvas, points) {
+function drawLine(canvas, points, opts = {}) {
   const { ctx, w, h } = setupCanvas(canvas);
   if (points.length < 2) return;
   const padL = 8,
@@ -327,6 +364,36 @@ function drawLine(canvas, points) {
     ctx.lineWidth = 1.5;
     ctx.stroke();
   });
+  // Подписи осей: без min/max и последнего значения график нечитаем (аудит 8.1).
+  ctx.fillStyle = cssVar("--muted", "#888");
+  ctx.font = "500 10px Inter, sans-serif";
+  ctx.textBaseline = "alphabetic";
+  if (maxV !== minV) {
+    ctx.textAlign = "left";
+    ctx.fillText(fmtShort(maxV), padL, padT - 4);
+    ctx.fillText(fmtShort(minV), padL, h - padB + 12);
+  }
+  if (opts.xStart || opts.xEnd) {
+    ctx.textAlign = "center";
+    if (opts.xStart) {
+      ctx.textAlign = "left";
+      ctx.fillText(String(opts.xStart), padL, h - 2);
+    }
+    if (opts.xEnd) {
+      ctx.textAlign = "right";
+      ctx.fillText(String(opts.xEnd), w - padR, h - 2);
+    }
+  }
+  // Текущее значение у последней точки.
+  const lastP = pts[pts.length - 1];
+  ctx.textAlign = lastP.x > w - 60 ? "right" : "center";
+  ctx.font = "700 11px Inter, sans-serif";
+  ctx.fillStyle = cssVar("--text", "#111");
+  ctx.fillText(
+    fmtShort(points[points.length - 1].value),
+    Math.min(lastP.x, w - padR),
+    Math.max(10, lastP.y - 8),
+  );
 }
 function drawBars(canvas, segments) {
   const { ctx, w, h } = setupCanvas(canvas);
@@ -395,6 +462,7 @@ function drawCharts() {
     drawLine(
       portChart,
       months.map(([, value]) => ({ value })),
+      { xStart: months[0]?.[0], xEnd: months[months.length - 1]?.[0] },
     );
   }
 }
@@ -410,8 +478,16 @@ async function initHistoryCharts() {
   const nw = $("#nwChart");
   if (nw) {
     if ((data.netWorth || []).length >= 2) {
-      drawLine(nw, data.netWorth.map((p) => ({ value: p.value })));
+      drawLine(nw, data.netWorth.map((p) => ({ value: p.value })), {
+        xStart: fmtDate(data.netWorth[0].date),
+        xEnd: fmtDate(data.netWorth[data.netWorth.length - 1].date),
+      });
       const last = data.netWorth[data.netWorth.length - 1];
+      nw.setAttribute("role", "img");
+      nw.setAttribute(
+        "aria-label",
+        `Стоимость портфеля по оценкам: ${fmtDate(data.netWorth[0].date)} ${fmt(data.netWorth[0].value)} → ${fmtDate(last.date)} ${fmt(last.value)}`,
+      );
       const hint = $("#nwHint");
       if (hint)
         hint.textContent = `${fmtDate(data.netWorth[0].date)} → ${fmtDate(last.date)} · сейчас ${fmt(last.value)}`;
@@ -540,6 +616,8 @@ function committedTotal() {
     ? manualPlanTotal()
     : state.allocation?.totals?.allocated || 0;
 }
+// Единственная формула «Свободно» для Кабинета, Плана и Кошельков (аудит 14.1):
+// излишки после стабильных пунктов минус ручной план (или авто-распределение).
 function remainingSurplus() {
   const avail = state.allocation?.totals?.availableToAllocate || 0;
   return avail - committedTotal();
@@ -770,7 +848,7 @@ $("#authForm").addEventListener("submit", async (e) => {
   err.textContent = "";
   try {
     if (mode === "setup") {
-      if (pin.length < 4) return (err.textContent = "PIN слишком короткий.");
+      if (pin.length < 6) return (err.textContent = "PIN слишком короткий — минимум 6 цифр.");
       if (pin !== $("#pinConfirm").value.trim())
         return (err.textContent = "PIN не совпадает.");
       const setupToken =
@@ -797,7 +875,17 @@ $("#logoutBtnMobile")?.addEventListener("click", doLogout);
 // LOAD + RENDER
 // ============================================================
 async function loadAndRender() {
-  const data = await api.get(`/api/state?scenario=balanced`);
+  // Холодный старт Fly-машины занимает 2-4с — объясняем ожидание (аудит 17.3).
+  const wakeTimer = setTimeout(
+    () => toast("Сервер просыпается, секунду…", { duration: 4000 }),
+    2500,
+  );
+  let data;
+  try {
+    data = await api.get(`/api/state?scenario=balanced`);
+  } finally {
+    clearTimeout(wakeTimer);
+  }
   state.meta = data.meta;
   state.plan = data.plan;
   state.items = data.items;
@@ -811,7 +899,13 @@ async function loadAndRender() {
   state.goals = data.goals || [];
   state.currencyRate = data.currencyRate || 43.5;
   state.eurRate = data.eurRate || 47;
+  // Открываем вкладку из URL (deep-link / перезагрузка).
+  const hashView = viewFromHash();
+  if (hashView) state.view = hashView;
   $("#app").classList.remove("hidden");
+  $$(".nav-item[data-view]").forEach((x) =>
+    x.classList.toggle("active", x.dataset.view === state.view),
+  );
   renderTopbar();
   renderView();
   maybeShowOnboardingAfterLogin();
@@ -856,13 +950,7 @@ function renderTopbar() {
 }
 
 $$(".nav-item[data-view]").forEach((b) =>
-  b.addEventListener("click", () => {
-    state.view = b.dataset.view;
-    $$(".nav-item[data-view]").forEach((x) =>
-      x.classList.toggle("active", x.dataset.view === b.dataset.view),
-    );
-    renderView();
-  }),
+  b.addEventListener("click", () => setView(b.dataset.view)),
 );
 
 async function doLogout() {
@@ -948,13 +1036,57 @@ window.addEventListener("resize", () => {
 // ============================================================
 // VIEWS
 // ============================================================
-function setView(view) {
+// Hash-роутер: вкладка живёт в URL, «назад» и перезагрузка работают (аудит 2.1).
+const ROUTABLE_VIEWS = ["dashboard", "queue", "wallets", "investments", "plan", "history", "assistant", "more"];
+function viewFromHash() {
+  const v = (location.hash || "").replace(/^#\/?/, "");
+  return ROUTABLE_VIEWS.includes(v) ? v : null;
+}
+function setView(view, { fromHash = false } = {}) {
   state.view = view;
+  if (!fromHash && viewFromHash() !== view) {
+    try {
+      location.hash = "#/" + view;
+    } catch {}
+  }
   $$(".nav-item[data-view]").forEach((x) =>
     x.classList.toggle("active", x.dataset.view === view),
   );
   renderView();
 }
+window.addEventListener("hashchange", () => {
+  const v = viewFromHash();
+  if (v && v !== state.view) setView(v, { fromHash: true });
+});
+// Эко-режим: на слабом железе отключаем постоянные фоновые анимации (аудит 17.5).
+if ((navigator.hardwareConcurrency || 8) <= 4 || matchMedia("(prefers-reduced-motion: reduce)").matches) {
+  document.body.classList.add("eco");
+}
+// Подсказка-формат для денежных полей: «150000» → «= 150 000 ₴» (аудит 3.7).
+document.addEventListener("input", (e) => {
+  const el = e.target;
+  if (!el?.matches?.('input[type="number"]')) return;
+  const field = el.closest(".field");
+  if (!field) return;
+  let hint = field.querySelector(".money-hint");
+  const v = Number(el.value);
+  if (!Number.isFinite(v) || Math.abs(v) < 1000) {
+    hint?.remove();
+    return;
+  }
+  if (!hint) {
+    hint = document.createElement("div");
+    hint.className = "money-hint";
+    el.insertAdjacentElement("afterend", hint);
+  }
+  hint.textContent = "= " + v.toLocaleString("ru-RU");
+});
+// Ошибки из «забытых» промисов показываем пользователю (аудит 11.2).
+window.addEventListener("unhandledrejection", (e) => {
+  const msg = e?.reason?.message || "";
+  if (msg === "unauthorized") return;
+  toast("Ошибка: " + (msg || "что-то пошло не так"));
+});
 
 function onboardingSteps() {
   const hasPlan = !!state.plan;
@@ -1157,9 +1289,11 @@ function allocationLayerCard(t, segs, stablePct) {
   const committed = committedTotal();
   const fixedBase = (Number(t.survival) || 0) + (Number(t.reserve) || 0) + (Number(t.fixedInvestment) || 0);
   const salary = Number(t.salary) || 0;
-  const fixedPct = salary ? Math.round((fixedBase / salary) * 100) : 0;
-  const committedPct = salary ? Math.round((committed / salary) * 100) : 0;
-  const remainingPct = salary ? Math.round((remaining / salary) * 100) : 0;
+  // Сумма долей должна давать ровно 100%, а не 99/101 (аудит 7.1).
+  const [fixedPct, committedPct, remainingPct] = roundPercents(
+    [fixedBase, committed, remaining],
+    salary,
+  );
   const layerRows = Object.entries(committedBuckets())
     .filter(([, v]) => v > 0)
     .map(
@@ -1234,14 +1368,27 @@ function viewDashboard() {
     return `<div class="view-head"><h1>Кабинет</h1><p>Обзор будущей зарплаты до её прихода.</p></div>${noPlanBlock()}`;
   }
   const t = state.allocation.totals;
-  const stablePct = (value) => (t.salary ? (value / t.salary) * 100 : 0);
-  const segs = Object.entries(committedBuckets())
-    .filter(([, v]) => v > 0)
-    .map(
-      ([k, v]) =>
-        `<div class="alloc-seg" style="width:${(v / t.salary) * 100}%;background:${bucketColor(k)}" title="${bucketLabel(k)}: ${fmt(v)}"></div>`,
-    )
-    .join("");
+  // Перерасход не должен «обрезаться» справа: нормируем на max(зарплата,
+  // распределено) и показываем засечку 100% (аудит 4.5).
+  const allocatedTotal =
+    (Number(t.survival) || 0) +
+    (Number(t.reserve) || 0) +
+    (Number(t.fixedInvestment) || 0) +
+    committedTotal();
+  const barDenom = Math.max(Number(t.salary) || 0, allocatedTotal);
+  const stablePct = (value) => (barDenom ? (value / barDenom) * 100 : 0);
+  const salaryTick =
+    barDenom > (Number(t.salary) || 0)
+      ? `<div class="alloc-tick" style="left:${((Number(t.salary) || 0) / barDenom) * 100}%" title="100% зарплаты"></div>`
+      : "";
+  const segs =
+    Object.entries(committedBuckets())
+      .filter(([, v]) => v > 0)
+      .map(
+        ([k, v]) =>
+          `<div class="alloc-seg" style="width:${stablePct(v)}%;background:${bucketColor(k)}" title="${bucketLabel(k)}: ${fmt(v)}"></div>`,
+      )
+      .join("") + salaryTick;
 
   const pf = state.portfolio;
   const pfTotals = pf?.totals || pf || {};
@@ -1286,8 +1433,8 @@ function queueItemRow(item, extra = "", reason = "") {
       <div class="qi-title"><span class="dot" style="background:${layerColor(layer)}"></span>${wishEmojiTag(item)}${escapeHtml(item.title)}
         <span class="tag tag-${item.type}">${TYPE_LABELS[item.type]}</span>${verdictChip(item)}</div>
       <div class="qi-meta">${layerLabel(layer)} · ${catLabelShort(item.category)} · ${bandLabel(item.band)} · приоритет ${item.priority}/5 · траектория ${item.trajectory}/5${item.deadline ? " · дедлайн " + fmtDate(item.deadline) : ""}</div>
-      ${gp.saved > 0 ? `<div class="goal-mini"><div style="width:${gp.pct}%"></div></div><div class="qi-meta">Накоплено ${fmt(gp.saved)} из ${fmt(gp.cost)} · осталось ${fmt(gp.left)}</div>` : ""}
-      ${reason ? `<div class="reason">↪ ${reason}</div>` : ""}
+      ${gp.saved > 0 ? `<div class="goal-mini" role="progressbar" aria-valuenow="${gp.pct}" aria-valuemin="0" aria-valuemax="100" aria-label="Прогресс накопления"><div style="width:${gp.pct}%"></div></div><div class="qi-meta">Накоплено ${fmt(gp.saved)} из ${fmt(gp.cost)} · осталось ${fmt(gp.left)}</div>` : ""}
+      ${reason ? `<div class="reason">↪ ${escapeHtml(reason)}</div>` : ""}
       ${extra ? `<div class="qi-meta mobile-swipe-hint">${extra}</div>` : ""}
       <div class="mobile-item-actions" aria-label="Действия с желанием">
         <button class="btn btn-sm btn-outline" data-act="tradeoff" data-id="${item.id}">Trade-off</button>
@@ -1325,7 +1472,7 @@ function viewQueue() {
         : " ↓"
       : "";
   const th = (key, label) =>
-    `<th><button class="th-sort" data-sort="${key}">${label}${sortMark(key)}</button></th>`;
+    `<th ${state.queueSort.key === key ? `aria-sort="${state.queueSort.dir === "asc" ? "ascending" : "descending"}"` : ""}><button class="th-sort" data-sort="${key}">${label}${sortMark(key)}</button></th>`;
   const rows = sortedItems(filtered)
     .map((it) => {
       const inPlan = state.allocation?.approved.some(
@@ -1336,7 +1483,7 @@ function viewQueue() {
       return `<tr data-id="${it.id}">
       <td><span class="dot" style="background:${layerColor(layer)}"></span>${wishEmojiTag(it)}${escapeHtml(it.title)}${verdictChip(it)}</td>
       <td>${fmt(it.cost)}</td>
-      <td><div class="goal-cell"><b>${gp.pct}%</b><div class="goal-mini"><div style="width:${gp.pct}%"></div></div><span>${fmtShort(gp.saved)} / ${fmtShort(gp.cost)}</span></div></td>
+      <td><div class="goal-cell"><b>${gp.pct}%</b><div class="goal-mini" role="progressbar" aria-valuenow="${gp.pct}" aria-valuemin="0" aria-valuemax="100" aria-label="Прогресс накопления"><div style="width:${gp.pct}%"></div></div><span>${fmtShort(gp.saved)} / ${fmtShort(gp.cost)}</span></div></td>
       <td>${layerLabel(layer)}</td>
       <td>${catLabelShort(it.category)}</td>
       <td><span class="band">${bandLabel(it.band)}</span></td>
@@ -1586,8 +1733,9 @@ function investOverview(p) {
   const st = investmentStats(p);
   const total = st.total;
   const pnlClass = total.totalPnL >= 0 ? "green-num" : "red-num";
+  // Стрелка дублирует цвет — важно для дальтоников (аудит 6.1/10.4).
   const pnlBadge = st.pnlPct != null
-    ? `<span style="color:${total.totalPnL >= 0 ? "var(--green)" : "var(--red)"};font-size:14px;font-weight:800">${signedPct(st.pnlPct)}</span>`
+    ? `<span style="color:${total.totalPnL >= 0 ? "var(--green)" : "var(--red)"};font-size:14px;font-weight:800">${total.totalPnL >= 0 ? "▲" : "▼"} ${signedPct(st.pnlPct)}</span>`
     : "";
   const insights = investmentInsights(p)
     .map((tip) => `<div class="investment-tip ${tip.tone}">
@@ -1603,7 +1751,7 @@ function investOverview(p) {
     .slice(0, 5)
     .map((a) => {
       const share = investPct(a.currentValue, total.totalValue);
-      return `<div class="investment-asset-mini"><div><b>${escapeHtml(a.name)}</b><span>${assetTypeLabel(a.type)}${a.ticker ? ` · ${escapeHtml(a.ticker)}` : ""}</span></div><div><strong>${fmt(a.currentValue)}</strong><em class="${a.totalPnL >= 0 ? "green-num" : "red-num"}">${a.totalPnL >= 0 ? "+" : ""}${fmt(a.totalPnL)} · ${share}%</em></div></div>`;
+      return `<div class="investment-asset-mini"><div><b>${escapeHtml(a.name)}</b><span>${assetTypeLabel(a.type)}${a.ticker ? ` · ${escapeHtml(a.ticker)}` : ""}</span></div><div><strong>${fmt(a.currentValue)}</strong><em class="${a.totalPnL >= 0 ? "green-num" : "red-num"}">${a.totalPnL >= 0 ? "▲ +" : "▼ "}${fmt(a.totalPnL)} · ${share}%</em></div></div>`;
     })
     .join("");
   const chartHtml = st.valuations.length
@@ -1613,7 +1761,7 @@ function investOverview(p) {
   <div class="grid cards investment-kpis">
     <div class="card"><div class="stat-label"><span class="stat-ico">💼</span> Стоимость портфеля</div><div class="stat-value">${fmt(total.totalValue)}</div><div class="stat-sub">${fmtUsd(total.totalValue)} · ${p.assets.length} активов</div></div>
     <div class="card"><div class="stat-label"><span class="stat-ico">💸</span> Вложено</div><div class="stat-value sm">${fmt(total.totalInvested)}</div><div class="stat-sub">себестоимость открытых позиций</div></div>
-    <div class="card"><div class="stat-label"><span class="stat-ico">📊</span> Прибыль / Убыток</div><div class="stat-value sm ${pnlClass}">${fmt(total.totalPnL)}</div><div class="stat-sub">${fmtUsd(total.totalPnL)} ${pnlBadge}</div></div>
+    <div class="card"><div class="stat-label"><span class="stat-ico">📊</span> Прибыль / Убыток</div><div class="stat-value sm ${pnlClass}">${fmt(total.totalPnL)}</div><div class="stat-sub">${fmtUsd(total.totalPnL)} ${pnlBadge} <span class="muted" title="P/L в гривне пересчитан по текущему курсу и включает курсовую переоценку, а не только рыночный результат">ⓘ с учётом курса</span></div></div>
     <div class="card"><div class="stat-label"><span class="stat-ico">⏱</span> Актуальность</div><div class="stat-value sm">${st.lastValDate ? fmtDate(st.lastValDate) : "—"}</div><div class="stat-sub">${st.daysSinceValuation == null ? "нет оценок" : `${st.daysSinceValuation} дн. назад`}</div></div>
   </div>
   <div class="investment-layout">
@@ -1637,7 +1785,7 @@ function investAssets(p) {
           return `<div class="wallet-row investment-row">
     <div class="investment-row-title"><b>${escapeHtml(a.name)}</b><div class="muted small">${assetTypeLabel(a.type)}${a.ticker ? " · " + escapeHtml(a.ticker) : ""}${a.currency ? " · цены " + escapeHtml(a.currency) : ""}</div></div>
     <div class="investment-row-metrics">
-      <div class="row-between small"><span>${fmt(a.currentValue)}</span><span class="${a.totalPnL >= 0 ? "green-num" : "red-num"}">${a.totalPnL >= 0 ? "+" : ""}${fmt(a.totalPnL)}</span></div>
+      <div class="row-between small"><span>${fmt(a.currentValue)}</span><span class="${a.totalPnL >= 0 ? "green-num" : "red-num"}">${a.totalPnL >= 0 ? "▲ +" : "▼ "}${fmt(a.totalPnL)}</span></div>
       <div class="goal-mini"><div style="width:${pct}%"></div></div>
       <div class="muted small">${pct}% портфеля · кол-во ${a.quantityHeld} · вложено ${fmt(a.totalInvested)}</div>
       <div class="muted small">последняя оценка: ${latestVal ? fmtDate(latestVal.date) : "—"}${lastTx ? ` · операция: ${fmtDate(lastTx.date)}` : ""}</div>
@@ -1708,6 +1856,7 @@ function viewWallets() {
   <div class="grid cards">
     <div class="card"><div class="stat-label">В кошельках</div><div class="stat-value">${fmt(total)}</div><div class="stat-sub">${state.wallets.length} карманов</div></div>
     <div class="card"><div class="stat-label">Излишки после стабильных пунктов</div><div class="stat-value sm">${fmt(available)}</div><div class="stat-sub">${total > available ? "кошельки выше излишков" : "в пределах излишков"}</div></div>
+    <div class="card"><div class="stat-label">Свободно из излишков</div><div class="stat-value sm ${remainingSurplus() < 0 ? "red-num" : ""}">${fmt(remainingSurplus())}</div><div class="stat-sub">та же формула, что в кабинете и плане</div></div>
   </div>
   <div class="card pad-lg" style="margin-top:16px"><div class="section-title" style="margin-top:0">Карманы</div>${rows || richEmpty("◫", "Кошельков ещё нет", "Создайте карманы для еды, транспорта, инвестиций и свободных трат — так остаток не смешивается.", "add-wallet", "+ Кошелёк")}</div>`;
 }
@@ -1744,7 +1893,7 @@ function viewPlan() {
       <div><div class="stat-value sm ${planned > available ? "red-num" : "green-num"}" data-manual-total>${fmt(planned)}</div><div class="muted small">из ${fmt(available)}</div></div></div>
     <div class="manual-list">${manualRows || richEmpty("🎯", "Пока нечего распределять", "Добавьте желания в очередь — здесь появится ручной план распределения излишков.", "add-item", "+ Добавить желание")}</div>
     <div class="row-between" style="margin-top:12px">
-      <span class="${planned > available ? "red-num" : "muted"}" data-manual-remaining>${planned > available ? "План выше доступного бюджета" : `Свободно ещё ${fmt(available - planned)}`}</span>
+      <span class="${remainingSurplus() < 0 ? "red-num" : "muted"}" data-manual-remaining>${remainingSurplus() < 0 ? "План выше доступного бюджета" : `Свободно ещё ${fmt(remainingSurplus())}${planned > 0 ? "" : " (авто-распределение)"}`}</span>
       <button class="btn btn-primary" data-act="save-manual-plan">Сохранить ручной план</button>
     </div>
   </div>`;
@@ -1772,12 +1921,45 @@ function viewHistory() {
       state.history.map((h) => String(h.closedAt || h.payday || "").slice(0, 4)),
     ),
   ].filter(Boolean);
+  // Итоги за все закрытые месяцы: аналитика должна делать выводы (аудит 8.3).
+  const months = state.history
+    .map((h) => {
+      const t = h.snapshot?.totals || {};
+      return {
+        name: h.name,
+        salary: Number(t.salary ?? h.salary) || 0,
+        allocated: Number(t.allocated) || 0,
+        remaining: Number(t.remaining) || 0,
+      };
+    })
+    .filter((m) => m.salary > 0);
+  let summaryBlock = "";
+  if (months.length >= 2) {
+    const avgRemaining =
+      months.reduce((acc, m) => acc + m.remaining, 0) / months.length;
+    const avgWishShare =
+      (months.reduce((acc, m) => acc + (m.salary ? m.allocated / m.salary : 0), 0) /
+        months.length) *
+      100;
+    const best = months.reduce((a, b) => (b.remaining > a.remaining ? b : a));
+    const worst = months.reduce((a, b) => (b.remaining < a.remaining ? b : a));
+    summaryBlock = `<div class="card pad-lg" style="margin-bottom:16px">
+      <div class="section-title" style="margin-top:0">Итоги за ${months.length} мес.</div>
+      <div class="grid cards" style="margin-top:10px">
+        <div class="card"><div class="stat-label">Средний остаток</div><div class="stat-value sm ${avgRemaining < 0 ? "red-num" : "green-num"}">${fmt(Math.round(avgRemaining))}</div></div>
+        <div class="card"><div class="stat-label">Распределяется в среднем</div><div class="stat-value sm">${Math.round(avgWishShare)}%</div><div class="stat-sub">от зарплаты</div></div>
+        <div class="card"><div class="stat-label">Лучший месяц</div><div class="stat-value sm green-num">${fmt(best.remaining)}</div><div class="stat-sub">${escapeHtml(best.name)}</div></div>
+        <div class="card"><div class="stat-label">Сложный месяц</div><div class="stat-value sm ${worst.remaining < 0 ? "red-num" : ""}">${fmt(worst.remaining)}</div><div class="stat-sub">${escapeHtml(worst.name)}</div></div>
+      </div>
+    </div>`;
+  }
   return `<div class="view-head row-between">
     <div><h1>История решений</h1><p>Что ты решал в прошлые месяцы: купленное, отложенное, остаток.</p></div>
     <div style="display:flex;gap:8px">${years.map((y) => `<button class="btn btn-outline btn-sm" data-act="year-report" data-year="${y}">Отчёт ${y} CSV</button>`).join("")}</div>
   </div>
+  ${summaryBlock}
   <div class="grid cards" style="margin-bottom:16px">
-    <div class="card pad-lg"><div class="section-title" style="margin-top:0">Динамика капитала</div><canvas id="nwChart" height="160"></canvas><p class="muted small" id="nwHint"></p></div>
+    <div class="card pad-lg"><div class="section-title" style="margin-top:0">Портфель по оценкам</div><canvas id="nwChart" height="160"></canvas><p class="muted small" id="nwHint"></p></div>
     <div class="card pad-lg"><div class="section-title" style="margin-top:0">Свободный остаток по месяцам</div><canvas id="monthChart" height="160"></canvas><p class="muted small" id="monthHint"></p></div>
   </div>
     ${state.history
@@ -1964,7 +2146,7 @@ function bindViewEvents() {
     el.addEventListener("click", async (ev) => {
       const act = el.dataset.act;
       const id = Number(el.dataset.id);
-      if (act === "bought") confettiBurst(ev.clientX, ev.clientY);
+      try {
       if (act === "open-plan") openPlanModal();
       else if (act === "add-item") openItemModal();
       else if (act === "save-goal")
@@ -1976,7 +2158,7 @@ function bindViewEvents() {
       else if (act === "save-manual-plan") saveManualPlan();
       else if (act === "edit")
         openItemModal(state.items.find((i) => i.id === id));
-      else if (act === "bought") await markBought(id);
+      else if (act === "bought") await markBought(id, ev);
       else if (act === "tradeoff") await showTradeoff(id);
       else if (act === "close-month") closeMonth();
       else if (act === "what-if") openSimulatorModal();
@@ -2007,6 +2189,11 @@ function bindViewEvents() {
         $("#chatLog").innerHTML = "";
         document.getElementById("suggestions").innerHTML = "";
       }
+      } catch (ex) {
+        // Ошибка действия не должна теряться в консоли (аудит 3.8/11.2).
+        if (ex?.message !== "unauthorized")
+          toast("Ошибка: " + (ex?.message || "что-то пошло не так"));
+      }
     });
   });
   $$(".queue-swipe").forEach((row) => bindSwipe(row));
@@ -2029,12 +2216,32 @@ function bindViewEvents() {
     state.queueSort = { key, dir };
     renderView();
   });
-  $$("[data-filter]").forEach((el) =>
-    el.addEventListener("input", () => {
-      state.queueFilters[el.dataset.filter] = el.value;
-      renderView();
-    }),
-  );
+  $$("[data-filter]").forEach((el) => {
+    // Текстовый поиск: debounce + возврат фокуса и каретки после перерисовки,
+    // иначе фокус теряется на каждом символе (аудит 3.1).
+    if (el.tagName === "INPUT") {
+      el.addEventListener("input", () => {
+        state.queueFilters[el.dataset.filter] = el.value;
+        clearTimeout(el._filterT);
+        el._filterT = setTimeout(() => {
+          const pos = el.selectionStart;
+          renderView();
+          const next = $(`[data-filter="${el.dataset.filter}"]`);
+          if (next) {
+            next.focus();
+            try {
+              next.setSelectionRange(pos, pos);
+            } catch {}
+          }
+        }, 250);
+      });
+    } else {
+      el.addEventListener("input", () => {
+        state.queueFilters[el.dataset.filter] = el.value;
+        renderView();
+      });
+    }
+  });
   $$("[data-inv-tab]").forEach((btn) =>
     btn.addEventListener("click", () => {
       state.invTab = btn.dataset.invTab;
@@ -2104,10 +2311,27 @@ async function importData(e) {
   }
 }
 
-async function markBought(id) {
+async function markBought(id, ev) {
+  const item = state.items.find((i) => i.id === id);
   await api.post(`/api/items/${id}/status`, { status: "bought" });
-  toast("Отмечено как купленное");
+  // Конфетти — только после успешного ответа сервера (аудит 3.2).
+  confettiBurst(
+    ev?.clientX || window.innerWidth / 2,
+    ev?.clientY || window.innerHeight * 0.4,
+  );
   await refresh();
+  // «Куплено» можно отменить — особенно важно из-за свайпа (аудит 3.2).
+  toast(`«${item ? item.title : "Желание"}» куплено`, {
+    duration: 6000,
+    action: {
+      label: "Отменить",
+      onClick: async () => {
+        await api.post(`/api/items/${id}/status`, { status: "active" });
+        await refresh();
+        toast("Возвращено в очередь");
+      },
+    },
+  });
 }
 
 // Удаление с возможностью отмены: желание сразу убирается из интерфейса,
@@ -2139,6 +2363,15 @@ async function deleteItem(id) {
   const timer = setTimeout(() => commitDelete(id), 6000);
   pendingDeletes.set(id, { timer });
   state.items = state.items.filter((i) => i.id !== id);
+  // Кабинет не должен 6 секунд показывать удалённое в плане (аудит 3.10).
+  if (state.allocation?.approved)
+    state.allocation.approved = state.allocation.approved.filter(
+      (a) => (a.itemId ?? a.item?.id) !== id,
+    );
+  if (state.allocation?.deferred)
+    state.allocation.deferred = state.allocation.deferred.filter(
+      (a) => (a.itemId ?? a.item?.id) !== id,
+    );
   renderView();
   toast(`«${item.title}» удалено`, {
     duration: 6000,
@@ -2158,10 +2391,12 @@ async function deleteItem(id) {
 
 function bindSwipe(row) {
   let startX = 0;
+  let startY = 0;
   row.addEventListener(
     "touchstart",
     (e) => {
       startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
     },
     { passive: true },
   );
@@ -2169,8 +2404,11 @@ function bindSwipe(row) {
     "touchend",
     async (e) => {
       const dx = e.changedTouches[0].clientX - startX;
-      if (Math.abs(dx) < 80) return;
-      if (dx < 0) await markBought(Number(row.dataset.id));
+      const dy = e.changedTouches[0].clientY - startY;
+      // Диагональный скролл не должен случайно «покупать»/удалять:
+      // жест засчитываем только при явной горизонтали (аудит 9.2).
+      if (Math.abs(dx) < 80 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      if (dx < 0) await markBought(Number(row.dataset.id), e);
       else await deleteItem(Number(row.dataset.id));
     },
     { passive: true },
@@ -2235,11 +2473,13 @@ function renderManualPlanDraftTotals() {
   }
   const remainingEl = $("[data-manual-remaining]");
   if (remainingEl) {
-    remainingEl.textContent = planned > available
-      ? "План выше доступного бюджета"
-      : `Свободно ещё ${fmt(available - planned)}`;
-    remainingEl.classList.toggle("red-num", planned > available);
-    remainingEl.classList.toggle("muted", planned <= available);
+    const free = remainingSurplus();
+    remainingEl.textContent =
+      free < 0
+        ? "План выше доступного бюджета"
+        : `Свободно ещё ${fmt(free)}${planned > 0 ? "" : " (авто-распределение)"}`;
+    remainingEl.classList.toggle("red-num", free < 0);
+    remainingEl.classList.toggle("muted", free >= 0);
   }
 }
 
@@ -2281,6 +2521,7 @@ async function closeMonth() {
   openModal(`<div class="modal narrow">
     <div class="modal-head"><h2>Закрыть месяц</h2><button class="close-x" data-close-modal>×</button></div>
     <p class="muted small">Отметь, что реально куплено. Неотмеченное останется в очереди, а выделенные на него деньги превратятся в накопление. Отложенных желаний: ${preview.deferredCount}.</p>
+    <p class="small" style="color:var(--amber)">⚠️ Закрытие месяца необратимо: план уйдёт в историю, а текущие распределения зафиксируются.</p>
     <div>${rows || '<p class="muted">В этом месяце ничего не было одобрено.</p>'}</div>
     <div class="modal-foot" style="margin-top:14px">
       <button type="button" class="btn btn-ghost" data-close-modal>Отмена</button>
@@ -2532,18 +2773,57 @@ async function disablePush() {
 // ============================================================
 // MODALS
 // ============================================================
+// Модалки: Esc закрывает, фокус заходит внутрь и возвращается обратно,
+// Tab не убегает под оверлей (аудит 3.4 / 10.1).
+let _modalReturnFocus = null;
+function modalFocusables() {
+  return $$(
+    '#ov a[href], #ov button:not([disabled]), #ov input:not([disabled]):not([type="hidden"]), #ov select:not([disabled]), #ov textarea:not([disabled]), #ov [tabindex]:not([tabindex="-1"])',
+  ).filter((el) => el.offsetParent !== null);
+}
 function openModal(html) {
+  _modalReturnFocus = document.activeElement;
   $("#modalRoot").innerHTML =
-    `<div class="modal-overlay" id="ov">${html}</div>`;
-  $("#ov").addEventListener("click", (e) => {
+    `<div class="modal-overlay" id="ov" role="dialog" aria-modal="true">${html}</div>`;
+  const ov = $("#ov");
+  ov.addEventListener("click", (e) => {
     if (e.target.id === "ov") closeModal();
   });
   $$("[data-close-modal]").forEach((el) =>
     el.addEventListener("click", closeModal),
   );
+  ov.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      closeModal();
+      return;
+    }
+    if (e.key !== "Tab") return;
+    const els = modalFocusables();
+    if (!els.length) return;
+    const first = els[0];
+    const last = els[els.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  });
+  const focusTarget =
+    modalFocusables().find((el) => !el.classList.contains("close-x")) ||
+    modalFocusables()[0];
+  focusTarget?.focus();
 }
 function closeModal() {
   $("#modalRoot").innerHTML = "";
+  if (_modalReturnFocus?.isConnected) {
+    try {
+      _modalReturnFocus.focus();
+    } catch {}
+  }
+  _modalReturnFocus = null;
 }
 
 function confirmDialog({ title, text, confirmText = "Подтвердить", cancelText = "Отмена", danger = false }) {
@@ -2583,7 +2863,7 @@ function openDataModal() {
   const goalRows = state.items
     .map((it) => {
       const gp = goalProgress(it);
-      return `<div class="wallet-row"><div><b>${escapeHtml(it.title)}</b><div class="muted small">${fmt(gp.saved)} / ${fmt(gp.cost)}${gp.monthsLeft ? ` · ~${gp.monthsLeft} мес.` : ""}</div></div>
+      return `<div class="wallet-row"><div><b>${escapeHtml(it.title)}</b><div class="muted small">${fmt(gp.saved)} / ${fmt(gp.cost)}${gp.monthsLeft ? ` · ~${gp.monthsLeft} мес. при текущем темпе` : ""}</div></div>
       <button class="btn btn-sm btn-outline" data-act="save-goal" data-id="${it.id}">Цель</button></div>`;
     })
     .join("");
@@ -2602,6 +2882,7 @@ function openDataModal() {
       <label class="muted small">USD <input type="number" id="currencyRateInput" value="${state.currencyRate}" min="1" step="0.1" style="width:100px;background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;color:var(--text);font-size:14px" /></label>
       <label class="muted small">EUR <input type="number" id="eurRateInput" value="${state.eurRate || 47}" min="1" step="0.1" style="width:100px;background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;color:var(--text);font-size:14px" /></label>
       <button class="btn btn-primary btn-sm" id="saveRateBtn">Сохранить курсы</button>
+      <button class="btn btn-outline btn-sm" id="nbuRateBtn" title="Подтянуть официальный курс НБУ">Курс НБУ</button>
     </div>
     <div class="section-title">Уведомления</div>
     <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
@@ -2632,6 +2913,26 @@ function openDataModal() {
     closeModal();
     toast("Курсы сохранены, валютные желания пересчитаны");
     await refresh();
+  });
+  // Авто-курс НБУ (аудит 13.4): обновляет оба курса и пересчитывает желания.
+  $("#nbuRateBtn")?.addEventListener("click", async () => {
+    const btn = $("#nbuRateBtn");
+    btn.disabled = true;
+    btn.textContent = "Загружаю…";
+    try {
+      const out = await api.post("/api/currency/refresh");
+      state.currencyRate = out.rate;
+      state.eurRate = out.eurRate;
+      $("#currencyRateInput").value = out.rate;
+      $("#eurRateInput").value = out.eurRate;
+      toast(`Курс НБУ: $ ${out.rate} · € ${out.eurRate}`);
+      await refresh();
+    } catch {
+      toast("НБУ недоступен, попробуйте позже");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Курс НБУ";
+    }
   });
   // Push-переключатель: показываем актуальное состояние подписки.
   const pushBtn = $("#pushToggleBtn");
@@ -2983,7 +3284,7 @@ function openItemModal(item) {
     val,
     label,
   ) => `<div class="field"><label>${label}</label><div class="range-row">
-      <input type="range" name="${name}" min="1" max="5" value="${val}" oninput="this.nextElementSibling.textContent=this.value">
+      <input type="range" name="${name}" class="js-range" min="1" max="5" value="${val}">
       <span class="range-val">${val}</span></div></div>`;
   const critRow = (c) => `<div class="score-row" data-crit="${c.id}">
       <div><div class="sr-label">${c.ru} ${c.dir === "neg" ? '<span class="muted small">(чем меньше — тем лучше)</span>' : ""}</div><div class="sr-hint">${c.hint}</div></div>
@@ -3193,6 +3494,12 @@ async function renderPriceTrend(itemId) {
       refreshVerdict();
     }),
   );
+  // CSP блокирует inline-обработчики (script-src-attr 'none') — слушатель вместо oninput (аудит 3.5).
+  $$(".js-range").forEach((el) =>
+    el.addEventListener("input", (e) => {
+      e.target.nextElementSibling.textContent = e.target.value;
+    }),
+  );
   refreshBand();
   refreshScoreSections();
 
@@ -3309,6 +3616,15 @@ function syncIsSafe() {
 
 function notifyDataChanged() {
   lastLocalChange = Date.now();
+  // Запоминаем свою версию сразу — поллинг не примет её за чужую (аудит 14.2).
+  setTimeout(() => {
+    api
+      .get("/api/version")
+      .then((v) => {
+        lastKnownVersion = v.version;
+      })
+      .catch(() => {});
+  }, 250);
   try {
     SYNC_CHANNEL?.postMessage({ t: "changed", at: lastLocalChange });
   } catch {}
@@ -3347,8 +3663,8 @@ async function pollVersion() {
   }
   if (version === lastKnownVersion) return;
   lastKnownVersion = version;
-  // Своё же изменение уже отрисовано локально — не дёргаем повторно.
-  if (Date.now() - lastLocalChange < 6000) return;
+  // Версии сравниваются напрямую: своя версия запоминается сразу после
+  // мутации (notifyDataChanged), сюда доходят только чужие изменения (аудит 14.2).
   await syncFromRemote();
 }
 
@@ -3376,9 +3692,35 @@ for (const ev of ["click", "keydown", "touchstart", "scroll"]) {
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden) lastInteraction = Date.now();
 });
+// SSE: версия пушится сервером по одному keep-alive соединению (аудит 17.2);
+// поллинг ниже остаётся фолбэком и сильно замедляется, пока SSE живо.
+let sseAlive = false;
+function connectEvents() {
+  if (!("EventSource" in window)) return;
+  const es = new EventSource("/api/events");
+  es.addEventListener("version", (e) => {
+    sseAlive = true;
+    const version = Number(e.data);
+    if (!Number.isFinite(version)) return;
+    if (lastKnownVersion === null) {
+      lastKnownVersion = version;
+      return;
+    }
+    if (version === lastKnownVersion) return;
+    lastKnownVersion = version;
+    syncFromRemote();
+  });
+  es.onerror = () => {
+    sseAlive = false;
+    es.close();
+    setTimeout(connectEvents, 15000);
+  };
+}
+connectEvents();
 (function pollLoop() {
   const idleMs = Date.now() - lastInteraction;
-  const interval = idleMs > 5 * 60 * 1000 ? 60000 : 5000;
+  let interval = idleMs > 5 * 60 * 1000 ? 60000 : 5000;
+  if (sseAlive) interval = 120000;
   setTimeout(async () => {
     try {
       await pollVersion();
