@@ -724,6 +724,20 @@ async function refresh() {
   renderView();
 }
 
+// Фича-флаги модулей (план 1.1): сателлиты можно выключать в настройках.
+// Флаги скрывают только UI — данные и формула «Свободно» не меняются.
+const MODULE_VIEWS = ["wallets", "investments"];
+function moduleEnabled(key) {
+  return state.meta?.modules?.[key] !== false;
+}
+function applyModuleFlags() {
+  for (const key of MODULE_VIEWS) {
+    $$(`.nav-item[data-view="${key}"]`).forEach((b) =>
+      b.classList.toggle("hidden", !moduleEnabled(key)),
+    );
+  }
+}
+
 function renderTopbar() {
   $("#topPlanName").textContent = state.plan
     ? state.plan.name
@@ -740,6 +754,7 @@ function renderTopbar() {
   } else {
     badge.classList.add("hidden");
   }
+  applyModuleFlags();
 }
 
 $$(".nav-item[data-view]").forEach((b) =>
@@ -846,9 +861,12 @@ window.addEventListener("resize", () => {
 const ROUTABLE_VIEWS = ["dashboard", "queue", "wallets", "investments", "plan", "history", "assistant", "more", "settings"];
 function viewFromHash() {
   const v = (location.hash || "").replace(/^#\/?/, "");
-  return ROUTABLE_VIEWS.includes(v) ? v : null;
+  if (!ROUTABLE_VIEWS.includes(v)) return null;
+  if (MODULE_VIEWS.includes(v) && !moduleEnabled(v)) return null;
+  return v;
 }
 function setView(view, { fromHash = false } = {}) {
+  if (MODULE_VIEWS.includes(view) && !moduleEnabled(view)) view = "dashboard";
   state.view = view;
   if (!fromHash && viewFromHash() !== view) {
     try {
@@ -907,7 +925,9 @@ function onboardingSteps() {
     { id: "items", done: hasItems, label: "Добавить 3–5 желаний", hint: "От мелких покупок до больших целей.", action: "add-item", button: "Добавить" },
     { id: "priority", done: hasPriorities, label: "Отметить приоритеты и дедлайны", hint: "Так кабина решений поймёт, что важно сейчас.", view: "queue", button: "Открыть" },
     { id: "manual", done: hasManual, label: "Собрать план месяца", hint: "Распределите излишки по желаниям.", view: "plan", button: "План" },
-    { id: "wallet", done: hasWallet, label: "Разложить остаток по кошелькам", hint: "Карманы снижают хаос после зарплаты.", action: "add-wallet", button: "Кошелёк" },
+    ...(moduleEnabled("wallets")
+      ? [{ id: "wallet", done: hasWallet, label: "Разложить остаток по кошелькам", hint: "Карманы снижают хаос после зарплаты.", action: "add-wallet", button: "Кошелёк" }]
+      : []),
   ];
 }
 
@@ -965,7 +985,7 @@ function smartDashboardCta() {
   if (!hasManualPlan()) {
     return { tone: "good", title: "Следующий шаг — зафиксировать план", text: `Свободно ${fmt(remainingSurplus())}. Распределите излишки по желаниям, чтобы не решать в день зарплаты.`, view: "plan", button: "Собрать план" };
   }
-  if (!state.wallets.length) {
+  if (moduleEnabled("wallets") && !state.wallets.length) {
     return { tone: "neutral", title: "Разложите остаток по карманам", text: "Кошельки помогают не смешивать еду, транспорт, накопления и свободные траты.", action: "add-wallet", button: "+ Кошелёк" };
   }
   const buy = state.insights?.buyNow?.[0];
@@ -1770,7 +1790,7 @@ function planWalletsStrip() {
 function viewMore() {
   return `<div class="view-head"><h1>Ещё</h1><p>Редкие разделы и настройки собраны здесь, чтобы нижняя навигация не перегружала телефон.</p></div>
     <div class="more-grid">
-      <button class="card more-tile" data-act="go-view" data-target-view="wallets"><span class="tile-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-wallet"/></svg></span><b>Кошельки</b><p>Карманы текущего месяца</p></button>
+      ${moduleEnabled("wallets") ? `<button class="card more-tile" data-act="go-view" data-target-view="wallets"><span class="tile-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-wallet"/></svg></span><b>Кошельки</b><p>Карманы текущего месяца</p></button>` : ""}
       <button class="card more-tile" data-act="go-view" data-target-view="history"><span class="tile-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-history"/></svg></span><b>История</b><p>Закрытые месяцы и решения</p></button>
       <button class="card more-tile" data-act="go-view" data-target-view="assistant"><span class="tile-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-spark"/></svg></span><b>AI-ассистент</b><p>Пояснения и компромиссы</p></button>
       <button class="card more-tile" data-act="open-plan"><span class="tile-ico"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-pencil"/></svg></span><b>Настройки плана</b><p>Зарплата, расходы, резерв</p></button>
@@ -2825,6 +2845,16 @@ function viewSettings() {
       </div>
     </section>
     <section class="card pad-lg">
+      <div class="section-title mt-0">Модули</div>
+      <p class="muted small">Выключенные модули скрываются из навигации, данные не удаляются, расчёт «Свободно» не меняется.</p>
+      <div class="settings-actions" style="flex-direction:column;align-items:flex-start;gap:8px">
+        <label class="switch-row"><input type="checkbox" class="check-18 module-toggle" data-module="investments" ${moduleEnabled("investments") ? "checked" : ""}> Инвестиции</label>
+        <label class="switch-row"><input type="checkbox" class="check-18 module-toggle" data-module="wallets" ${moduleEnabled("wallets") ? "checked" : ""}> Кошельки</label>
+        <label class="switch-row"><input type="checkbox" class="check-18 module-toggle" data-module="pricecheck" ${moduleEnabled("pricecheck") ? "checked" : ""}> Прайс-трекер по ссылкам</label>
+      </div>
+      <p class="muted small mt-10">AI-ассистент: ${state.meta?.ai?.enabled ? "включён" : "выключен"} · Monobank: ${state.meta?.monobank?.enabled ? "подключён" : "не подключён"} — управляются переменными окружения (AI_PROVIDER, MONOBANK_TOKEN).</p>
+    </section>
+    <section class="card pad-lg">
       <div class="section-title mt-0">Данные</div>
       <p class="muted small">Экспорт — полный снимок в JSON. Импорт заменяет все данные.</p>
       <div class="settings-actions">
@@ -2847,6 +2877,19 @@ function viewSettings() {
 }
 
 function initSettings() {
+  $$(".module-toggle").forEach((box) =>
+    box.addEventListener("change", async () => {
+      try {
+        const r = await api.put("/api/settings/modules", { [box.dataset.module]: box.checked });
+        if (state.meta) state.meta.modules = r.modules;
+        applyModuleFlags();
+        toast(box.checked ? "Модуль включён" : "Модуль скрыт из навигации");
+      } catch (e) {
+        box.checked = !box.checked;
+        if (e.message !== "demo") toast("Не удалось сохранить: " + e.message);
+      }
+    }),
+  );
   $("#exportBtn")?.addEventListener("click", exportData);
   $("#importFile")?.addEventListener("change", importData);
   $("#csvItemsBtn")?.addEventListener("click", () => downloadCSV("items"));
@@ -3270,7 +3313,7 @@ function openItemModal(item, prefill) {
       </select><span class="hint" id="currencyHint"></span></div>
       <div class="field"><label>Размер покупки (авто по сумме)</label><input id="bandDisplay" value="" disabled style="opacity:.8" /></div>
       <div class="field"><label>Ссылка на товар (опц.)</label><input name="url" type="url" placeholder="https://..." value="${escapeAttr(i.url || "")}" />
-        ${i.linkPrice ? `<span class="hint">Цена по ссылке: ${fmtShort(i.linkPrice)} (${fmtDate(i.linkPriceAt)})</span>` : ""}
+        ${i.linkPrice && moduleEnabled("pricecheck") ? `<span class="hint">Цена по ссылке: ${fmtShort(i.linkPrice)} (${fmtDate(i.linkPriceAt)})</span>` : ""}
         <span class="hint" id="priceTrendHint"></span></div>
       <div class="field"><label>Категория покупки</label><select name="category" id="catSelect">${catOpts}</select></div>
       <div class="field"><label>Слой капитала</label><select name="layer" id="layerSelect">${layerOpts}</select>
@@ -3300,7 +3343,7 @@ function openItemModal(item, prefill) {
       <div class="field full hidden" id="fullWrap"><div class="subhead mt-0">Дополнительно (Full)</div><div class="score-grid">${fullRows}</div></div>
 
       ${item ? `<div class="field full" style="display:flex;gap:10px;flex-wrap:wrap">
-        ${item.url ? `<button type="button" class="btn btn-outline btn-sm" id="checkPriceBtn">Проверить цену по ссылке</button>` : ""}
+        ${item.url && moduleEnabled("pricecheck") ? `<button type="button" class="btn btn-outline btn-sm" id="checkPriceBtn">Проверить цену по ссылке</button>` : ""}
         ${state.meta?.ai?.enabled ? `<button type="button" class="btn btn-outline btn-sm" id="talkMeOutBtn">😈 Отговори меня</button>` : ""}
       </div><div class="field full hidden" id="talkMeOutBox"></div>` : ""}
       <div class="modal-foot field full" style="flex-direction:row;justify-content:space-between">
@@ -3389,7 +3432,7 @@ function openItemModal(item, prefill) {
 // Тренд цены по ссылке: история проверок из /api/items/:id/price-history.
 async function renderPriceTrend(itemId) {
   const el = $("#priceTrendHint");
-  if (!el) return;
+  if (!el || !moduleEnabled("pricecheck")) return;
   try {
     const h = await api.get(`/api/items/${itemId}/price-history`);
     if (!h.trend || h.checks.length < 2) {

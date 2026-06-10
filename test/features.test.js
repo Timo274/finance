@@ -297,6 +297,42 @@ describe("новые фичи", () => {
     assert.equal(state.data.history[0].snapshot, null);
   });
 
+  it("управляет фича-флагами модулей (план 1.1)", async () => {
+    // По умолчанию все модули включены.
+    const meta = await request("/api/meta");
+    assert.equal(meta.res.status, 200);
+    assert.deepEqual(meta.data.modules, { investments: true, wallets: true, pricecheck: true });
+
+    // Выключаем кошельки — остальные не трогаем.
+    const off = await request("/api/settings/modules", {
+      method: "PUT",
+      body: { wallets: false },
+    });
+    assert.equal(off.res.status, 200);
+    assert.equal(off.data.modules.wallets, false);
+    assert.equal(off.data.modules.investments, true);
+
+    // Флаг персистентен и отдаётся в meta.
+    const meta2 = await request("/api/meta");
+    assert.equal(meta2.data.modules.wallets, false);
+
+    // Мусорные ключи и не-boolean значения игнорируются.
+    const junk = await request("/api/settings/modules", {
+      method: "PUT",
+      body: { hacker: true, wallets: "yes" },
+    });
+    assert.equal(junk.res.status, 200);
+    assert.equal(junk.data.modules.wallets, false);
+    assert.equal(junk.data.modules.hacker, undefined);
+
+    // Возвращаем обратно.
+    const on = await request("/api/settings/modules", {
+      method: "PUT",
+      body: { wallets: true },
+    });
+    assert.equal(on.data.modules.wallets, true);
+  });
+
   it("меняет PIN и разлогинивает остальные устройства", async () => {
     const wrong = await request("/api/auth/change-pin", {
       method: "POST",

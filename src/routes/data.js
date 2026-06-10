@@ -15,6 +15,9 @@ import {
   getGoals,
   effectiveAllocation,
   currentPlanId,
+  moduleFlags,
+  setModuleFlag,
+  MODULE_KEYS,
 } from "../store.js";
 import { validateImportData, restoreFullBackup } from "../restore.js";
 import { BACKUP_DIR, BACKUP_RETENTION, listBackupFiles, writeBackup } from "../backups.js";
@@ -187,6 +190,15 @@ export default function registerDataRoutes(app) {
     }
     setSetting("ui_prefs", JSON.stringify(prefs));
     res.json({ ok: true });
+  });
+
+  // Фича-флаги модулей (план 1.1): сателлиты можно выключать в настройках.
+  app.put("/api/settings/modules", requireAuth, (req, res) => {
+    const b = req.body || {};
+    for (const key of MODULE_KEYS) {
+      if (typeof b[key] === "boolean") setModuleFlag(key, b[key]);
+    }
+    res.json({ ok: true, modules: moduleFlags() });
   });
 
   app.get("/api/state", requireAuth, (req, res) => {

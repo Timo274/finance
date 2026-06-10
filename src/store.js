@@ -413,6 +413,21 @@ export function exportPayload() {
   };
 }
 
+// Фича-флаги сателлитных модулей (план 1.1): ядро (план + очередь + закрытие
+// месяца) всегда включено, сателлиты выключаемы. Флаги влияют только на UI —
+// данные и формула «Свободно» не меняются.
+export const MODULE_KEYS = ["investments", "wallets", "pricecheck"];
+export function moduleFlags() {
+  const flags = {};
+  for (const key of MODULE_KEYS) flags[key] = getSetting(`module_${key}`) !== "0";
+  return flags;
+}
+export function setModuleFlag(key, enabled) {
+  if (!MODULE_KEYS.includes(key)) return false;
+  setSetting(`module_${key}`, enabled ? "1" : "0");
+  return true;
+}
+
 export function metaPayload() {
   return {
     categories: CATEGORIES,
@@ -427,6 +442,7 @@ export function metaPayload() {
       label: v.label,
     })),
     defaults: DEFAULTS,
+    modules: moduleFlags(),
     ai: aiStatus(),
     monobank: { enabled: monobankEnabled() },
     offsiteBackup: { enabled: offsiteEnabled() },

@@ -3,7 +3,7 @@ import { stmt } from "./statements.js";
 import { getSetting, setSetting } from "./db.js";
 import { sendPush } from "./webpush.js";
 import { checkPrice } from "./pricecheck.js";
-import { getActivePlan, getActiveItems } from "./store.js";
+import { getActivePlan, getActiveItems, moduleFlags } from "./store.js";
 import { todayISO } from "./sanitize.js";
 import { structuredLog } from "./log.js";
 import { refreshRatesFromNbu } from "./rates.js";
@@ -65,6 +65,8 @@ async function runReminderSweep() {
 }
 
 async function runDailyPriceSweep() {
+  // Модуль прайс-трекера выключен (план 1.1) — не ходим по ссылкам.
+  if (!moduleFlags().pricecheck) return;
   const today = todayISO();
   if (getSetting("price_sweep_date") === today) return;
   for (const row of stmt.itemsWithUrl.all()) {
