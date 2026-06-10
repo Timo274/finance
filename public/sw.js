@@ -4,6 +4,7 @@ const VERSION = "__STATIC_VERSION__";
 const CACHE = `capital-queue-${VERSION}`;
 const STATIC = [
   `/styles.css?v=${VERSION}`,
+  `/fonts/fonts.css?v=${VERSION}`,
   `/app.js?v=${VERSION}`,
   "/logo.svg",
   "/manifest.webmanifest",
@@ -50,14 +51,28 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Версионированная статика иммутабельна — cache-first (аудит 11.3).
+  if (url.searchParams.has("v") || STATIC.includes(url.pathname)) {
+    event.respondWith(
+      caches.match(event.request).then(
+        (hit) =>
+          hit ||
+          fetch(event.request).then((response) => {
+            if (response.ok) {
+              const copy = response.clone();
+              caches.open(CACHE).then((cache) => cache.put(event.request, copy));
+            }
+            return response;
+          }),
+      ),
+    );
+    return;
+  }
+
+  // Остальное — network-first без записи в кеш: случайные URL
+  // (например /admin.php -> index.html) не должны замусоривать кеш.
   event.respondWith(
-    fetch(event.request)
-      .then((response) => {
-        const copy = response.clone();
-        caches.open(CACHE).then((cache) => cache.put(event.request, copy));
-        return response;
-      })
-      .catch(() => caches.match(event.request)),
+    fetch(event.request).catch(() => caches.match(event.request)),
   );
 });
 

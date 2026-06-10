@@ -14,12 +14,8 @@
         <link rel="icon" href="/logo.svg" type="image/svg+xml" />
         <link rel="manifest" href="/manifest.webmanifest" />
         <link rel="apple-touch-icon" href="/icon-192.png" />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-        <link
-            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Manrope:wght@600;700;800&display=swap"
-            rel="stylesheet"
-        />
+        <!-- Шрифты self-hosted: офлайн-PWA и нестабильные сети без FOUT (аудит 5.3/17.6) -->
+        <link rel="stylesheet" href="/fonts/fonts.css?v=__STATIC_VERSION__" />
         <link rel="stylesheet" href="/styles.css?v=__STATIC_VERSION__" />
     </head>
     <body>
@@ -341,7 +337,7 @@
         <!-- Модальные окна -->
         <div id="modalRoot"></div>
 
-        <div id="toast" class="toast hidden"></div>
+        <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
         <script src="/app.js?v=__STATIC_VERSION__" type="module"></script>
     </body>
