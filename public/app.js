@@ -428,11 +428,12 @@ function drawCharts() {
       .forEach(([k, v]) => segs.push({ value: v, color: layerColor(k) }));
     const rem = remainingSurplus();
     if (rem > 0) segs.push({ value: rem, color: cssVar("--border", "#ccd") });
-    // Центр — честная цифра: сколько реально распределено на желания,
-    // а не вся зарплата (база+страховка — это не «распределено»).
+    // Центр = сумма кольца (аудит 7.2): глаз читает «число в центре — это всё кольцо».
+    // Кольцо — вся зарплата по слоям, значит в центре — зарплата целиком.
+    const ringTotal = segs.reduce((a, x) => a + Math.max(0, x.value || 0), 0);
     drawDonut(donut, segs, {
-      title: fmtShort(committedTotal()),
-      sub: `из ${fmtShort(t.availableToAllocate)} распределено`,
+      title: fmtShort(ringTotal),
+      sub: "зарплата по слоям",
     });
   }
   const portChart = $("#portChart");
@@ -693,7 +694,7 @@ function planPulseData() {
   const tone = remaining < 0 ? "danger" : pressure >= 85 || urgentCount ? "warn" : "good";
   const headline =
     tone === "danger"
-      ? "Плану нужен разгрузочный trade-off"
+      ? "Плану нужен компромисс: что-то отложить"
       : tone === "warn"
         ? "План рабочий, но есть зоны внимания"
         : "План выглядит устойчивым";
@@ -1003,7 +1004,10 @@ function animateNumbers(root) {
 function renderView() {
   const root = $("#views");
   const v = state.view;
-  if (v === "dashboard") root.innerHTML = viewDashboard();
+  if (v === "dashboard") {
+    root.innerHTML = viewDashboard();
+    initDashboardSpark();
+  }
   else if (v === "queue") root.innerHTML = viewQueue();
   else if (v === "wallets") root.innerHTML = viewWallets();
   else if (v === "investments") root.innerHTML = viewInvestments();
@@ -1016,6 +1020,10 @@ function renderView() {
     root.innerHTML = viewAssistant();
     initAssistant();
   } else if (v === "more") root.innerHTML = viewMore();
+  else if (v === "settings") {
+    root.innerHTML = viewSettings();
+    initSettings();
+  }
   bindViewEvents();
   if (v !== _lastCountupView) {
     _lastCountupView = v;
@@ -1037,7 +1045,7 @@ window.addEventListener("resize", () => {
 // VIEWS
 // ============================================================
 // Hash-роутер: вкладка живёт в URL, «назад» и перезагрузка работают (аудит 2.1).
-const ROUTABLE_VIEWS = ["dashboard", "queue", "wallets", "investments", "plan", "history", "assistant", "more"];
+const ROUTABLE_VIEWS = ["dashboard", "queue", "wallets", "investments", "plan", "history", "assistant", "more", "settings"];
 function viewFromHash() {
   const v = (location.hash || "").replace(/^#\/?/, "");
   return ROUTABLE_VIEWS.includes(v) ? v : null;
@@ -1097,7 +1105,7 @@ function onboardingSteps() {
   return [
     { id: "plan", done: hasPlan, label: "Ввести зарплату и обязательные расходы", hint: "Это база для всех расчётов.", action: "open-plan", button: "Настроить" },
     { id: "items", done: hasItems, label: "Добавить 3–5 желаний", hint: "От мелких покупок до больших целей.", action: "add-item", button: "Добавить" },
-    { id: "priority", done: hasPriorities, label: "Отметить приоритеты и дедлайны", hint: "Так cockpit поймёт, что важно сейчас.", view: "queue", button: "Открыть" },
+    { id: "priority", done: hasPriorities, label: "Отметить приоритеты и дедлайны", hint: "Так кабина решений поймёт, что важно сейчас.", view: "queue", button: "Открыть" },
     { id: "manual", done: hasManual, label: "Собрать план месяца", hint: "Распределите излишки по желаниям.", view: "plan", button: "План" },
     { id: "wallet", done: hasWallet, label: "Разложить остаток по кошелькам", hint: "Карманы снижают хаос после зарплаты.", action: "add-wallet", button: "Кошелёк" },
   ];
@@ -1161,27 +1169,29 @@ function smartDashboardCta() {
     return { tone: "neutral", title: "Разложите остаток по карманам", text: "Кошельки помогают не смешивать еду, транспорт, накопления и свободные траты.", action: "add-wallet", button: "+ Кошелёк" };
   }
   const buy = state.insights?.buyNow?.[0];
-  return { tone: "good", title: buy ? `Можно действовать: ${buy.title}` : "План месяца собран", text: buy ? `Первое безопасное действие по cockpit — ${fmt(buy.remainingCost ?? buy.cost)}.` : "Проверьте план перед зарплатой и закрывайте месяц, когда решения выполнены.", view: buy ? "queue" : "plan", button: buy ? "Открыть очередь" : "Открыть план" };
+  return { tone: "good", title: buy ? `Можно действовать: ${buy.title}` : "План месяца собран", text: buy ? `Первое безопасное действие по плану — ${fmt(buy.remainingCost ?? buy.cost)}.` : "Проверьте план перед зарплатой и закрывайте месяц, когда решения выполнены.", view: buy ? "queue" : "plan", button: buy ? "Открыть очередь" : "Открыть план" };
 }
 
+// Один «следующий шаг» вместо трёх конкурирующих блоков (аудит 7.4):
+// критичное из кабины решений важнее обычного CTA; пульс-метрики — вторичная строка.
 function smartCtaCard() {
-  const cta = smartDashboardCta();
-  return `<section class="smart-cta card smart-${cta.tone}">
-    <div><div class="eyebrow">главное действие</div><h2>${escapeHtml(cta.title)}</h2><p>${escapeHtml(cta.text)}</p></div>
-    <button class="btn btn-primary" data-act="${cta.action || "go-view"}" ${cta.view ? `data-target-view="${cta.view}"` : ""}>${escapeHtml(cta.button)}</button>
-  </section>`;
-}
-function planPulseCard() {
+  let cta = smartDashboardCta();
+  if (state.insights?.status === "danger") {
+    cta = {
+      tone: "danger",
+      title: "Сначала разгрузите план",
+      text: state.insights.headline || "План превышает излишки — отложите что-то перед новыми покупками.",
+      view: "plan",
+      button: "Открыть план",
+    };
+  }
   const pulse = planPulseData();
   const queueMonthsText = pulse.queueMonths == null ? "—" : `${pulse.queueMonths} мес.`;
   const remainingTone = pulse.remaining < 0 ? "danger" : "good";
-  return `<section class="plan-pulse card pulse-${pulse.tone}">
-    <div class="plan-pulse-copy">
-      <div class="eyebrow">пульс плана</div>
-      <h2>${escapeHtml(pulse.headline)}</h2>
-      <p>${escapeHtml(pulse.advice)}</p>
-    </div>
-    <div class="pulse-metrics">
+  return `<section class="smart-cta card smart-${cta.tone}">
+    <div><div class="eyebrow">следующий шаг</div><h2>${escapeHtml(cta.title)}</h2><p>${escapeHtml(cta.text)}</p></div>
+    <button class="btn btn-primary" data-act="${cta.action || "go-view"}" ${cta.view ? `data-target-view="${cta.view}"` : ""}>${escapeHtml(cta.button)}</button>
+    <div class="pulse-metrics cta-pulse">
       <div class="pulse-metric"><span>База</span><b>${pulse.fixedPct}%</b><em>${fmt(pulse.fixed)}</em></div>
       <div class="pulse-metric"><span>Занято излишков</span><b>${pulse.pressure}%</b><em>${fmt(pulse.committed)} / ${fmt(pulse.available)}</em></div>
       <div class="pulse-metric pulse-${remainingTone}"><span>${pulse.remaining < 0 ? "Не хватает" : "Буфер"}</span><b>${fmt(pulse.remaining)}</b><em>после плана</em></div>
@@ -1248,7 +1258,7 @@ function decisionCockpit() {
   const runway = Math.max(0, Math.min(100, metrics.runwayPct || 0));
   const statusLabel =
     insights.status === "danger"
-      ? "Нужен trade-off"
+      ? "Нужен компромисс"
       : insights.status === "warning"
         ? "Проверить перед покупкой"
         : insights.status === "no_plan"
@@ -1260,11 +1270,11 @@ function decisionCockpit() {
   return `<section class="decision-cockpit decision-${insights.status || "safe"}">
     <div class="decision-hero">
       <div class="decision-copy">
-        <div class="eyebrow">Decision cockpit</div>
+        <div class="eyebrow" title="Сводка месяца: лимит, обязательства и безопасный следующий шаг">Кабина решений</div>
         <h2>${escapeHtml(insights.headline || "План готов")}</h2>
         <p>Один экран для решения: что купить сейчас, что держать под контролем и где лучше нажать паузу.</p>
       </div>
-      <div class="runway-ring" style="--pct:${runway}">
+      <div class="runway-ring" style="--pct:${runway}" title="Запас = какая часть излишков останется свободной после плана. 100% — ничего не потрачено, 0% — всё распределено.">
         <b>${metrics.runwayPct ?? 0}%</b><span>запас</span>
       </div>
     </div>
@@ -1318,7 +1328,7 @@ function allocationLayerCard(t, segs, stablePct) {
         <div class="allocation-donut-caption">
           <span>Свободно после базы</span>
           <b>${fmt(t.availableToAllocate)}</b>
-          <em>${fmtUsd(t.availableToAllocate)} · зарплата ${fmt(t.salary)}</em>
+          <em>${fmtUsd(t.availableToAllocate)} на желания</em>
         </div>
       </div>
 
@@ -1359,9 +1369,49 @@ function allocationLayerCard(t, segs, stablePct) {
   </section>`;
 }
 
-function statCard(ico, label, valueCls, value, sub) {
-  return `<div class="card stat-card"><span class="stat-watermark" aria-hidden="true">${ico}</span><div class="stat-label"><span class="stat-ico">${ico}</span> ${label}</div><div class="stat-value ${valueCls}">${value}</div><div class="stat-sub">${sub}</div></div>`;
+// Компактный чип вместо большой stat-карты (аудит 4.1: меньше повторов и скролла).
+function statChip(label, value, valueCls = "", sub = "") {
+  return `<div class="stat-chip" role="listitem" ${sub ? `title="${escapeAttr(sub)}"` : ""}><span>${label}</span><b class="${valueCls}">${value}</b></div>`;
 }
+
+// Свёрнутый спарклайн капитала на кабинете (аудит 2.4): динамика — в один взгляд, детали — в Истории.
+function capitalSparkCard() {
+  return `<section class="card capital-spark" data-act="go-view" data-target-view="history" role="button" tabindex="0" aria-label="Динамика капитала — открыть историю">
+    <div class="capital-spark-head"><div class="eyebrow">динамика капитала</div><span class="muted small">открыть историю →</span></div>
+    <canvas id="dashSpark" height="56" aria-hidden="true"></canvas>
+    <div class="muted small" id="dashSparkHint">Загружаю…</div>
+  </section>`;
+}
+
+let _sparkCache = null;
+async function initDashboardSpark() {
+  const canvas = $("#dashSpark");
+  if (!canvas) return;
+  try {
+    _sparkCache = _sparkCache || (await api.get("/api/history/charts"));
+    const series = _sparkCache.netWorth || [];
+    const pts = series.map((p) => ({ value: p.value }));
+    const hint = $("#dashSparkHint");
+    if (pts.length < 2) {
+      if (hint) hint.textContent = "График появится, когда накопится несколько оценок активов.";
+      return;
+    }
+    if (hint) {
+      const first = pts[0].y || 0;
+      const last = pts[pts.length - 1].y || 0;
+      const delta = last - first;
+      hint.textContent = `${fmt(last)} сейчас · ${delta >= 0 ? "+" : ""}${fmt(delta)} за период`;
+    }
+    drawLine(canvas, pts, {
+      xStart: series[0]?.date?.slice(0, 7),
+      xEnd: series[series.length - 1]?.date?.slice(0, 7),
+    });
+  } catch {
+    const hint = $("#dashSparkHint");
+    if (hint) hint.textContent = "Не удалось загрузить динамику.";
+  }
+}
+
 
 function viewDashboard() {
   if (!state.plan || !state.allocation) {
@@ -1400,21 +1450,20 @@ function viewDashboard() {
 
   return `
   <div class="dashboard-shell">
-    <div class="view-head dashboard-head"><div><h1>Кабинет</h1><p>Главный срез зарплаты: слои, остаток и следующие действия.</p></div><span class="page-kicker">личный финансовый cockpit</span></div>
+    <div class="view-head dashboard-head"><div><h1>Кабинет</h1><p>Главный срез зарплаты: слои, остаток и следующие действия.</p></div><span class="page-kicker">личный финансовый штаб</span></div>
     ${allocationLayerCard(t, segs, stablePct)}
     ${smartCtaCard()}
-    ${planPulseCard()}
     ${decisionCockpit()}
-    <div class="grid cards dashboard-cards">
-    ${statCard("💰", "Зарплата", "", fmt(t.salary), `${fmtDate(state.plan.payday)} ${fmtUsd(t.salary)}`)}
-    ${statCard("🛡️", "Обязательные расходы", "sm", fmt(t.survival), `${fmtUsd(t.survival)} стабильный расходник`)}
-    ${statCard("🏦", "Страховка", "sm accent-num", fmt(t.reserve), `${fmtUsd(t.reserve)} чёрный день`)}
-    ${statCard("📈", "Инвестиции", "sm green-num", fmt(t.fixedInvestment), `${fmtUsd(t.fixedInvestment)} стабильно отложить`)}
-    ${statCard("🎯", "Излишки на желания", "accent-num", fmt(t.availableToAllocate), `${fmtUsd(t.availableToAllocate)} после стабильных пунктов`)}
-    ${statCard("📋", "Распределено", "sm", fmt(committedTotal()), `${fmtUsd(committedTotal())} ${hasManualPlan() ? "ручной план" : `${state.allocation.approved.length} покупок`}`)}
-    ${statCard(remainingSurplus() < 0 ? "⚠️" : "✅", "Останется из излишков", remainingSurplus() < 0 ? "red-num" : "green-num", fmt(remainingSurplus()), `${fmtUsd(remainingSurplus())} ${hasManualPlan() ? "по ручному плану" : "по авто-распределению"}`)}
-    ${pfValue > 0 ? statCard("💼", "Портфель", "sm", fmt(pfValue), `${fmtUsd(pfValue)} ${pfPLpct ? `<span style="color:${pfPL >= 0 ? "var(--green)" : "var(--red)"};font-weight:700">${pfPL >= 0 ? "+" : ""}${pfPLpct}%</span>` : ""}`) : ""}
+    <div class="stat-chips" role="list" aria-label="Сводка месяца">
+      ${statChip("Зарплата", fmt(t.salary), "", `${fmtDate(state.plan.payday)} · ${fmtUsd(t.salary)}`)}
+      ${statChip("Обязательные", fmt(t.survival), "", "стабильный расходник")}
+      ${statChip("Страховка", fmt(t.reserve), "accent-num", "чёрный день")}
+      ${statChip("Инвестиции", fmt(t.fixedInvestment), "green-num", "стабильно отложить")}
+      ${statChip("Излишки", fmt(t.availableToAllocate), "accent-num", "после стабильных пунктов")}
+      ${statChip("Распределено", fmt(committedTotal()), "", hasManualPlan() ? "ручной план" : `${state.allocation.approved.length} покупок`)}
+      ${pfValue > 0 ? statChip("Портфель", fmt(pfValue), pfPL >= 0 ? "green-num" : "red-num", pfPLpct ? `${pfPL >= 0 ? "+" : ""}${pfPLpct}% к вложенному` : "") : ""}
     </div>
+    ${capitalSparkCard()}
   </div>
   `;
 }
@@ -1437,7 +1486,7 @@ function queueItemRow(item, extra = "", reason = "") {
       ${reason ? `<div class="reason">↪ ${escapeHtml(reason)}</div>` : ""}
       ${extra ? `<div class="qi-meta mobile-swipe-hint">${extra}</div>` : ""}
       <div class="mobile-item-actions" aria-label="Действия с желанием">
-        <button class="btn btn-sm btn-outline" data-act="tradeoff" data-id="${item.id}">Trade-off</button>
+        <button class="btn btn-sm btn-outline" data-act="tradeoff" data-id="${item.id}" title="Что отложить, чтобы это поместилось в бюджет">Компромисс</button>
         <button class="btn btn-sm btn-outline" data-act="save-goal" data-id="${item.id}">Копить</button>
         <button class="btn btn-sm btn-ghost" data-act="edit" data-id="${item.id}">Изм.</button>
         <button class="btn btn-sm btn-ghost" data-act="bought" data-id="${item.id}">Куплено</button>
@@ -1495,7 +1544,7 @@ function viewQueue() {
         <details class="row-menu">
           <summary aria-label="Действия с желанием">⋯</summary>
           <div class="row-menu-pop">
-            <button class="btn btn-sm btn-ghost" data-act="tradeoff" data-id="${it.id}">Trade-off</button>
+            <button class="btn btn-sm btn-ghost" data-act="tradeoff" data-id="${it.id}" title="Что отложить, чтобы это поместилось в бюджет">Компромисс</button>
             <button class="btn btn-sm btn-ghost" data-act="ai-explain" data-id="${it.id}">✦ почему</button>
             <button class="btn btn-sm btn-outline" data-act="save-goal" data-id="${it.id}">Копить</button>
             <button class="btn btn-sm btn-outline" data-act="edit" data-id="${it.id}">Редактировать</button>
@@ -1522,6 +1571,7 @@ function viewQueue() {
     <select name="priority"><option value="3">Приоритет 3</option><option value="5">Приоритет 5</option><option value="4">Приоритет 4</option><option value="2">Приоритет 2</option><option value="1">Приоритет 1</option></select>
     <input name="deadline" type="date" title="Дедлайн" />
     <button class="btn btn-primary" type="submit">Добавить</button>
+    <button class="btn btn-ghost" type="button" id="quickAddDetails" title="Открыть полную форму: слой, валюта, оценки, заметки">Детали…</button>
   </form>
   <div class="filters card">
     <input data-filter="q" placeholder="Поиск по желаниям..." value="${escapeAttr(q.q)}" />
@@ -1553,9 +1603,9 @@ function viewQueue() {
   ${
     state.items.length && filtered.length
       ? `<div class="table-wrap queue-table"><table>
-    <thead><tr>${th("title", "Желание")}${th("cost", "Стоимость")}<th>Накоплено</th>${th("layer", "Слой")}${th("category", "Категория")}${th("band", "Band")}${th("type", "Тип")}${th("priority", "Приоритет")}${th("deadline", "Дедлайн")}<th>Статус</th><th></th></tr></thead>
+    <thead><tr>${th("title", "Желание")}${th("cost", "Стоимость")}<th>Накоплено</th>${th("layer", "Слой")}${th("category", "Категория")}${th("band", "Размер")}${th("type", "Тип")}${th("priority", "Приоритет")}${th("deadline", "Дедлайн")}<th>Статус</th><th></th></tr></thead>
     <tbody>${rows}</tbody></table></div>`
-      : richEmpty("≡", "Очередь желаний пока пустая", "Добавьте то, что хотите купить: от обязательных покупок до мечт. Потом cockpit сам покажет, что помещается в излишки.", "add-item", "+ Добавить желание")
+      : richEmpty("≡", "Очередь желаний пока пустая", "Добавьте то, что хотите купить: от обязательных покупок до мечт. Потом кабина решений сама покажет, что помещается в излишки.", "add-item", "+ Добавить желание")
   }
   ${state.items.length && !filtered.length ? richEmpty("⌕", "По фильтрам ничего не найдено", "Сбросьте поиск или выберите другой слой, тип или статус.") : ""}
   <div class="mobile-queue">${sortedItems(filtered)
@@ -1896,6 +1946,23 @@ function viewPlan() {
       <span class="${remainingSurplus() < 0 ? "red-num" : "muted"}" data-manual-remaining>${remainingSurplus() < 0 ? "План выше доступного бюджета" : `Свободно ещё ${fmt(remainingSurplus())}${planned > 0 ? "" : " (авто-распределение)"}`}</span>
       <button class="btn btn-primary" data-act="save-manual-plan">Сохранить ручной план</button>
     </div>
+  </div>
+  ${planWalletsStrip()}`;
+}
+
+// Кошельки участвуют в распределении, поэтому видны прямо на «Плане» (аудит 2.4).
+function planWalletsStrip() {
+  if (!state.wallets.length)
+    return `<div class="card pad-lg plan-wallets"><div class="row-between"><div><div class="section-title" style="margin:0">Кошельки месяца</div><p class="muted small" style="margin:4px 0 0">Карманов пока нет — заведите их, чтобы видеть, где лежат деньги месяца.</p></div><button class="btn btn-outline btn-sm" data-act="go-view" data-target-view="wallets">Открыть кошельки</button></div></div>`;
+  const total = state.wallets.reduce((sum, w) => sum + Number(w.amount || 0), 0);
+  const chips = state.wallets
+    .slice(0, 6)
+    .map((w) => `<div class="stat-chip"><span>${escapeHtml(w.name)}</span><b>${fmt(Number(w.amount || 0))}</b></div>`)
+    .join("");
+  return `<div class="card pad-lg plan-wallets">
+    <div class="row-between"><div><div class="section-title" style="margin:0">Кошельки месяца</div><p class="muted small" style="margin:4px 0 0">Всего по карманам: <b>${fmt(total)}</b></p></div>
+    <button class="btn btn-outline btn-sm" data-act="go-view" data-target-view="wallets">Открыть кошельки</button></div>
+    <div class="stat-chips" style="margin:10px 0 0">${chips}</div>
   </div>`;
 }
 
@@ -1904,8 +1971,9 @@ function viewMore() {
     <div class="more-grid">
       <button class="card more-tile" data-act="go-view" data-target-view="wallets"><span>◫</span><b>Кошельки</b><p>Карманы текущего месяца</p></button>
       <button class="card more-tile" data-act="go-view" data-target-view="history"><span>↺</span><b>История</b><p>Закрытые месяцы и решения</p></button>
-      <button class="card more-tile" data-act="go-view" data-target-view="assistant"><span>✦</span><b>AI-ассистент</b><p>Пояснения и trade-off</p></button>
-      <button class="card more-tile" data-act="open-plan"><span>⚙</span><b>Настройки плана</b><p>Зарплата, расходы, резерв</p></button>
+      <button class="card more-tile" data-act="go-view" data-target-view="assistant"><span>✦</span><b>AI-ассистент</b><p>Пояснения и компромиссы</p></button>
+      <button class="card more-tile" data-act="open-plan"><span>✎</span><b>Настройки плана</b><p>Зарплата, расходы, резерв</p></button>
+      <button class="card more-tile" data-act="go-view" data-target-view="settings"><span>⚙</span><b>Настройки</b><p>Безопасность, валюты, данные</p></button>
       <button class="card more-tile" data-act="toggle-theme"><span>◐</span><b>Тема</b><p>Светлая / тёмная / авто</p></button>
       <button class="card more-tile danger" id="logoutBtnMobileMore" type="button"><span>⏻</span><b>Выйти</b><p>Завершить сессию</p></button>
     </div>`;
@@ -2025,7 +2093,7 @@ function md(text) {
 
 function viewAssistant() {
   const enabled = state.meta?.ai?.enabled;
-  return `<div class="view-head"><h1>AI-ассистент</h1><p>Советует, что купить первым, что отложить и поясняет trade-off на основе твоего плана.</p></div>
+  return `<div class="view-head"><h1>AI-ассистент</h1><p>Советует, что купить первым, что отложить, и поясняет компромиссы на основе твоего плана.</p></div>
   ${!enabled ? `<div class="tradeoff" style="background:rgba(245,177,61,.1);border-color:var(--amber)"><b style="color:var(--amber)">AI выключен.</b> Добавьте AI_PROVIDER и AI_API_KEY в окружение сервера, чтобы включить ассистента. Остальное приложение работает без него.</div>` : ""}
   ${enabled ? `<div class="tradeoff"><b>Приватность:</b> вопросы и краткий контекст плана (суммы, покупки, кошельки, портфель) отправляются выбранному AI-провайдеру. Не пишите PIN, ключи или другие секреты.</div>` : ""}
   <div class="chat" id="assistantRoot">
@@ -2198,6 +2266,17 @@ function bindViewEvents() {
   });
   $$(".queue-swipe").forEach((row) => bindSwipe(row));
   $("#quickAddForm")?.addEventListener("submit", quickAddItem);
+  $("#quickAddDetails")?.addEventListener("click", () => {
+    const f = new FormData($("#quickAddForm"));
+    openItemModal(null, {
+      title: String(f.get("title") || ""),
+      cost: f.get("cost") ? Number(f.get("cost")) : "",
+      category: String(f.get("category") || "lifestyle"),
+      type: String(f.get("type") || "should"),
+      priority: Number(f.get("priority") || 3),
+      deadline: String(f.get("deadline") || ""),
+    });
+  });
   $$(".th-sort").forEach((btn) =>
     btn.addEventListener("click", () => {
       const key = btn.dataset.sort;
@@ -2859,62 +2938,81 @@ function openQuickItemModal() {
   $("#quickItemForm").addEventListener("submit", quickAddItem);
 }
 
-function openDataModal() {
-  const goalRows = state.items
-    .map((it) => {
-      const gp = goalProgress(it);
-      return `<div class="wallet-row"><div><b>${escapeHtml(it.title)}</b><div class="muted small">${fmt(gp.saved)} / ${fmt(gp.cost)}${gp.monthsLeft ? ` · ~${gp.monthsLeft} мес. при текущем темпе` : ""}</div></div>
-      <button class="btn btn-sm btn-outline" data-act="save-goal" data-id="${it.id}">Цель</button></div>`;
-    })
-    .join("");
-  openModal(`<div class="modal">
-    <div class="modal-head"><h2>Данные и цели</h2><button class="close-x" data-close-modal>×</button></div>
-    <div class="grid cards">
-      <button class="btn btn-primary" id="exportBtn" type="button">Экспорт JSON</button>
-      <label class="btn btn-outline" style="text-align:center">Импорт JSON<input id="importFile" type="file" accept="application/json" hidden></label>
-      <button class="btn btn-outline" id="csvItemsBtn">CSV желания</button>
-      <button class="btn btn-outline" id="csvTxBtn">CSV операции</button>
-      <button class="btn btn-outline" id="csvValBtn">CSV оценки</button>
-      <button class="btn btn-outline" data-act="year-report" data-year="${new Date().getFullYear()}">Годовой отчёт CSV</button>
-    </div>
-    <div class="section-title">Курсы валют (грн)</div>
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-      <label class="muted small">USD <input type="number" id="currencyRateInput" value="${state.currencyRate}" min="1" step="0.1" style="width:100px;background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;color:var(--text);font-size:14px" /></label>
-      <label class="muted small">EUR <input type="number" id="eurRateInput" value="${state.eurRate || 47}" min="1" step="0.1" style="width:100px;background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;color:var(--text);font-size:14px" /></label>
-      <button class="btn btn-primary btn-sm" id="saveRateBtn">Сохранить курсы</button>
-      <button class="btn btn-outline btn-sm" id="nbuRateBtn" title="Подтянуть официальный курс НБУ">Курс НБУ</button>
-    </div>
-    <div class="section-title">Уведомления</div>
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-      <button class="btn btn-outline btn-sm" id="pushToggleBtn">…</button>
-      <button class="btn btn-ghost btn-sm" id="pushTestBtn">Тестовый push</button>
-      <span class="muted small">День зарплаты, дедлайны, падение цен по ссылкам.</span>
-    </div>
-    <div class="section-title">Безопасность</div>
-    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-      <button class="btn btn-outline btn-sm" id="changePinBtn">Сменить PIN</button>
-      <button class="btn btn-danger btn-sm" id="logoutAllBtn">Выйти на всех устройствах</button>
-    </div>
-    <div class="section-title">Цели-накопления</div>
-    <div>${goalRows || '<p class="muted">Пока нет желаний.</p>'}</div>
-  </div>`);
-  $("#exportBtn").addEventListener("click", exportData);
-  $("#importFile").addEventListener("change", importData);
-  $("#csvItemsBtn").addEventListener("click", () => downloadCSV("items"));
-  $("#csvTxBtn").addEventListener("click", () => downloadCSV("transactions"));
-  $("#csvValBtn").addEventListener("click", () => downloadCSV("valuations"));
-  $("#saveRateBtn").addEventListener("click", async () => {
+// Полноценный экран настроек вместо модалки-свалки (аудит 2.2).
+function viewSettings() {
+  return `<div class="view-head"><h1>Настройки</h1><p>Безопасность, валюты, уведомления и данные — каждая группа на своём месте.</p></div>
+  <div class="settings-grid">
+    <section class="card pad-lg">
+      <div class="section-title" style="margin-top:0">Безопасность</div>
+      <p class="muted small">PIN — минимум 6 цифр. «Выйти везде» разлогинит все устройства, кроме текущего.</p>
+      <div class="settings-actions">
+        <button class="btn btn-outline btn-sm" id="changePinBtn">Сменить PIN</button>
+        <button class="btn btn-danger btn-sm" id="logoutAllBtn">Выйти на всех устройствах</button>
+      </div>
+    </section>
+    <section class="card pad-lg">
+      <div class="section-title" style="margin-top:0">Курсы валют (грн)</div>
+      <p class="muted small">Валютные желания пересчитываются автоматически при изменении курса.</p>
+      <div class="settings-actions">
+        <label class="muted small">USD <input type="number" id="currencyRateInput" class="settings-input" value="${state.currencyRate}" min="1" step="0.1" /></label>
+        <label class="muted small">EUR <input type="number" id="eurRateInput" class="settings-input" value="${state.eurRate || 47}" min="1" step="0.1" /></label>
+        <button class="btn btn-primary btn-sm" id="saveRateBtn">Сохранить</button>
+        <button class="btn btn-outline btn-sm" id="nbuRateBtn" title="Подтянуть официальный курс НБУ">Курс НБУ</button>
+      </div>
+    </section>
+    <section class="card pad-lg">
+      <div class="section-title" style="margin-top:0">Уведомления</div>
+      <p class="muted small">День зарплаты, дедлайны желаний, падение цен по ссылкам.</p>
+      <div class="settings-actions">
+        <button class="btn btn-outline btn-sm" id="pushToggleBtn">…</button>
+        <button class="btn btn-ghost btn-sm" id="pushTestBtn">Тестовый push</button>
+      </div>
+    </section>
+    <section class="card pad-lg">
+      <div class="section-title" style="margin-top:0">Оформление</div>
+      <p class="muted small">Тема и палитра. Палитры доступны в меню сверху.</p>
+      <div class="settings-actions">
+        <button class="btn btn-outline btn-sm" data-act="toggle-theme">Переключить тему</button>
+      </div>
+    </section>
+    <section class="card pad-lg">
+      <div class="section-title" style="margin-top:0">Данные</div>
+      <p class="muted small">Экспорт — полный снимок в JSON. Импорт заменяет все данные.</p>
+      <div class="settings-actions">
+        <button class="btn btn-primary btn-sm" id="exportBtn" type="button">Экспорт JSON</button>
+        <label class="btn btn-outline btn-sm" style="text-align:center">Импорт JSON<input id="importFile" type="file" accept="application/json" hidden></label>
+        <button class="btn btn-outline btn-sm" id="csvItemsBtn">CSV желания</button>
+        <button class="btn btn-outline btn-sm" id="csvTxBtn">CSV операции</button>
+        <button class="btn btn-outline btn-sm" id="csvValBtn">CSV оценки</button>
+        <button class="btn btn-outline btn-sm" data-act="year-report" data-year="${new Date().getFullYear()}">Годовой отчёт CSV</button>
+      </div>
+    </section>
+    <section class="card pad-lg">
+      <div class="section-title" style="margin-top:0">Цели-накопления</div>
+      <p class="muted small">Цели живут в очереди желаний: фильтр «Копится» покажет всё, на что вы откладываете.</p>
+      <div class="settings-actions">
+        <button class="btn btn-outline btn-sm" data-act="go-view" data-target-view="queue">Открыть очередь</button>
+      </div>
+    </section>
+  </div>`;
+}
+
+function initSettings() {
+  $("#exportBtn")?.addEventListener("click", exportData);
+  $("#importFile")?.addEventListener("change", importData);
+  $("#csvItemsBtn")?.addEventListener("click", () => downloadCSV("items"));
+  $("#csvTxBtn")?.addEventListener("click", () => downloadCSV("transactions"));
+  $("#csvValBtn")?.addEventListener("click", () => downloadCSV("valuations"));
+  $("#saveRateBtn")?.addEventListener("click", async () => {
     const rate = +$("#currencyRateInput").value;
     const eurRate = +$("#eurRateInput").value;
     if (rate < 1 || eurRate < 1) return toast("Некорректный курс");
     await api.post("/api/currency", { rate, eurRate });
     state.currencyRate = rate;
     state.eurRate = eurRate;
-    closeModal();
     toast("Курсы сохранены, валютные желания пересчитаны");
     await refresh();
   });
-  // Авто-курс НБУ (аудит 13.4): обновляет оба курса и пересчитывает желания.
   $("#nbuRateBtn")?.addEventListener("click", async () => {
     const btn = $("#nbuRateBtn");
     btn.disabled = true;
@@ -2934,34 +3032,44 @@ function openDataModal() {
       btn.textContent = "Курс НБУ";
     }
   });
-  // Push-переключатель: показываем актуальное состояние подписки.
   const pushBtn = $("#pushToggleBtn");
-  (async () => {
-    const sub = await getPushSubscription().catch(() => null);
-    pushBtn.textContent = sub ? "Выключить уведомления" : "Включить уведомления";
-    pushBtn.dataset.on = sub ? "1" : "0";
-  })();
-  pushBtn.addEventListener("click", async () => {
-    try {
-      if (pushBtn.dataset.on === "1") {
-        await disablePush();
-        pushBtn.textContent = "Включить уведомления";
-        pushBtn.dataset.on = "0";
-      } else {
-        await enablePush();
-        pushBtn.textContent = "Выключить уведомления";
-        pushBtn.dataset.on = "1";
+  if (pushBtn) {
+    (async () => {
+      const sub = await getPushSubscription().catch(() => null);
+      pushBtn.textContent = sub ? "Выключить уведомления" : "Включить уведомления";
+      pushBtn.dataset.on = sub ? "1" : "0";
+    })();
+    pushBtn.addEventListener("click", async () => {
+      try {
+        if (pushBtn.dataset.on === "1") {
+          await disablePush();
+          pushBtn.textContent = "Включить уведомления";
+          pushBtn.dataset.on = "0";
+        } else {
+          await enablePush();
+          pushBtn.textContent = "Выключить уведомления";
+          pushBtn.dataset.on = "1";
+        }
+      } catch (ex) {
+        toast("Ошибка: " + ex.message);
       }
-    } catch (ex) {
-      toast("Ошибка: " + ex.message);
-    }
-  });
-  $("#pushTestBtn").addEventListener("click", async () => {
+    });
+  }
+  $("#pushTestBtn")?.addEventListener("click", async () => {
     const { sent } = await api.post("/api/push/test", {});
     toast(sent ? "Push отправлен" : "Нет активных подписок");
   });
-  $("#changePinBtn").addEventListener("click", openChangePinModal);
-  $("#logoutAllBtn").addEventListener("click", async () => {
+  bindSettingsSecurity();
+}
+
+// «Данные и цели» переехали на полноценный экран настроек (аудит 2.2).
+function openDataModal() {
+  setView("settings");
+}
+
+function bindSettingsSecurity() {
+  $("#changePinBtn")?.addEventListener("click", openChangePinModal);
+  $("#logoutAllBtn")?.addEventListener("click", async () => {
     const ok = await confirmDialog({
       title: "Выйти на всех устройствах?",
       text: "Все сессии (включая эту) станут недействительными — потребуется заново ввести PIN.",
@@ -2972,7 +3080,6 @@ function openDataModal() {
     await api.post("/api/auth/logout-all", {});
     location.reload();
   });
-  bindViewEvents();
 }
 
 function openChangePinModal() {
@@ -3249,7 +3356,7 @@ function clientBand(cost) {
   return "major";
 }
 
-function openItemModal(item) {
+function openItemModal(item, prefill) {
   const i = item || {
     title: "",
     cost: "",
@@ -3265,6 +3372,7 @@ function openItemModal(item) {
     notes: "",
     scoreType: "none",
     scores: {},
+  ...(prefill || {}),
   };
   const scores = i.scores || {};
   const catOpts = state.meta.categories
@@ -3304,7 +3412,7 @@ function openItemModal(item) {
         <option value="USD" ${i.currency === "USD" ? "selected" : ""}>USD $</option>
         <option value="EUR" ${i.currency === "EUR" ? "selected" : ""}>EUR €</option>
       </select><span class="hint" id="currencyHint"></span></div>
-      <div class="field"><label>Band (авто по сумме)</label><input id="bandDisplay" value="" disabled style="opacity:.8" /></div>
+      <div class="field"><label>Размер покупки (авто по сумме)</label><input id="bandDisplay" value="" disabled style="opacity:.8" /></div>
       <div class="field"><label>Ссылка на товар (опц.)</label><input name="url" type="url" placeholder="https://..." value="${escapeAttr(i.url || "")}" />
         ${i.linkPrice ? `<span class="hint">Цена по ссылке: ${fmtShort(i.linkPrice)} (${fmtDate(i.linkPriceAt)})</span>` : ""}
         <span class="hint" id="priceTrendHint"></span></div>
