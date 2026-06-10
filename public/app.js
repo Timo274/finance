@@ -174,14 +174,26 @@ function confettiBurst(x, y, count = 26) {
 }
 function bandLabel(id) {
   const b = state.meta?.bands?.find((x) => x.id === id);
-  return b ? b.label : id;
+  return b ? b.ru || b.label : id;
 }
-const TYPE_LABELS = { must: "Must", should: "Should", nice: "Nice" };
+const TYPE_LABELS = { must: "Обязательно", should: "Желательно", nice: "По желанию" };
 const STATUS_LABELS = {
   safe: "Безопасно",
   tight: "Впритык",
   overallocated: "Перерасход",
 };
+function overallocTitle(t) {
+  return t.statusReason === "must_unfunded" ? "Не хватает на обязательное." : "Перерасход.";
+}
+function overallocText(t) {
+  if (t.statusReason === "stable_over_salary")
+    return "База (обязательные траты + страховка + инвестиции) больше зарплаты — пересмотрите стабильные расходы в настройках плана.";
+  if (t.statusReason === "must_unfunded") {
+    const names = (t.unfundedMust || []).map((x) => escapeHtml(x)).join(", ");
+    return `Свободного бюджета не хватает на: ${names || "обязательные покупки"}. Остаток уходит в накопление на них — желания подождут.`;
+  }
+  return "Распределено больше, чем доступно — откройте «План распределения» и перенесите лишнее.";
+}
 const VERDICT_LABELS = {
   keep: "Брать",
   reconsider: "Подумать",
@@ -212,7 +224,7 @@ function setupCanvas(canvas) {
   ctx.clearRect(0, 0, w, h);
   return { ctx, w, h };
 }
-function drawDonut(canvas, segments) {
+function drawDonut(canvas, segments, center = null) {
   const { ctx, w, h } = setupCanvas(canvas);
   const total = segments.reduce((s, x) => s + x.value, 0);
   if (total <= 0) return;
@@ -243,10 +255,10 @@ function drawDonut(canvas, segments) {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.font = "700 18px Inter, sans-serif";
-  ctx.fillText(fmtShort(total), cx, cy - 4);
+  ctx.fillText(center?.title ?? fmtShort(total), cx, cy - 4);
   ctx.fillStyle = cssVar("--muted", "#888");
   ctx.font = "500 11px Inter, sans-serif";
-  ctx.fillText("грн распределено", cx, cy + 13);
+  ctx.fillText(center?.sub ?? "грн всего", cx, cy + 13);
 }
 function drawLine(canvas, points) {
   const { ctx, w, h } = setupCanvas(canvas);
@@ -349,7 +361,12 @@ function drawCharts() {
       .forEach(([k, v]) => segs.push({ value: v, color: layerColor(k) }));
     const rem = remainingSurplus();
     if (rem > 0) segs.push({ value: rem, color: cssVar("--border", "#ccd") });
-    drawDonut(donut, segs);
+    // Центр — честная цифра: сколько реально распределено на желания,
+    // а не вся зарплата (база+страховка — это не «распределено»).
+    drawDonut(donut, segs, {
+      title: fmtShort(committedTotal()),
+      sub: `из ${fmtShort(t.availableToAllocate)} распределено`,
+    });
   }
   const portChart = $("#portChart");
   if (portChart && state.portfolio && state.portfolio.valuations.length) {
@@ -1165,9 +1182,9 @@ function allocationLayerCard(t, segs, stablePct) {
       <div class="allocation-donut-panel">
         <canvas id="donutAlloc" class="chart-donut allocation-donut"></canvas>
         <div class="allocation-donut-caption">
-          <span>Всего к распределению</span>
-          <b>${fmt(t.salary)}</b>
-          <em>${fmtUsd(t.salary)}</em>
+          <span>Свободно после базы</span>
+          <b>${fmt(t.availableToAllocate)}</b>
+          <em>${fmtUsd(t.availableToAllocate)} · зарплата ${fmt(t.salary)}</em>
         </div>
       </div>
 
@@ -1204,7 +1221,7 @@ function allocationLayerCard(t, segs, stablePct) {
       <div class="alloc-seg" style="width:${stablePct(t.fixedInvestment)}%;background:var(--green)" title="Инвестиции"></div>${segs}
     </div>
     <div class="allocation-axis"><span>обязательное</span><span>защита</span><span>рост</span><span>желания</span><span>остаток</span></div>
-    ${t.status === "overallocated" ? `<div class="tradeoff" style="background:color-mix(in srgb,var(--red) 10%,transparent);border-color:var(--red)"><b style="color:var(--red)">Перерасход.</b> Стабильные пункты и желания выше зарплаты — откройте «План распределения» и перенесите лишнее.</div>` : ""}
+    ${t.status === "overallocated" ? `<div class="tradeoff" style="background:color-mix(in srgb,var(--red) 10%,transparent);border-color:var(--red)"><b style="color:var(--red)">${overallocTitle(t)}</b> ${overallocText(t)}</div>` : ""}
   </section>`;
 }
 
@@ -1354,7 +1371,7 @@ function viewQueue() {
     <input name="title" placeholder="Быстро добавить желание..." required />
     <input name="cost" type="number" min="0" placeholder="Сумма" required />
     <select name="category">${state.meta.categories.map((c) => `<option value="${c.id}">${c.ru}</option>`).join("")}</select>
-    <select name="type"><option value="should">Should</option><option value="must">Must</option><option value="nice">Nice</option></select>
+    <select name="type"><option value="should">Желательно</option><option value="must">Обязательно</option><option value="nice">По желанию</option></select>
     <select name="priority"><option value="3">Приоритет 3</option><option value="5">Приоритет 5</option><option value="4">Приоритет 4</option><option value="2">Приоритет 2</option><option value="1">Приоритет 1</option></select>
     <input name="deadline" type="date" title="Дедлайн" />
     <button class="btn btn-primary" type="submit">Добавить</button>
@@ -2556,7 +2573,7 @@ function openQuickItemModal() {
     <form id="quickItemForm" class="form-grid">
       <div class="field full"><label>Название</label><input name="title" required /></div>
       <div class="field"><label>Сумма</label><input name="cost" type="number" min="0" required /></div>
-      <div class="field"><label>Тип</label><select name="type"><option value="should">Should</option><option value="must">Must</option><option value="nice">Nice</option></select></div>
+      <div class="field"><label>Тип</label><select name="type"><option value="should">Желательно</option><option value="must">Обязательно</option><option value="nice">По желанию</option></select></div>
       <div class="modal-foot field full" style="flex-direction:row"><button type="button" class="btn btn-ghost" data-close-modal>Отмена</button><button class="btn btn-primary">Добавить</button></div>
     </form></div>`);
   $("#quickItemForm").addEventListener("submit", quickAddItem);
