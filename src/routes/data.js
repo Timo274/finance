@@ -24,7 +24,7 @@ import {
   writeBackup,
 } from "../backups.js";
 import { buildDecisionInsights } from "../insights.js";
-import { getDataVersion } from "../dataversion.js";
+import { getDataVersion, onVersionChange } from "../dataversion.js";
 import { csvLine, todayISO, monthForPlan } from "../sanitize.js";
 
 export default function registerDataRoutes(app) {
@@ -146,6 +146,27 @@ app.get("/api/history", requireAuth, (req, res) => {
 app.get("/api/version", requireAuth, (req, res) =>
   res.json({ version: getDataVersion() }),
 );
+
+// SSE: одно keep-alive соединение вместо поллинга каждые 5с (аудит 17.2).
+// Поллинг остаётся фолбэком на клиенте.
+app.get("/api/events", requireAuth, (req, res) => {
+  res.set({
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-store",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+  res.flushHeaders?.();
+  res.write(`event: version\ndata: ${getDataVersion()}\n\n`);
+  const unsubscribe = onVersionChange((v) => {
+    res.write(`event: version\ndata: ${v}\n\n`);
+  });
+  const heartbeat = setInterval(() => res.write(": ping\n\n"), 25000);
+  req.on("close", () => {
+    clearInterval(heartbeat);
+    unsubscribe();
+  });
+});
 
 app.get("/api/state", requireAuth, (req, res) => {
   const plan = getActivePlan();

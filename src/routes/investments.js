@@ -6,6 +6,21 @@ import { CG_MAP, fetchYahooPrice, fetchCgPrice, valuationForAsset } from "../pri
 import { todayISO } from "../sanitize.js";
 import { structuredLog } from "../log.js";
 
+const NUM_CAP = 1e12;
+function clampNum(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(n, NUM_CAP);
+}
+function isoDateOrToday(v) {
+  const s = String(v || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return todayISO();
+  const d = new Date(s + "T00:00:00Z");
+  return Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== s
+    ? todayISO()
+    : s;
+}
+
 export default function registerInvestmentRoutes(app) {
 app.get("/api/investments", requireAuth, (req, res) => {
   res.json(getPortfolio());
@@ -21,7 +36,9 @@ app.post("/api/investments/assets", requireAuth, (req, res) => {
     name: assetName,
     type: String(type || "other").trim(),
     ticker: ticker ? String(ticker).trim() : null,
-    currency: ["USD", "UAH"].includes(String(currency || "USD").toUpperCase())
+    currency: ["USD", "UAH", "EUR"].includes(
+      String(currency || "USD").toUpperCase(),
+    )
       ? String(currency || "USD").toUpperCase()
       : "USD",
   });
@@ -37,15 +54,31 @@ app.post("/api/investments/transactions", requireAuth, (req, res) => {
   if (!stmt.assetById.get(String(assetId)))
     return res.status(404).json({ error: "asset_not_found" });
   const txType = ["buy", "sell"].includes(type) ? type : "buy";
-  const qty = Math.max(0, Number(quantity) || 0);
-  const px = Math.max(0, Number(price) || 0);
-  const txFee = Math.max(0, Number(fee) || 0);
+  // Границы входных чисел и дат: 1e308/"9999-99-99" не должны попадать в БД (аудит 12.4).
+  const qty = clampNum(quantity);
+  const px = clampNum(price);
+  const txFee = clampNum(fee);
+  const txDate = isoDateOrToday(date);
+  if (qty <= 0) return res.status(400).json({ error: "validation_failed", field: "quantity" });
+  if (txType === "sell") {
+    // Продажа больше, чем есть на руках, — ошибка ввода, а не «молчаливый кламп»
+    // в отчётах (аудит 13.1).
+    let held = 0;
+    for (const t of stmt.allTransactions.all()) {
+      if (t.asset_id !== String(assetId)) continue;
+      const q = Math.max(0, Number(t.quantity) || 0);
+      if (t.type === "buy") held += q;
+      else if (t.type === "sell") held -= Math.min(q, held);
+    }
+    if (qty > held + 1e-9)
+      return res.status(400).json({ error: "sell_exceeds_holdings", held });
+  }
   const total = txType === "buy" ? qty * px + txFee : qty * px - txFee;
   stmt.insertTransaction.run({
     id: String(Date.now() + "-" + Math.random().toString(36).slice(2, 8)),
     asset_id: String(assetId),
     type: txType,
-    date: date || todayISO(),
+    date: txDate,
     quantity: qty,
     price: px,
     fee: txFee,
@@ -60,15 +93,17 @@ app.delete("/api/investments/transactions/:id", requireAuth, (req, res) => {
 });
 app.post("/api/investments/valuations", requireAuth, (req, res) => {
   const { assetId, date, value, quantity, note } = req.body || {};
+  const safeValue = clampNum(value);
+  const safeDate = isoDateOrToday(date);
   if (!assetId) return res.status(400).json({ error: "assetId_required" });
   if (!stmt.assetById.get(String(assetId)))
     return res.status(404).json({ error: "asset_not_found" });
   stmt.insertValuation.run({
     id: String(Date.now() + "-" + Math.random().toString(36).slice(2, 8)),
     asset_id: String(assetId),
-    date: date || todayISO(),
-    value: Math.max(0, Number(value) || 0),
-    quantity: quantity != null ? Math.max(0, Number(quantity) || 0) : null,
+    date: safeDate,
+    value: safeValue,
+    quantity: quantity != null ? clampNum(quantity) : null,
     note: note ? String(note) : "",
   });
   res.json(getPortfolio());

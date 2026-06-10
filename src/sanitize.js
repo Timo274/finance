@@ -1,6 +1,15 @@
 // Нормализация и валидация пользовательского ввода + CSV-хелперы.
 
-export const todayISO = () => new Date().toISOString().slice(0, 10);
+// «Сегодня» считаем по Киеву, а не по UTC: иначе вечером месяц/дата
+// уезжают на день вперёд-назад и ключи месяца ломаются (аудит 13.6).
+export const APP_TZ = process.env.APP_TZ || "Europe/Kyiv";
+const dayFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: APP_TZ,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+export const todayISO = () => dayFormatter.format(new Date());
 export const monthForPlan = (plan) =>
   String(plan?.payday || todayISO()).slice(0, 7);
 

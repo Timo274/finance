@@ -121,12 +121,26 @@ export function getPortfolio() {
 
     // Проданный в ноль актив не должен «висеть» в net worth со старой оценкой.
     const latestVal = vals.length > 0 ? vals[0] : null;
-    const currentValue =
-      quantityHeld <= 0
-        ? 0
-        : latestVal
-          ? Number(latestVal.value) || 0
-          : costBasis;
+    // Оценка хранит стоимость ВСЕЙ позиции на дату. Если после оценки
+    // докупили/продали, масштабируем через цену за единицу (аудит 13.5).
+    const quantityAt = (date) => {
+      let held = 0;
+      for (const tx of txs) {
+        if (String(tx.date || "") > String(date || "")) break;
+        const q = Math.max(0, Number(tx.quantity) || 0);
+        if (tx.type === "buy") held += q;
+        else if (tx.type === "sell") held -= Math.min(q, held);
+      }
+      return held;
+    };
+    let currentValue;
+    if (quantityHeld <= 0) currentValue = 0;
+    else if (latestVal) {
+      const valTotal = Number(latestVal.value) || 0;
+      const qtyAtVal = quantityAt(latestVal.date);
+      currentValue =
+        qtyAtVal > 0 ? (valTotal / qtyAtVal) * quantityHeld : valTotal;
+    } else currentValue = costBasis;
     const unrealizedPnL = currentValue - costBasis;
 
     return {

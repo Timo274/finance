@@ -49,7 +49,7 @@ before(async () => {
 
   const setup = await request("/api/auth/setup", {
     method: "POST",
-    body: { pin: "4321" },
+    body: { pin: "432100" },
     cookie: null,
   });
   sessionCookie = setup.res.headers.get("set-cookie")?.split(";")[0];
@@ -305,14 +305,14 @@ describe("новые фичи", () => {
   it("меняет PIN и разлогинивает остальные устройства", async () => {
     const wrong = await request("/api/auth/change-pin", {
       method: "POST",
-      body: { currentPin: "0000", newPin: "9876" },
+      body: { currentPin: "0000", newPin: "987600" },
     });
     assert.equal(wrong.res.status, 401);
 
     const oldCookie = sessionCookie;
     const ok = await request("/api/auth/change-pin", {
       method: "POST",
-      body: { currentPin: "4321", newPin: "9876" },
+      body: { currentPin: "432100", newPin: "987600" },
     });
     assert.equal(ok.res.status, 200);
     // Текущее устройство получило новый токен.
@@ -324,7 +324,7 @@ describe("новые фичи", () => {
     // Новый PIN работает.
     const relog = await request("/api/auth/login", {
       method: "POST",
-      body: { pin: "9876" },
+      body: { pin: "987600" },
       cookie: null,
     });
     assert.equal(relog.res.status, 200);

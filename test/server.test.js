@@ -72,7 +72,7 @@ describe("server API", () => {
 
     const setup = await request("/api/auth/setup", {
       method: "POST",
-      body: { pin: "1234" },
+      body: { pin: "123456" },
       cookie: null,
     });
     assert.equal(setup.res.status, 200);
