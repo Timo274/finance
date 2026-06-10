@@ -600,6 +600,7 @@ function syncThemeControls(t, palette = currentPalette()) {
 }
 function applyPalette(p = currentPalette()) {
   const palette = isPalette(p) ? p : "ocean";
+  themeFade();
   document.documentElement.setAttribute("data-palette", palette);
   try {
     localStorage.setItem("cq-palette", palette);
@@ -607,8 +608,17 @@ function applyPalette(p = currentPalette()) {
   syncThemeControls(currentTheme(), palette);
   if (typeof drawCharts === "function") requestAnimationFrame(drawCharts);
 }
+// плавный кроссфейд при смене темы/палитры (класс снимается через 600 мс)
+let _themeFadeT = null;
+function themeFade() {
+  const el = document.documentElement;
+  el.classList.add("theme-fade");
+  clearTimeout(_themeFadeT);
+  _themeFadeT = setTimeout(() => el.classList.remove("theme-fade"), 600);
+}
 function applyTheme(t) {
   const theme = isTheme(t) ? t : "light";
+  themeFade();
   document.documentElement.setAttribute("data-theme", theme);
   try {
     localStorage.setItem("cq-theme", theme);
@@ -789,6 +799,35 @@ $("#editPlanBtn").addEventListener("click", openPlanModal);
 $("#dataBtn").addEventListener("click", openDataModal);
 $("#fabAdd")?.addEventListener("click", openQuickItemModal);
 
+// ---------- premium motion: цифры «отсчитываются» при входе на экран ----------
+let _lastCountupView = null;
+function animateNumbers(root) {
+  if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  root.querySelectorAll(".stat-value, .decision-metric b, .pulse-metric b, .runway-ring b").forEach((el) => {
+    if (el.children.length) return; // внутри разметка — не трогаем
+    const original = el.textContent;
+    const m = original.match(/^([^\d-]*)(-?[\d\s\u00A0\u202F]+)(.*)$/);
+    if (!m) return;
+    const target = Number(m[2].replace(/[^\d-]/g, ""));
+    if (!Number.isFinite(target) || target === 0 || Math.abs(target) > 1e12) return;
+    const dur = 700;
+    const t0 = performance.now();
+    el.classList.add("num-ticking");
+    const tick = (now) => {
+      const p = Math.min(1, (now - t0) / dur);
+      const eased = 1 - Math.pow(1 - p, 3);
+      if (p < 1 && el.isConnected) {
+        el.textContent = m[1] + Math.round(target * eased).toLocaleString("ru-RU") + m[3];
+        requestAnimationFrame(tick);
+      } else {
+        el.textContent = original;
+        el.classList.remove("num-ticking");
+      }
+    };
+    requestAnimationFrame(tick);
+  });
+}
+
 function renderView() {
   const root = $("#views");
   const v = state.view;
@@ -806,6 +845,13 @@ function renderView() {
     initAssistant();
   } else if (v === "more") root.innerHTML = viewMore();
   bindViewEvents();
+  if (v !== _lastCountupView) {
+    _lastCountupView = v;
+    root.classList.remove("view-enter");
+    void root.offsetWidth; // перезапуск анимации входа
+    root.classList.add("view-enter");
+    animateNumbers(root);
+  }
   requestAnimationFrame(drawCharts);
 }
 

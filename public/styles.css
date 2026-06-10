@@ -329,10 +329,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .decision-actions .tone-warn { border-color: color-mix(in srgb, var(--amber) 45%, var(--border)); color: var(--amber); }
 .decision-actions .tone-good { border-color: color-mix(in srgb, var(--green) 45%, var(--border)); color: var(--green); }
 .decision-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
-.decision-col { background: color-mix(in srgb, var(--panel) 74%, transparent); border: 1px solid var(--border-soft); border-radius: var(--radius); padding: 13px; min-width: 0; }
+.decision-col { background: color-mix(in srgb, var(--panel) 74%, transparent); border: 1px solid var(--border-soft); border-radius: var(--radius); padding: 13px; min-width: 0; overflow: hidden; }
 .decision-col h3 { margin: 0 0 10px; font-size: 13px; color: var(--muted); }
-.insight-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-top: 1px solid var(--border-soft); }
+.insight-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-top: 1px solid var(--border-soft); min-width: 0; }
 .insight-item:first-of-type { border-top: 0; padding-top: 0; }
+.insight-item-main { flex: 1 1 auto; min-width: 0; }
 .insight-item-title { font-weight: 700; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .insight-item-meta, .insight-empty { color: var(--muted); font-size: 12px; margin-top: 3px; }
 .insight-item b { white-space: nowrap; font-size: 13px; }
@@ -1965,4 +1966,214 @@ body {
   .queue-summary-head .btn { margin-top: 12px; width: 100%; }
   .pulse-metrics,
   .queue-summary-grid { grid-template-columns: 1fr; }
+}
+
+/* ============================================================
+   Premium finish 3.0 — motion system & material polish.
+   Apple-grade easing, glass surfaces, animated numbers/rings.
+   Everything is var()-driven so all palettes & themes keep working.
+   ============================================================ */
+:root {
+  --ease-out: cubic-bezier(.22, 1, .36, 1);
+  --ease-spring: cubic-bezier(.34, 1.45, .5, 1);
+  --dur-fast: .18s;
+  --dur-med: .45s;
+  --dur-slow: .8s;
+}
+
+/* --- typography: money & metrics read like an instrument panel --- */
+.stat-value, .decision-metric b, .insight-item b, .qi-cost, .runway-ring b,
+.pulse-metric b, td, .legend-col b, .range-val {
+  font-variant-numeric: tabular-nums lining-nums;
+}
+.view-head h1, .dashboard-head h1, .decision-hero h2, .auth-hero h1 {
+  text-wrap: balance;
+}
+::selection { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+
+/* --- living aurora backdrop (transform-only, GPU friendly) --- */
+@keyframes auroraDrift {
+  0%   { transform: translate3d(-4%, -2%, 0) scale(1) rotate(0deg); }
+  50%  { transform: translate3d(5%, 4%, 0) scale(1.12) rotate(4deg); }
+  100% { transform: translate3d(-2%, 6%, 0) scale(1.04) rotate(-3deg); }
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: -22%;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(38% 32% at 22% 22%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 70%),
+    radial-gradient(30% 28% at 78% 12%, color-mix(in srgb, var(--green) 9%, transparent), transparent 72%),
+    radial-gradient(34% 30% at 68% 82%, color-mix(in srgb, var(--accent-deep) 10%, transparent), transparent 72%);
+  animation: auroraDrift 36s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+/* --- glass chrome: topbar & mobile dock --- */
+.topbar {
+  backdrop-filter: blur(18px) saturate(1.7);
+  -webkit-backdrop-filter: blur(18px) saturate(1.7);
+}
+@media (max-width: 820px) {
+  .bottom-nav {
+    background: color-mix(in srgb, var(--panel) 78%, transparent);
+    backdrop-filter: blur(18px) saturate(1.7);
+    -webkit-backdrop-filter: blur(18px) saturate(1.7);
+    border-top-color: var(--hairline);
+  }
+}
+
+/* --- buttons: spring press + light sweep on primary --- */
+.btn, .icon-btn, .chip, .nav-item, .fab {
+  transition:
+    transform var(--dur-med) var(--ease-spring),
+    box-shadow .3s ease, background .25s ease,
+    color .2s ease, border-color .2s ease, filter .2s ease;
+}
+.btn:active, .icon-btn:active, .chip:active { transform: scale(.96); transition-duration: .08s; }
+.btn-primary { position: relative; overflow: hidden; }
+.btn-primary::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 32%, rgba(255,255,255,.38) 50%, transparent 68%);
+  transform: translateX(-130%);
+  pointer-events: none;
+}
+.btn-primary:hover::after { animation: btnSheen .9s var(--ease-out); }
+@keyframes btnSheen { to { transform: translateX(130%); } }
+.btn-primary:hover { transform: translateY(-1px); box-shadow: 0 10px 26px color-mix(in srgb, var(--accent) 42%, transparent); }
+.icon-btn:hover { transform: translateY(-1px); }
+.fab:hover { transform: scale(1.07); }
+.fab:active { transform: scale(.92); }
+
+/* --- sidebar nav: glide + active pop --- */
+.nav-item:hover { transform: translateX(2px); }
+.nav-item.active { animation: navPop var(--dur-med) var(--ease-spring); }
+@keyframes navPop { 0% { transform: scale(.97); } 100% { transform: scale(1); } }
+.nav-item.active::before { animation: navBar .5s var(--ease-out); }
+@keyframes navBar { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+.bottom-nav .nav-item .ico { transition: transform var(--dur-med) var(--ease-spring); }
+.bottom-nav .nav-item.active .ico { transform: translateY(-2px) scale(1.18); }
+
+/* --- staggered view entrance (replaces flat pop-in) --- */
+@keyframes riseIn {
+  from { opacity: 0; transform: translateY(14px) scale(.992); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+/* класс .view-enter вешается из JS только при смене экрана,
+   чтобы обычные обновления данных не мигали */
+#views.view-enter > * { animation: riseIn .5s var(--ease-out) both; }
+#views.view-enter > :nth-child(2) { animation-delay: .04s; }
+#views.view-enter > :nth-child(3) { animation-delay: .08s; }
+#views.view-enter > :nth-child(4) { animation-delay: .12s; }
+#views.view-enter > :nth-child(5) { animation-delay: .16s; }
+#views.view-enter > :nth-child(6) { animation-delay: .2s; }
+#views.view-enter > :nth-child(n+7) { animation-delay: .24s; }
+
+/* --- runway ring: fills up on render --- */
+@property --pct {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+.runway-ring { animation: ringFill 1.2s var(--ease-out) .15s both; }
+@keyframes ringFill { from { --pct: 0; } }
+
+/* --- allocation bar: segments grow in --- */
+.alloc-seg { transform-origin: left center; animation: segGrow var(--dur-slow) var(--ease-out) both; }
+.alloc-seg:nth-child(2) { animation-delay: .08s; }
+.alloc-seg:nth-child(3) { animation-delay: .16s; }
+.alloc-seg:nth-child(4) { animation-delay: .24s; }
+.alloc-seg:nth-child(n+5) { animation-delay: .32s; }
+@keyframes segGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.goal-mini > div { transition: width var(--dur-slow) var(--ease-out); }
+
+/* --- cards: calmer lift, finer hairline --- */
+.card { transition: transform .35s var(--ease-out), box-shadow .35s ease, border-color .25s ease; }
+.cards .card:hover { transform: translateY(-3px); }
+.decision-col, .decision-metric { transition: transform .3s var(--ease-out), border-color .2s ease, background .2s ease; }
+.decision-metric:hover { transform: translateY(-2px); }
+.insight-item { transition: opacity .2s ease; }
+
+/* --- tables: accent-tinted hover, smoother feel --- */
+tbody tr { transition: background .18s ease; }
+tbody tr:hover { background: color-mix(in srgb, var(--accent) 7%, var(--panel)); }
+
+/* --- inputs: soft focus ring --- */
+.field input, .field select, .field textarea,
+.quick-add input, .quick-add select,
+.filters input, .filters select,
+.manual-row input, .auth-card input, .chat-input input {
+  transition: border-color .2s ease, box-shadow .25s ease, background .2s ease;
+}
+.field input:focus, .field select:focus, .field textarea:focus,
+.quick-add input:focus, .quick-add select:focus,
+.filters input:focus, .filters select:focus,
+.manual-row input:focus, .auth-card input:focus, .chat-input input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+/* --- modal & toast: springy entrances --- */
+.modal { animation: modalIn .5s var(--ease-spring) both; }
+@keyframes modalIn {
+  from { opacity: 0; transform: translateY(26px) scale(.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.modal-overlay { animation: overlayIn .3s ease both; }
+@keyframes overlayIn {
+  from { opacity: 0; backdrop-filter: blur(0); }
+  to   { opacity: 1; backdrop-filter: blur(4px); }
+}
+.toast { animation: toastIn .55s var(--ease-spring) both; }
+@keyframes toastIn {
+  from { opacity: 0; transform: translate(-50%, 18px) scale(.92); }
+  to   { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
+/* --- chat: messages slide in --- */
+.msg { animation: riseIn .4s var(--ease-out) both; }
+
+/* --- queue rows --- */
+.queue-item { transition: transform .3s var(--ease-out), box-shadow .3s ease, border-color .2s ease; }
+.queue-item:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--accent) 30%, var(--border)); box-shadow: var(--shadow-sm); }
+
+/* --- refined scrollbars --- */
+@supports not (selector(::-webkit-scrollbar)) {
+  * { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--muted) 38%, transparent) transparent; }
+}
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 32%, transparent);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--muted) 55%, transparent); }
+
+/* --- smooth theme/palette crossfade (toggled from JS for ~600ms) --- */
+html.theme-fade, html.theme-fade body,
+html.theme-fade *:not(svg):not(path):not(circle):not(rect) {
+  transition:
+    background-color .5s ease, background .5s ease, color .45s ease,
+    border-color .5s ease, box-shadow .5s ease, fill .5s ease !important;
+}
+
+/* --- auth screen entrance --- */
+.auth-hero { animation: riseIn .6s var(--ease-out) both; }
+.auth-card { animation: riseIn .6s var(--ease-out) .1s both; }
+.hero-proof-grid span { transition: transform .35s var(--ease-out), background .25s ease; }
+.hero-proof-grid span:hover { transform: translateY(-3px); background: rgba(255, 250, 242, .17); }
+
+/* --- count-up helper (numbers blur in slightly while ticking) --- */
+.num-ticking { filter: blur(.4px); }
+
+@media (prefers-reduced-motion: reduce) {
+  body::before { animation: none; }
+  #views > *, .modal, .toast, .msg, .runway-ring, .alloc-seg,
+  .auth-hero, .auth-card { animation: none !important; }
 }
