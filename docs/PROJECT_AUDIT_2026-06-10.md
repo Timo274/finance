@@ -57,7 +57,7 @@
 - Нет `Strict-Transport-Security` заголовка (force_https на Fly есть, HSTS — нет).
 - `UNIQUE(plan_id, item_id, source)` при `plan_id IS NULL` в SQLite не работает как upsert (NULL ≠ NULL) — сейчас спасает delete-then-insert, но импорт может насоздавать дублей решений с NULL plan_id.
 - Нет ESLint/Prettier ни локально, ни в CI — для двух файлов на ~5к строк линтер уже окупится.
-- `npm audit --audit-level=moderate` в CI может внезапно красить билд из-за чужой уязвимости без вашего изменения — лучше вынести в отдельный allow-fail job или週 cron.
+- `npm audit --audit-level=moderate` в CI может внезапно красить билд из-за чужой уязвимости без вашего изменения — лучше вынести в отдельный allow-fail job или еженедельный cron.
 - Поллинг `/api/version` каждые 5 с держит Fly-машину постоянно живой при открытой вкладке — `auto_stop_machines` фактически не срабатывает. Вариант: увеличивать интервал при неактивности (30–60 с после 5 минут без действий) или перейти на SSE.
 
 ---
