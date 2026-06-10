@@ -1,10 +1,9 @@
 // Портфель: активы, транзакции, оценки, обновление цен, legacy-эндпоинт.
-import db from "../db.js";
 import { stmt } from "../statements.js";
 import { requireAuth } from "../auth.js";
-import { getPortfolio, currentPlanId } from "../store.js";
+import { getPortfolio } from "../store.js";
 import { CG_MAP, fetchYahooPrice, fetchCgPrice, valuationForAsset } from "../prices.js";
-import { sanitizeEntries, todayISO } from "../sanitize.js";
+import { todayISO } from "../sanitize.js";
 import { structuredLog } from "../log.js";
 
 export default function registerInvestmentRoutes(app) {
@@ -80,43 +79,14 @@ app.delete("/api/investments/valuations/:id", requireAuth, (req, res) => {
 });
 
 // Legacy investment endpoints (backward compat)
+// Легаси-эндпоинт массовой перезаписи: стирал всю историю investment_updates
+// одним вызовом. Отключён — используйте /api/investments/assets|transactions.
 app.post("/api/investments", requireAuth, (req, res) => {
-  const investments = sanitizeEntries(req.body?.investments, [
-    { key: "name", type: "text" },
-    { key: "accountType", type: "text" },
-    { key: "amount", type: "number" },
-    { key: "date", type: "text" },
-    { key: "note", type: "text" },
-  ]);
-  const planId = currentPlanId();
-  const save = db.transaction(() => {
-    stmt.deleteInvestmentUpdates.run();
-    investments.forEach((entry) => {
-      const accountName = entry.name || "Инвестиция";
-      const accountId = String(
-        entry.accountId || accountName.toLowerCase().replace(/\s+/g, "-"),
-      );
-      const updateId = String(
-        entry.id || `${accountId}-${entry.date || todayISO()}-${Date.now()}`,
-      );
-      stmt.upsertInvestmentAccount.run({
-        id: accountId,
-        name: accountName,
-        type: entry.accountType || "asset",
-      });
-      stmt.upsertInvestmentUpdate.run({
-        id: updateId,
-        accountId,
-        planId,
-        amount: entry.amount,
-        date: entry.date || todayISO(),
-        note: entry.note || "",
-      });
-    });
-    stmt.deleteUnusedInvestmentAccounts.run();
+  res.status(410).json({
+    error: "endpoint_removed",
+    message:
+      "Bulk-перезапись инвестиций отключена: она стирала всю историю. Используйте /api/investments/assets и /api/investments/transactions.",
   });
-  save();
-  res.json(getPortfolio());
 });
 
 app.post("/api/investments/refresh-prices", requireAuth, async (req, res) => {

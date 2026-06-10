@@ -23,8 +23,17 @@ app.get("/api/items", requireAuth, (req, res) => {
   res.json({ items: rows.map(rowToItem) });
 });
 
+const MAX_ITEM_COST = 100_000_000;
+function costError(payload) {
+  if (!(payload.cost > 0)) return "cost_must_be_positive";
+  if (payload.cost > MAX_ITEM_COST) return "cost_too_large";
+  return null;
+}
+
 app.post("/api/items", requireAuth, (req, res) => {
   const payload = normalizeItemInput(req.body || {});
+  const err = costError(payload);
+  if (err) return res.status(400).json({ error: err });
   const info = stmt.insertItem.run(payload);
   res.json({ item: rowToItem(stmt.itemById.get(info.lastInsertRowid)) });
 });
@@ -34,7 +43,22 @@ app.put("/api/items/:id", requireAuth, (req, res) => {
   if (!stmt.itemById.get(id))
     return res.status(404).json({ error: "not_found" });
   const payload = normalizeItemInput(req.body || {});
+  const err = costError(payload);
+  if (err) return res.status(400).json({ error: err });
   stmt.updateItem.run({ ...payload, id });
+  // Цена изменилась — цель накопления должна указывать на новую цену.
+  const goal = stmt.goalByItem.get(id);
+  if (goal && Number(goal.target_amount) !== payload.cost) {
+    stmt.upsertGoal.run({
+      itemId: id,
+      targetAmount: payload.cost,
+      savedAmount: Number(goal.saved_amount) || 0,
+      monthlyContribution: Number(goal.monthly_contribution) || 0,
+      deadline: goal.deadline || null,
+      status:
+        (Number(goal.saved_amount) || 0) >= payload.cost ? "complete" : "active",
+    });
+  }
   res.json({ item: rowToItem(stmt.itemById.get(id)) });
 });
 
@@ -54,11 +78,16 @@ app.post("/api/items/:id/savings", requireAuth, (req, res) => {
   const item = stmt.itemById.get(id);
   if (!item) return res.status(404).json({ error: "not_found" });
   const cost = positiveNumber(item.cost);
+  const currentSaved = positiveNumber(item.saved_amount);
+  const contribution = positiveNumber(req.body?.contributionAmount);
+  // savedAmount задаёт абсолют только если поле передано явно; иначе взнос
+  // прибавляется к текущему. Вызов без полей НЕ обнуляет накопления.
+  const requested =
+    req.body?.savedAmount != null
+      ? positiveNumber(req.body.savedAmount)
+      : currentSaved + contribution;
   // Валидация: накопление не может быть отрицательным или абсурдно больше цели.
-  const savedAmount = Math.min(
-    positiveNumber(req.body?.savedAmount),
-    Math.max(cost * 2, cost + 1_000_000),
-  );
+  const savedAmount = Math.min(requested, Math.max(cost * 2, cost + 1_000_000));
   stmt.updateItemSavings.run({ id, savedAmount });
   const existingGoal = stmt.goalByItem.get(id);
   const goalPayload = {

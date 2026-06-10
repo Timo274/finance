@@ -56,8 +56,13 @@ export async function getMonthSummary({ month, refresh = false } = {}) {
   }
 
   lastApiCall = now;
-  const from = Math.floor(new Date(`${targetMonth}-01T00:00:00Z`).getTime() / 1000);
-  const to = Math.floor(now / 1000);
+  const monthStart = new Date(`${targetMonth}-01T00:00:00Z`);
+  const monthEndMs =
+    Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 1) - 1000;
+  const from = Math.floor(monthStart.getTime() / 1000);
+  // Для прошлых месяцев нельзя тянуть диапазон до «сейчас»: API ограничивает
+  // выписку 31 днём и вернёт 400. Обрезаем концом месяца.
+  const to = Math.floor(Math.min(now, monthEndMs) / 1000);
   // account "0" — основной счёт; отдельный запрос client-info не делаем, чтобы
   // не съедать лимит (для plan/fact достаточно основной карты).
   const statements = await mbFetch(`/personal/statement/0/${from}/${to}`);

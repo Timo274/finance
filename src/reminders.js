@@ -67,7 +67,6 @@ async function runReminderSweep() {
 async function runDailyPriceSweep() {
   const today = todayISO();
   if (getSetting("price_sweep_date") === today) return;
-  setSetting("price_sweep_date", today);
   for (const row of stmt.itemsWithUrl.all()) {
     try {
       const result = await checkPrice(row.url);
@@ -90,6 +89,8 @@ async function runDailyPriceSweep() {
       }
     } catch {}
   }
+  // Дату фиксируем после успешного прохода: упавший процесс не теряет день.
+  setSetting("price_sweep_date", today);
 }
 
 let remindersScheduled = false;

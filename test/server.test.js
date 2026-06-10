@@ -100,11 +100,25 @@ describe("server API", () => {
     assert.equal(plan.data.plan.buffer, 0);
     assert.equal(plan.data.plan.investmentFixed, 0);
 
+    // Нулевая/отрицательная цена больше не проходит молча — это ломало банды и проценты.
+    const badCost = await request("/api/items", {
+      method: "POST",
+      body: { title: "x", cost: -50 },
+    });
+    assert.equal(badCost.res.status, 400);
+    assert.equal(badCost.data.error, "cost_must_be_positive");
+    const hugeCost = await request("/api/items", {
+      method: "POST",
+      body: { title: "x", cost: 999_000_000_000 },
+    });
+    assert.equal(hugeCost.res.status, 400);
+    assert.equal(hugeCost.data.error, "cost_too_large");
+
     const item = await request("/api/items", {
       method: "POST",
       body: {
         title: "   ",
-        cost: -50,
+        cost: 100,
         category: "bad-category",
         layer: "bad-layer",
         priority: 99,
@@ -117,7 +131,7 @@ describe("server API", () => {
     });
     assert.equal(item.res.status, 200);
     assert.equal(item.data.item.title, "Без названия");
-    assert.equal(item.data.item.cost, 0);
+    assert.equal(item.data.item.cost, 100);
     assert.equal(item.data.item.category, "lifestyle");
     assert.equal(item.data.item.layer, "quality");
     assert.equal(item.data.item.priority, 5);

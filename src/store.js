@@ -1,6 +1,8 @@
 // Доступ к данным и сборка агрегатов поверх prepared statements.
 import db, {
   getJSON,
+  getSetting,
+  setSetting,
   rowToItem,
   rowToPlan,
   rowToWallet,
@@ -47,9 +49,22 @@ export function getActiveItems() {
 export function currentPlanId() {
   return getActivePlan()?.id || null;
 }
+// Маркер «таблица уже жила»: после первых строк в SQL легаси-JSON больше не читаем,
+// иначе удалённые пользователем данные «воскресают» из старых настроек.
+function legacyDone(key) {
+  return getSetting(`legacy_migrated_${key}`) === "1";
+}
+function markLegacyDone(key) {
+  if (!legacyDone(key)) setSetting(`legacy_migrated_${key}`, "1");
+}
+
 export function getInvestments() {
   const rows = stmt.investmentUpdates.all().map(rowToInvestmentUpdate);
-  if (rows.length) return rows;
+  if (rows.length) {
+    markLegacyDone("investments");
+    return rows;
+  }
+  if (legacyDone("investments")) return [];
   return getJSON(SETTINGS.investments, []);
 }
 export function getPortfolio() {
@@ -73,6 +88,9 @@ export function getPortfolio() {
     let quantityHeld = 0;
     let costBasis = 0;
     let realizedPnL = 0;
+    // Цена транзакции вводится в валюте актива; себестоимость и P&L считаем в грн,
+    // иначе USD-базис сравнивается с UAH-оценкой и P&L превращается в мусор.
+    const fxRate = rateForCurrency(String(a.currency || "UAH").toUpperCase());
 
     for (const tx of txs) {
       const qty = Math.max(0, Number(tx.quantity) || 0);
@@ -81,14 +99,14 @@ export function getPortfolio() {
       const storedTotal = Math.max(0, Number(tx.total_amount) || 0);
 
       if (tx.type === "buy") {
-        const buyCost = storedTotal > 0 ? storedTotal : gross + fee;
+        const buyCost = (storedTotal > 0 ? storedTotal : gross + fee) * fxRate;
         quantityHeld += qty;
         costBasis += buyCost;
       } else if (tx.type === "sell") {
         const sellQty = Math.min(qty, quantityHeld);
         if (sellQty <= 0) continue;
         const sellTotal =
-          storedTotal > 0 ? storedTotal : Math.max(0, gross - fee);
+          (storedTotal > 0 ? storedTotal : Math.max(0, gross - fee)) * fxRate;
         const sellProceeds = qty > 0 ? sellTotal * (sellQty / qty) : 0;
         const avgCost = quantityHeld > 0 ? costBasis / quantityHeld : 0;
         const soldBasis = avgCost * sellQty;
@@ -101,12 +119,14 @@ export function getPortfolio() {
     quantityHeld = Math.max(0, quantityHeld);
     costBasis = Math.max(0, costBasis);
 
+    // Проданный в ноль актив не должен «висеть» в net worth со старой оценкой.
     const latestVal = vals.length > 0 ? vals[0] : null;
-    const currentValue = latestVal
-      ? Number(latestVal.value) || 0
-      : quantityHeld > 0
-        ? costBasis
-        : 0;
+    const currentValue =
+      quantityHeld <= 0
+        ? 0
+        : latestVal
+          ? Number(latestVal.value) || 0
+          : costBasis;
     const unrealizedPnL = currentValue - costBasis;
 
     return {
@@ -170,15 +190,22 @@ export function getWallets() {
   const rows = stmt.walletsByPlan
     .all({ planId: plan?.id || null })
     .map(rowToWallet);
-  if (rows.length) return rows;
+  if (rows.length) {
+    markLegacyDone("wallets");
+    return rows;
+  }
+  if (legacyDone("wallets")) return [];
   return getJSON(SETTINGS.monthlyWallets, []);
 }
 export function getManualPlan() {
   const rows = stmt.decisionsByPlan
     .all({ planId: currentPlanId() })
     .map(rowToAllocationDecision);
-  if (rows.length)
+  if (rows.length) {
+    markLegacyDone("manual_plan");
     return rows.map(({ itemId, amount }) => ({ itemId, amount }));
+  }
+  if (legacyDone("manual_plan")) return null;
   return getJSON(SETTINGS.manualPlan, null);
 }
 export function getGoals() {
@@ -310,6 +337,18 @@ export function recomputeForeignCurrencyCosts() {
       const cost =
         Math.round(original * rateForCurrency(row.currency) * 100) / 100;
       stmt.updateItemCostBand.run({ id: row.id, cost, band: bandForCost(cost) });
+      // Цель накопления привязана к цене — пересчитываем target вместе с курсом.
+      const goal = stmt.goalByItem.get(row.id);
+      if (goal) {
+        stmt.upsertGoal.run({
+          itemId: row.id,
+          targetAmount: cost,
+          savedAmount: Number(goal.saved_amount) || 0,
+          monthlyContribution: Number(goal.monthly_contribution) || 0,
+          deadline: goal.deadline || null,
+          status: (Number(goal.saved_amount) || 0) >= cost ? "complete" : "active",
+        });
+      }
     }
   });
   update();
