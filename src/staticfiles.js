@@ -47,8 +47,21 @@ export function registerStatic(app) {
   app.get("/sw.js", (req, res) =>
     sendRendered(res, "sw.js", "application/javascript; charset=utf-8"),
   );
-  app.use(express.static(PUBLIC_DIR));
-  app.get("*", (req, res) =>
-    sendRendered(res, "index.html", "text/html; charset=utf-8"),
+  // Статика версионируется через ?v=STATIC_VERSION → можно кэшировать
+  // надолго: смена кода меняет URL (аудит 17.4).
+  app.use(
+    express.static(PUBLIC_DIR, {
+      maxAge: "7d",
+      setHeaders(res, filePath) {
+        if (/\.(?:png|svg|webmanifest|woff2?)$/.test(filePath))
+          res.setHeader("Cache-Control", "public, max-age=2592000");
+      },
+    }),
   );
+  // SPA-fallback только для «страничных» путей: запросы файлов с расширением
+  // должны получать честный 404, а не index.html (аудит 12.5).
+  app.get("*", (req, res) => {
+    if (path.extname(req.path)) return res.status(404).send("Not found");
+    sendRendered(res, "index.html", "text/html; charset=utf-8");
+  });
 }

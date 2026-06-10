@@ -4,10 +4,57 @@
 //   GITHUB_BACKUP_REPO   — "owner/repo"
 //   GITHUB_BACKUP_BRANCH — ветка (по умолчанию ветка по умолчанию репо)
 
+//   BACKUP_ENCRYPTION_KEY — опционально: парольная фраза, бэкап шифруется
+//                           AES-256-GCM перед заливкой (аудит 16.2)
+
+import crypto from "node:crypto";
+
 const API = "https://api.github.com";
 
 export function offsiteEnabled() {
   return !!(process.env.GITHUB_BACKUP_TOKEN && process.env.GITHUB_BACKUP_REPO);
+}
+
+// ---- шифрование бэкапа: финансовые данные не должны лежать в чужом репо открытым текстом ----
+function encryptionKey() {
+  const raw = process.env.BACKUP_ENCRYPTION_KEY || "";
+  if (!raw) return null;
+  return crypto.createHash("sha256").update(raw, "utf8").digest();
+}
+
+export function encryptBackup(content, key = encryptionKey()) {
+  if (!key) return { content, encrypted: false };
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const data = Buffer.concat([cipher.update(content, "utf8"), cipher.final()]);
+  return {
+    encrypted: true,
+    content: JSON.stringify({
+      format: "capital-queue-backup",
+      v: 1,
+      alg: "aes-256-gcm",
+      iv: iv.toString("base64"),
+      tag: cipher.getAuthTag().toString("base64"),
+      data: data.toString("base64"),
+    }),
+  };
+}
+
+/** Расшифровать бэкап, созданный encryptBackup (для восстановления вручную). */
+export function decryptBackup(content, passphrase) {
+  const payload = JSON.parse(content);
+  if (payload.alg !== "aes-256-gcm") throw new Error("unsupported_backup_format");
+  const key = crypto.createHash("sha256").update(passphrase, "utf8").digest();
+  const decipher = crypto.createDecipheriv(
+    "aes-256-gcm",
+    key,
+    Buffer.from(payload.iv, "base64"),
+  );
+  decipher.setAuthTag(Buffer.from(payload.tag, "base64"));
+  return Buffer.concat([
+    decipher.update(Buffer.from(payload.data, "base64")),
+    decipher.final(),
+  ]).toString("utf8");
 }
 
 async function gh(path, options = {}) {
@@ -59,7 +106,9 @@ export async function uploadOffsiteBackup(content, date = new Date()) {
   const branch = process.env.GITHUB_BACKUP_BRANCH || "";
   const day = date.toISOString().slice(0, 10);
   const message = `backup: ${day}`;
-  await putFile(repo, branch, `backups/capital-queue-${day}.json`, content, message);
-  await putFile(repo, branch, "backups/latest.json", content, message);
-  return { uploaded: true, day };
+  const { content: payload, encrypted } = encryptBackup(content);
+  const ext = encrypted ? "json.enc" : "json";
+  await putFile(repo, branch, `backups/capital-queue-${day}.${ext}`, payload, message);
+  await putFile(repo, branch, `backups/latest.${ext}`, payload, message);
+  return { uploaded: true, day, encrypted };
 }

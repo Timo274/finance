@@ -6,6 +6,7 @@ import { checkPrice } from "./pricecheck.js";
 import { getActivePlan, getActiveItems } from "./store.js";
 import { todayISO } from "./sanitize.js";
 import { structuredLog } from "./log.js";
+import { refreshRatesFromNbu } from "./rates.js";
 
 export async function sendPushToAll(payload) {
   const subs = stmt.pushSubscriptions.all();
@@ -108,6 +109,10 @@ export function scheduleReminders() {
     );
     runDailyPriceSweep().catch((e) =>
       structuredLog("error", "price_sweep_failed", { error: String(e.message || e) }),
+    );
+    // Раз в день подтягиваем курс НБУ (если пользователь не зафиксировал свой).
+    refreshRatesFromNbu().catch((e) =>
+      structuredLog("error", "rate_sweep_failed", { error: String(e.message || e) }),
     );
   };
   setTimeout(sweep, 60_000).unref?.();

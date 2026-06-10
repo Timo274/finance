@@ -10,9 +10,9 @@ test("sets up PIN, creates a plan and adds a wishlist item", async ({
   await expect(authTitle).toHaveText(/Создайте PIN|Вход/);
 
   const isSetup = (await authTitle.textContent()) === "Создайте PIN";
-  await page.locator("#pinInput").fill("1234");
+  await page.locator("#pinInput").fill("123456");
   if (isSetup) {
-    await page.locator("#pinConfirm").fill("1234");
+    await page.locator("#pinConfirm").fill("123456");
   }
   await page.locator("#authSubmit").click();
 

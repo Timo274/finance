@@ -4,11 +4,12 @@
 import "dotenv/config";
 import express from "express";
 import cookieParser from "cookie-parser";
+import compression from "compression";
 import crypto from "node:crypto";
 
 import db from "./src/db.js";
 import { structuredLog } from "./src/log.js";
-import { authClientKey } from "./src/middleware.js";
+import { authClientKey, originCheck } from "./src/middleware.js";
 import { dataVersionMiddleware } from "./src/dataversion.js";
 import { scheduleBackups } from "./src/backups.js";
 import { scheduleReminders } from "./src/reminders.js";
@@ -34,8 +35,8 @@ const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
   "script-src 'self'",
   "script-src-attr 'none'",
-  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  "font-src 'self' https://fonts.gstatic.com data:",
+  "style-src 'self' 'unsafe-inline'",
+  "font-src 'self' data:",
   "img-src 'self' data:",
   "connect-src 'self'",
   "manifest-src 'self'",
@@ -92,6 +93,16 @@ app.use((req, res, next) => {
   return jsonParser(req, res, next);
 });
 app.use(cookieParser());
+// gzip/brotli для JSON и статики: app.js ~120KB → в разы меньше по сети (аудит 17.4).
+app.use(
+  compression({
+    // SSE нельзя буферизовать — события должны уходить сразу (аудит 17.2).
+    filter: (req, res) =>
+      req.path === "/api/events" ? false : compression.filter(req, res),
+  }),
+);
+// Мутации принимаем только со своего Origin (аудит 16.3).
+app.use(originCheck);
 
 app.get("/healthz", (req, res) => {
   try {

@@ -46,6 +46,30 @@ setInterval(() => {
   } catch {}
 }, LOGIN_WINDOW_MS).unref?.();
 
+// CSRF-страховка поверх SameSite-куки: мутации с чужим Origin отклоняем
+// (аудит 16.3). Запросы без Origin (same-origin fetch, curl, keepalive)
+// пропускаем — иначе сломаем легитимные сценарии.
+export function originCheck(req, res, next) {
+  const m = req.method.toUpperCase();
+  if (m === "GET" || m === "HEAD" || m === "OPTIONS") return next();
+  const origin = String(req.headers.origin || "");
+  if (!origin || origin === "null") return next();
+  let originHost;
+  try {
+    originHost = new URL(origin).host;
+  } catch {
+    originHost = "";
+  }
+  if (originHost && originHost === String(req.headers.host || "")) return next();
+  structuredLog("info", "origin_rejected", {
+    requestId: req.requestId,
+    origin,
+    host: req.headers.host,
+    path: req.originalUrl || req.url,
+  });
+  return res.status(403).json({ error: "bad_origin" });
+}
+
 // Лёгкие in-memory лимиты для дорогих ручек (AI, импорт, бэкапы).
 const rateLimitBuckets = new Map();
 export function rateLimit({ name, windowMs, max }) {

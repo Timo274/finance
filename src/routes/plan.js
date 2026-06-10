@@ -16,6 +16,8 @@ import {
   recomputeForeignCurrencyCosts,
 } from "../store.js";
 import { allocate, allocationFromManualPlan } from "../allocation.js";
+import { refreshRatesFromNbu, markRatesManual, rateSource } from "../rates.js";
+import { structuredLog } from "../log.js";
 import {
   textValue,
   positiveNumber,
@@ -214,7 +216,7 @@ app.get("/api/plan/close-preview", requireAuth, (req, res) => {
 
 // ================= CURRENCY =================
 app.get("/api/currency", requireAuth, (req, res) => {
-  res.json({ rate: currencyRate(), eurRate: eurRate() });
+  res.json({ rate: currencyRate(), eurRate: eurRate(), source: rateSource() });
 });
 app.post("/api/currency", requireAuth, (req, res) => {
   if (req.body?.rate != null) {
@@ -223,8 +225,34 @@ app.post("/api/currency", requireAuth, (req, res) => {
   if (req.body?.eurRate != null) {
     setEurRate(Math.max(1, positiveNumber(req.body.eurRate, 47)));
   }
+  // Ручной ввод перекрывает авто-курс НБУ до явного refresh.
+  markRatesManual();
   // Курс изменился — пересчитываем гривневую стоимость валютных желаний.
   const recalculated = recomputeForeignCurrencyCosts();
-  res.json({ rate: currencyRate(), eurRate: eurRate(), recalculated });
+  res.json({
+    rate: currencyRate(),
+    eurRate: eurRate(),
+    source: rateSource(),
+    recalculated,
+  });
+});
+// Подтянуть актуальный курс НБУ по кнопке (снимает ручной override).
+app.post("/api/currency/refresh", requireAuth, async (req, res) => {
+  try {
+    const result = await refreshRatesFromNbu({ force: true });
+    const recalculated = recomputeForeignCurrencyCosts();
+    res.json({
+      ...result,
+      rate: currencyRate(),
+      eurRate: eurRate(),
+      source: rateSource(),
+      recalculated,
+    });
+  } catch (error) {
+    structuredLog("error", "nbu_refresh_failed", {
+      error: String(error?.message || error),
+    });
+    res.status(502).json({ error: "nbu_unavailable" });
+  }
 });
 }
