@@ -12,6 +12,7 @@ import {
   getActivePlan,
   getActiveItems,
   getManualPlan,
+  customIds,
   recomputeForeignCurrencyCosts,
 } from "../store.js";
 import { allocate, allocationFromManualPlan } from "../allocation.js";
@@ -55,9 +56,13 @@ app.post("/api/plan/close", requireAuth, (req, res) => {
   const scenario = req.body?.scenario || "balanced";
   const manualPlan = getManualPlan() || [];
   const useManual = scenario === "balanced" && manualPlan.length > 0;
+  const allocOptions = {
+    scenario,
+    includeIds: scenario === "custom" ? customIds() : null,
+  };
   const result = useManual
-    ? allocationFromManualPlan(plan, items, manualPlan, { scenario })
-    : allocate(plan, items, { scenario });
+    ? allocationFromManualPlan(plan, items, manualPlan, allocOptions)
+    : allocate(plan, items, allocOptions);
 
   const snapshot = {
     closedScenario: result.scenario,
@@ -70,7 +75,7 @@ app.post("/api/plan/close", requireAuth, (req, res) => {
       allocatedAmount: a.allocatedAmount,
       remainingCost: a.remainingCost,
       layer: a.item.layer,
-      purchased: useManual ? a.fullyFunded : true,
+      purchased: a.fullyFunded !== false,
     })),
     deferred: result.deferred.map((d) => ({
       title: d.item.title,
@@ -95,7 +100,7 @@ app.post("/api/plan/close", requireAuth, (req, res) => {
     : null;
   const isPurchased = (entry) => {
     if (purchasedById) return purchasedById.get(Number(entry.item.id)) === true;
-    return useManual ? !!entry.fullyFunded : true;
+    return entry.fullyFunded !== false;
   };
 
   snapshot.approved = result.approved.map((a) => ({
@@ -184,9 +189,13 @@ app.get("/api/plan/close-preview", requireAuth, (req, res) => {
   const scenario = req.query.scenario || "balanced";
   const manualPlan = getManualPlan() || [];
   const useManual = scenario === "balanced" && manualPlan.length > 0;
+  const allocOptions = {
+    scenario,
+    includeIds: scenario === "custom" ? customIds() : null,
+  };
   const result = useManual
-    ? allocationFromManualPlan(plan, items, manualPlan, { scenario })
-    : allocate(plan, items, { scenario });
+    ? allocationFromManualPlan(plan, items, manualPlan, allocOptions)
+    : allocate(plan, items, allocOptions);
   res.json({
     source: useManual ? "manual" : "auto",
     totals: result.totals,
@@ -197,7 +206,7 @@ app.get("/api/plan/close-preview", requireAuth, (req, res) => {
       allocatedAmount: a.allocatedAmount,
       savedAmount: a.item.savedAmount || 0,
       recurring: !!a.item.recurring,
-      fullyFunded: useManual ? !!a.fullyFunded : true,
+      fullyFunded: a.fullyFunded !== false,
     })),
     deferredCount: result.deferred.length,
   });

@@ -70,20 +70,44 @@ describe("allocate", () => {
       }),
     ];
     const r = allocate(basePlan, items);
-    // Both fit: A (3000) + B (2000) = 5000, quality target is 25% of 16000 = 4000
-    // A is must, bypasses policy. B would exceed layer (3000+2000=5000 > 4000)
-    assert.equal(r.approved.length, 1);
-    assert.equal(r.totals.allocated, 3000);
+    // A (must) bypasses policy. B exceeds the quality layer target (4000),
+    // but leftover budget cascades down, so B is funded beyond policy.
+    assert.equal(r.approved.length, 2);
+    assert.equal(r.totals.allocated, 5000);
+    const b = r.approved.find((a) => a.item.id === 2);
+    assert.equal(b.beyondPolicy, true);
   });
 
-  it("defers items that exceed budget", () => {
+  it("partially funds must items that exceed budget", () => {
     const items = [
       makeItem({ id: 1, title: "Big", cost: 25000, type: "must", priority: 5 }),
     ];
     const r = allocate(basePlan, items);
-    assert.equal(r.approved.length, 0);
+    // Весь свободный бюджет резервируется под must как накопление.
+    assert.equal(r.approved.length, 1);
+    assert.equal(r.approved[0].allocatedAmount, 16000);
+    assert.equal(r.approved[0].partial, true);
+    assert.equal(r.approved[0].fullyFunded, false);
     assert.equal(r.deferred.length, 1);
+    assert.equal(r.deferred[0].remainingCost, 9000);
     assert.equal(r.totals.status, "overallocated");
+    assert.equal(r.totals.statusReason, "must_unfunded");
+    assert.deepEqual(r.totals.unfundedMust, ["Big"]);
+    assert.equal(r.totals.remaining, 0);
+  });
+
+  it("must reservation starves lower-priority nice items", () => {
+    const items = [
+      makeItem({ id: 1, title: "Laptop", cost: 20000, type: "must", priority: 5 }),
+      makeItem({ id: 2, title: "Sneakers", cost: 2000, type: "nice", priority: 2 }),
+    ];
+    const r = allocate(basePlan, items);
+    const laptop = r.approved.find((a) => a.item.id === 1);
+    assert.equal(laptop.allocatedAmount, 16000);
+    assert.equal(laptop.partial, true);
+    // Кроссовки не финансируются, пока must не закрыт.
+    assert.ok(!r.approved.some((a) => a.item.id === 2));
+    assert.equal(r.totals.statusReason, "must_unfunded");
   });
 
   it("respects type priority (must before should before nice)", () => {
@@ -171,7 +195,7 @@ describe("allocate", () => {
     assert.equal(r.totals.status, "safe");
   });
 
-  it("keeps status safe when only optional wishlist items are deferred by policy", () => {
+  it("cascades leftover budget into items deferred only by layer policy", () => {
     const items = [
       makeItem({
         id: 1,
@@ -180,6 +204,19 @@ describe("allocate", () => {
         type: "nice",
         layer: "quality",
       }),
+    ];
+    const r = allocate(basePlan, items);
+    // Лимит слоя не «замораживает» свободные деньги: 10000 < 16000 → финансируем.
+    assert.equal(r.approved.length, 1);
+    assert.equal(r.approved[0].beyondPolicy, true);
+    assert.equal(r.deferred.length, 0);
+    assert.equal(r.totals.status, "safe");
+    assert.equal(r.totals.statusReason, "safe");
+  });
+
+  it("keeps status safe when optional item simply does not fit the budget", () => {
+    const items = [
+      makeItem({ id: 1, title: "Dream", cost: 50000, type: "nice", layer: "quality" }),
     ];
     const r = allocate(basePlan, items);
     assert.equal(r.approved.length, 0);
@@ -266,8 +303,24 @@ describe("tradeoff", () => {
     ];
     const t = tradeoff(1, basePlan, items, {});
     assert.ok(t);
-    assert.equal(t.approved, false); // Should-only item exceeds quality layer target
-    assert.equal(typeof t.remainingIfAdded, "number");
+    // Перелив бюджета: should-покупка финансируется сверх лимита слоя.
+    assert.equal(t.approved, true);
+    assert.equal(t.freedIfRemoved, 5000);
+  });
+
+  it("never displaces protected items", () => {
+    const items = [
+      makeItem({ id: 1, title: "Must", cost: 15000, type: "must", priority: 1 }),
+      makeItem({ id: 2, title: "Locked", cost: 1000, type: "should", canDefer: false, priority: 1 }),
+      makeItem({ id: 3, title: "Wish", cost: 10000, type: "nice", priority: 5 }),
+    ];
+    const t = tradeoff(3, basePlan, items, {});
+    assert.ok(t);
+    assert.equal(t.approved, false);
+    for (const d of t.displaces) {
+      assert.notEqual(d.type, "must");
+      assert.notEqual(d.canDefer, false);
+    }
   });
 
   it("calculates freed amount if item removed", () => {

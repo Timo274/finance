@@ -90,7 +90,9 @@ export function scoreVerdict(item) {
 }
 
 function daysBetween(a, b) {
-  return Math.round((new Date(b) - new Date(a)) / (1000 * 60 * 60 * 24));
+  const diff = new Date(b) - new Date(a);
+  if (!Number.isFinite(diff)) return 0;
+  return Math.round(diff / (1000 * 60 * 60 * 24));
 }
 
 // Композитный ранг покупки. Чем выше — тем раньше распределяем.
@@ -187,7 +189,6 @@ export function allocate(plan, items, options = {}) {
       ? null
       : policyTargets(availableToAllocate, scenario.weights);
   let spent = 0;
-  let mustDeferredForMoney = false;
 
   for (const { item } of ranked) {
     const remainingCost = amountToFund(item);
@@ -215,28 +216,43 @@ export function allocate(plan, items, options = {}) {
         item: itemForResult,
         allocatedAmount: remainingCost,
         remainingCost,
+        fullyFunded: true,
         balanceAfter: salary - stableExpenses - (spent + remainingCost),
       });
       spent += remainingCost;
       buckets[item.layer] = (buckets[item.layer] || 0) + remainingCost;
-    } else if (item.type === "must") {
-      mustDeferredForMoney = true;
+    } else if (protectedItem) {
+      // Обязательная/неоткладываемая покупка не влезает целиком: резервируем под неё
+      // весь остаток бюджета как накопление, чтобы мелкие желания не съели деньги раньше must.
+      const partial = Math.max(0, Math.min(remainingCost, remainingBudget));
+      if (partial > 0) {
+        approved.push({
+          item: itemForResult,
+          allocatedAmount: partial,
+          remainingCost,
+          partial: true,
+          fullyFunded: false,
+          balanceAfter: salary - stableExpenses - (spent + partial),
+        });
+        spent += partial;
+        buckets[item.layer] = (buckets[item.layer] || 0) + partial;
+      }
       deferred.push({
         item: itemForResult,
-        remainingCost,
-        reason: "Не хватает бюджета даже на обязательную покупку",
-      });
-    } else if (!item.canDefer) {
-      deferred.push({
-        item: itemForResult,
-        remainingCost,
+        remainingCost: remainingCost - partial,
+        partial: partial > 0,
         reason:
-          "Не помещается, хотя помечено как неоткладываемое — нужно увеличить бюджет",
+          partial > 0
+            ? `Не влезает целиком: ${partial.toLocaleString("ru-RU")} грн уходит в накопление, не хватает ещё ${(remainingCost - partial).toLocaleString("ru-RU")} грн`
+            : item.type === "must"
+              ? "Не хватает бюджета даже на обязательную покупку"
+              : "Не помещается, хотя помечено как неоткладываемое — нужно увеличить бюджет",
       });
     } else if (!fitsPolicy) {
       deferred.push({
         item: itemForResult,
         remainingCost,
+        policyLimited: true,
         reason: `Не проходит политику сценария: лимит слоя «${LAYERS[item.layer]?.ru || item.layer}»`,
       });
     } else {
@@ -249,19 +265,53 @@ export function allocate(plan, items, options = {}) {
     }
   }
 
+  // Перелив: лимиты слоёв не должны «замораживать» свободные деньги.
+  // Отложенные только из-за политики покупки финансируем из остатка в порядке ранга.
+  if (targets) {
+    for (let i = 0; i < deferred.length; ) {
+      const d = deferred[i];
+      const budgetLeft = availableToAllocate - spent;
+      if (d.policyLimited && d.remainingCost > 0 && d.remainingCost <= budgetLeft) {
+        approved.push({
+          item: d.item,
+          allocatedAmount: d.remainingCost,
+          remainingCost: d.remainingCost,
+          fullyFunded: true,
+          beyondPolicy: true,
+          balanceAfter: salary - stableExpenses - (spent + d.remainingCost),
+        });
+        spent += d.remainingCost;
+        buckets[d.item.layer] = (buckets[d.item.layer] || 0) + d.remainingCost;
+        deferred.splice(i, 1);
+      } else {
+        i += 1;
+      }
+    }
+  }
+
   const allocated = spent;
   const remaining = salary - stableExpenses - allocated;
   const freeAfterReserve = remaining;
 
-  const importantDeferred = deferred.some(
-    (d) => d.remainingCost > 0 && (d.item.type === "must" || !d.item.canDefer),
-  );
+  const unfundedMust = deferred
+    .filter((d) => d.remainingCost > 0 && (d.item.type === "must" || !d.item.canDefer))
+    .map((d) => d.item.title);
 
   let status = "safe";
-  if (salary < stableExpenses || mustDeferredForMoney || importantDeferred)
+  let statusReason = "safe";
+  if (salary < stableExpenses) {
     status = "overallocated";
-  else if (availableToAllocate > 0 && remaining < availableToAllocate * 0.15)
+    statusReason = "stable_over_salary";
+  } else if (remaining < 0) {
+    status = "overallocated";
+    statusReason = "overspent";
+  } else if (unfundedMust.length) {
+    status = "overallocated";
+    statusReason = "must_unfunded";
+  } else if (availableToAllocate > 0 && remaining < availableToAllocate * 0.15) {
     status = "tight";
+    statusReason = "tight";
+  }
 
   // Таймлайн: дата = max(payday, earliestDate). Running balance после каждой покупки.
   const timeline = [];
@@ -307,6 +357,8 @@ export function allocate(plan, items, options = {}) {
       freeAfterBuffer: freeAfterReserve,
       freeAfterReserve,
       status,
+      statusReason,
+      unfundedMust,
     },
     weights: scenario.weights,
     policyTargets: targets,
@@ -372,17 +424,26 @@ export function allocationFromManualPlan(plan, items, manualPlan = [], options =
   }
 
   const remaining = base.totals.availableToAllocate - allocated;
+  const unfundedMust = deferred
+    .filter((d) => d.remainingCost > 0 && (d.item.type === "must" || !d.item.canDefer))
+    .map((d) => d.item.title);
   let status = "safe";
-  const importantDeferred = deferred.some(
-    (d) => d.remainingCost > 0 && (d.item.type === "must" || !d.item.canDefer),
-  );
-  if (base.totals.salary < base.totals.stableExpenses || remaining < 0 || importantDeferred) {
+  let statusReason = "safe";
+  if (base.totals.salary < base.totals.stableExpenses) {
     status = "overallocated";
+    statusReason = "stable_over_salary";
+  } else if (remaining < 0) {
+    status = "overallocated";
+    statusReason = "overspent";
+  } else if (unfundedMust.length) {
+    status = "overallocated";
+    statusReason = "must_unfunded";
   } else if (
     base.totals.availableToAllocate > 0 &&
     remaining < base.totals.availableToAllocate * 0.15
   ) {
     status = "tight";
+    statusReason = "tight";
   }
 
   const timeline = [];
@@ -419,6 +480,8 @@ export function allocationFromManualPlan(plan, items, manualPlan = [], options =
       freeAfterBuffer: remaining,
       freeAfterReserve: remaining,
       status,
+      statusReason,
+      unfundedMust,
     },
     buckets,
     approved,
@@ -460,9 +523,10 @@ export function tradeoff(targetId, plan, items, options = {}) {
   const displaces = [];
   if (targetAmount > result.totals.remaining) {
     let need = targetAmount - result.totals.remaining;
-    const removable = [...result.approved].sort(
-      (a, b) => (a.item.priority || 1) - (b.item.priority || 1),
-    );
+    // Обязательные и неоткладываемые покупки вытеснять нельзя.
+    const removable = result.approved
+      .filter((a) => a.item.type !== "must" && a.item.canDefer !== false)
+      .sort((a, b) => (a.item.priority || 1) - (b.item.priority || 1));
     for (const a of removable) {
       if (need <= 0) break;
       displaces.push(a.item);

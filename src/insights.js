@@ -83,6 +83,7 @@ export function buildDecisionInsights(plan, items, allocation, options = {}) {
 
   const active = (items || []).filter((item) => item.status === "active" || !item.status);
   const approved = (allocation.approved || [])
+    .filter((entry) => !entry.partial)
     .map((entry) => compactItem({ ...entry.item, remainingCost: entry.remainingCost }, today))
     .slice(0, 3);
 
@@ -118,7 +119,12 @@ export function buildDecisionInsights(plan, items, allocation, options = {}) {
   let status = "safe";
   if (totals.status === "overallocated" || remaining < 0) {
     status = "danger";
-    headline = "План перегружен — сначала режем или переносим";
+    headline =
+      totals.statusReason === "must_unfunded"
+        ? "Не хватает на обязательное — остаток уходит в накопление"
+        : totals.statusReason === "stable_over_salary"
+          ? "База больше зарплаты — пересмотри стабильные пункты"
+          : "План перегружен — сначала режем или переносим";
   } else if (urgentDeferred.length) {
     status = "warning";
     headline = "Есть срочные желания вне бюджета";
