@@ -3371,3 +3371,20 @@ document.addEventListener("visibilitychange", () => {
 })();
 
 bootstrap().catch((e) => console.error(e));
+
+// ---------- параллакс фона от мыши (desktop, без reduced-motion) ----------
+(() => {
+  const fine = window.matchMedia("(pointer: fine)");
+  const noMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  if (!fine.matches || noMotion.matches) return;
+  const root = document.documentElement;
+  let raf = 0;
+  window.addEventListener("mousemove", (e) => {
+    if (raf) return;
+    raf = requestAnimationFrame(() => {
+      raf = 0;
+      root.style.setProperty("--par-x", (e.clientX / window.innerWidth - 0.5).toFixed(4));
+      root.style.setProperty("--par-y", (e.clientY / window.innerHeight - 0.5).toFixed(4));
+    });
+  }, { passive: true });
+})();

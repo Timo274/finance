@@ -2453,3 +2453,216 @@ tbody tr:hover .tag, .qi-title:hover .tag { transform: rotate(0); transition: tr
   .wish-emoji, .stat-watermark, .ticket-chip { animation: none !important; transition: none !important; }
   .confetti-host { display: none; }
 }
+
+/* ============================================================
+   BACKGROUND MEAT PACK — многослойный живой фон.
+   Слои (снизу вверх): mesh → топо-контуры → орбы → луч →
+   миллиметровка → глифы валют → виньетка. Поверх всего — зерно
+   (body::after). Анимации transform-only, параллакс через --par-x/y.
+   ============================================================ */
+#bgStage {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+}
+#bgStage > * { position: absolute; inset: 0; }
+
+/* --- 1. Цветовой mesh: четыре живых пятна вместо одного градиента --- */
+.bg-mesh {
+  inset: -22%;
+  background:
+    radial-gradient(34% 30% at 16% 22%, color-mix(in srgb, var(--accent) 34%, transparent), transparent 68%),
+    radial-gradient(28% 26% at 84% 12%, color-mix(in srgb, var(--amber) 24%, transparent), transparent 70%),
+    radial-gradient(32% 30% at 76% 84%, color-mix(in srgb, var(--accent-deep) 30%, transparent), transparent 70%),
+    radial-gradient(26% 24% at 6% 86%, color-mix(in srgb, var(--green) 22%, transparent), transparent 68%),
+    radial-gradient(30% 26% at 50% 54%, color-mix(in srgb, var(--accent) 15%, transparent), transparent 70%);
+  animation: meshDrift 44s ease-in-out infinite alternate;
+  will-change: transform;
+}
+@keyframes meshDrift {
+  0%   { transform: translate3d(-3%, -2%, 0) scale(1) rotate(0deg); }
+  50%  { transform: translate3d(4%, 3%, 0) scale(1.1) rotate(3deg); }
+  100% { transform: translate3d(-2%, 5%, 0) scale(1.05) rotate(-2.5deg); }
+}
+
+/* --- 2. Топографические контуры: карта высот, медленно дышит --- */
+.bg-topo {
+  inset: -28%;
+  background:
+    repeating-radial-gradient(ellipse 58% 46% at 80% 78%, transparent 0 30px, color-mix(in srgb, var(--accent) 16%, transparent) 30px 31.6px),
+    repeating-radial-gradient(ellipse 52% 44% at 10% 16%, transparent 0 38px, color-mix(in srgb, var(--text) 12%, transparent) 38px 39.6px);
+  -webkit-mask-image: radial-gradient(120% 120% at 50% 50%, #000 38%, transparent 84%);
+  mask-image: radial-gradient(120% 120% at 50% 50%, #000 38%, transparent 84%);
+  animation: topoBreathe 64s ease-in-out infinite alternate;
+}
+@keyframes topoBreathe {
+  from { transform: scale(1) rotate(0deg); }
+  to   { transform: scale(1.07) rotate(2.4deg); }
+}
+
+/* --- 3. Орбы: крупные мягкие сферы света, каждая в своём ритме --- */
+.bg-orb { inset: auto; border-radius: 50%; will-change: transform; }
+.bg-orb-a {
+  width: 52vmax; height: 52vmax; top: -18vmax; left: -14vmax;
+  background: radial-gradient(circle at 36% 34%, color-mix(in srgb, var(--accent) 36%, transparent), transparent 62%);
+  animation: orbDriftA 38s ease-in-out infinite alternate;
+}
+.bg-orb-b {
+  width: 44vmax; height: 44vmax; right: -16vmax; top: 4vmax;
+  background: radial-gradient(circle at 60% 40%, color-mix(in srgb, var(--amber) 28%, transparent), transparent 60%);
+  animation: orbDriftB 52s ease-in-out infinite alternate;
+}
+.bg-orb-c {
+  width: 48vmax; height: 48vmax; left: 22vw; bottom: -26vmax;
+  background: radial-gradient(circle at 50% 36%, color-mix(in srgb, var(--accent-deep) 32%, transparent), transparent 62%);
+  animation: orbDriftC 46s ease-in-out infinite alternate;
+}
+@keyframes orbDriftA { to { transform: translate3d(9vw, 7vh, 0) scale(1.12); } }
+@keyframes orbDriftB { to { transform: translate3d(-7vw, 9vh, 0) scale(.92); } }
+@keyframes orbDriftC { to { transform: translate3d(6vw, -8vh, 0) scale(1.08); } }
+
+/* --- 4. Световой луч: медленно обходит экран по кругу --- */
+.bg-beam {
+  inset: -60%;
+  background: conic-gradient(from 0deg,
+    transparent 0deg 70deg,
+    color-mix(in srgb, var(--accent) 12%, transparent) 92deg,
+    color-mix(in srgb, var(--amber) 9%, transparent) 104deg,
+    transparent 128deg 360deg);
+  animation: beamSpin 120s linear infinite;
+  will-change: transform;
+}
+@keyframes beamSpin { to { transform: rotate(360deg); } }
+
+/* --- 5. Миллиметровка: тонкая сетка + жирная каждая 5-я, параллакс --- */
+.bg-grid {
+  inset: -90px;
+  background:
+    linear-gradient(color-mix(in srgb, var(--text) 15%, transparent) 1px, transparent 1px) 0 0 / 190px 190px,
+    linear-gradient(90deg, color-mix(in srgb, var(--text) 15%, transparent) 1px, transparent 1px) 0 0 / 190px 190px,
+    linear-gradient(color-mix(in srgb, var(--text) 9%, transparent) 1px, transparent 1px) 0 0 / 38px 38px,
+    linear-gradient(90deg, color-mix(in srgb, var(--text) 9%, transparent) 1px, transparent 1px) 0 0 / 38px 38px;
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, .6) 55%, rgba(0, 0, 0, .3) 100%);
+  mask-image: linear-gradient(180deg, #000 0%, rgba(0, 0, 0, .6) 55%, rgba(0, 0, 0, .3) 100%);
+  transform: translate3d(calc(var(--par-x, 0) * 26px), calc(var(--par-y, 0) * 26px), 0);
+  transition: transform .9s cubic-bezier(.22, 1, .36, 1);
+}
+
+/* --- 6. Плавающие глифы валют (₴ € $ % ✦ ◆) --- */
+.bg-glyphs {
+  font-family: 'Manrope', 'Inter', system-ui, sans-serif;
+  color: color-mix(in srgb, var(--accent) 70%, var(--text));
+  transform: translate3d(calc(var(--par-x, 0) * -14px), calc(var(--par-y, 0) * -14px), 0);
+  transition: transform .9s cubic-bezier(.22, 1, .36, 1);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 14%, #000 86%, transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0, #000 14%, #000 86%, transparent 100%);
+}
+.bg-glyphs i {
+  position: absolute;
+  top: 104%;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1;
+  animation: glyphFloat var(--t, 120s) linear infinite;
+  animation-delay: var(--d, 0s);
+  will-change: transform;
+}
+.bg-glyphs i { opacity: .09; }
+@keyframes glyphFloat {
+  0%   { transform: translate3d(0, 0, 0) rotate(-8deg); }
+  25%  { transform: translate3d(2.2vw, -28vh, 0) rotate(4deg); }
+  50%  { transform: translate3d(-1.6vw, -56vh, 0) rotate(-5deg); }
+  75%  { transform: translate3d(2.8vw, -84vh, 0) rotate(6deg); }
+  100% { transform: translate3d(-1.2vw, -112vh, 0) rotate(-9deg); }
+}
+[data-theme='dark'] .bg-glyphs i,
+[data-theme='cockpit'] .bg-glyphs i { opacity: .13; }
+
+/* --- 7. Виньетка: мягкая глубина по краям --- */
+.bg-vignette {
+  background: radial-gradient(125% 92% at 50% 8%, transparent 56%, color-mix(in srgb, var(--accent-deep) 17%, transparent) 100%);
+}
+
+/* --- 8. Карточки/модалки/таблицы: лен-фактура + угловое свечение --- */
+:root,
+[data-theme='light'] { --card-topline: rgba(255, 255, 255, .55); }
+[data-theme='dark'] { --card-topline: rgba(255, 255, 255, .05); }
+[data-theme='cockpit'] { --card-topline: rgba(255, 250, 242, .07); }
+.card, .modal, .queue-item, .table-wrap {
+  background-image:
+    linear-gradient(168deg, color-mix(in srgb, var(--accent) 5%, transparent), transparent 38%),
+    radial-gradient(240px 150px at 100% 0%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 72%),
+    repeating-linear-gradient(-38deg, color-mix(in srgb, var(--text) 2.2%, transparent) 0 1px, transparent 1px 7px);
+}
+[data-theme='cockpit'] .card,
+[data-theme='cockpit'] .modal,
+[data-theme='cockpit'] .queue-item,
+[data-theme='cockpit'] .table-wrap {
+  background-image:
+    linear-gradient(168deg, color-mix(in srgb, var(--accent) 7%, transparent), transparent 40%),
+    repeating-linear-gradient(-38deg, color-mix(in srgb, var(--text) 2.6%, transparent) 0 1px, transparent 1px 7px);
+}
+.card { box-shadow: var(--shadow-sm), inset 0 1px 0 var(--card-topline); }
+.card, .queue-item, .table-wrap {
+  background-color: color-mix(in srgb, var(--panel) 82%, transparent);
+  backdrop-filter: blur(12px) saturate(1.25);
+  -webkit-backdrop-filter: blur(12px) saturate(1.25);
+}
+@media (max-width: 820px) {
+  /* мобильным — без тяжёлого blur, чуть плотнее подложка */
+  .card, .queue-item, .table-wrap {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background-color: color-mix(in srgb, var(--panel) 93%, transparent);
+  }
+}
+/* герой-карточка: диагональные пинстрайпы + блик */
+.cards .card:first-child {
+  background-image:
+    repeating-linear-gradient(-45deg, rgba(255, 255, 255, .05) 0 2px, transparent 2px 11px),
+    radial-gradient(180px 120px at 86% -10%, rgba(255, 255, 255, .28), transparent 70%),
+    radial-gradient(60% 90% at 0% 100%, rgba(0, 0, 0, .16), transparent 60%),
+    linear-gradient(140deg, var(--accent), var(--accent-deep));
+}
+
+/* --- 9. Формы: внутренняя глубина у полей --- */
+.field input, .field select, .field textarea,
+.quick-add input, .quick-add select,
+.filters input, .filters select,
+.manual-row input, .auth-card input, .chat-input input {
+  background-image: linear-gradient(180deg, color-mix(in srgb, var(--text) 4.5%, transparent), transparent 36%);
+  box-shadow: inset 0 1.5px 3px color-mix(in srgb, var(--text) 7%, transparent);
+}
+
+/* --- 10. Графики: миллиметровка под линиями --- */
+.chart-line {
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  background-color: color-mix(in srgb, var(--bg-2) 55%, transparent);
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--text) 6%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--text) 6%, transparent) 1px, transparent 1px),
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 6%, transparent), transparent 42%);
+  background-size: 30px 30px, 30px 30px, 100% 100%;
+}
+.chart-donut { filter: drop-shadow(0 10px 18px color-mix(in srgb, var(--accent) 18%, transparent)); }
+
+/* --- 11. Сайдбар: точечная перфорация поверх градиента --- */
+.sidebar {
+  background-image:
+    radial-gradient(color-mix(in srgb, var(--text) 14%, transparent) 1px, transparent 1.4px),
+    linear-gradient(180deg, color-mix(in srgb, var(--panel) 96%, transparent), color-mix(in srgb, var(--panel-2) 88%, transparent));
+  background-size: 19px 19px, 100% 100%;
+}
+
+/* --- 12. Доступность и мобильная экономия --- */
+@media (prefers-reduced-motion: reduce) {
+  .bg-mesh, .bg-topo, .bg-orb, .bg-beam, .bg-glyphs i { animation: none !important; }
+  .bg-grid, .bg-glyphs { transform: none !important; transition: none !important; }
+}
+@media (max-width: 820px) {
+  .bg-glyphs i:nth-child(n+8) { display: none; }
+  .bg-beam { display: none; }
+}

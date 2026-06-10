@@ -23,6 +23,31 @@
         <link rel="stylesheet" href="/styles.css?v=__STATIC_VERSION__" />
     </head>
     <body>
+        <!-- Многослойный живой фон (декорация, не участвует в a11y) -->
+        <div id="bgStage" aria-hidden="true">
+            <div class="bg-mesh"></div>
+            <div class="bg-topo"></div>
+            <div class="bg-orb bg-orb-a"></div>
+            <div class="bg-orb bg-orb-b"></div>
+            <div class="bg-orb bg-orb-c"></div>
+            <div class="bg-beam"></div>
+            <div class="bg-grid"></div>
+            <div class="bg-glyphs">
+                <i style="left: 6%; --t: 118s; --d: -12s; font-size: 30px">&#8372;</i>
+                <i style="left: 14%; --t: 142s; --d: -66s; font-size: 18px">&euro;</i>
+                <i style="left: 23%; --t: 104s; --d: -30s; font-size: 42px">$</i>
+                <i style="left: 31%; --t: 152s; --d: -90s; font-size: 16px">&#10022;</i>
+                <i style="left: 39%; --t: 122s; --d: -48s; font-size: 26px">%</i>
+                <i style="left: 47%; --t: 96s; --d: -8s; font-size: 22px">&#8372;</i>
+                <i style="left: 55%; --t: 134s; --d: -72s; font-size: 34px">&euro;</i>
+                <i style="left: 63%; --t: 112s; --d: -24s; font-size: 18px">&#9670;</i>
+                <i style="left: 71%; --t: 144s; --d: -100s; font-size: 24px">$</i>
+                <i style="left: 79%; --t: 100s; --d: -40s; font-size: 38px">&#8372;</i>
+                <i style="left: 87%; --t: 126s; --d: -58s; font-size: 20px">&#10022;</i>
+                <i style="left: 94%; --t: 108s; --d: -16s; font-size: 28px">&euro;</i>
+            </div>
+            <div class="bg-vignette"></div>
+        </div>
         <!-- Логотип (переиспользуется через <use>) -->
         <svg width="0" height="0" style="position: absolute" aria-hidden="true">
             <defs>
