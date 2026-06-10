@@ -867,8 +867,8 @@ function metaPayload() {
     })),
     defaults: DEFAULTS,
     ai: aiStatus(),
-    monobank: monobankEnabled(),
-    offsiteBackup: offsiteEnabled(),
+    monobank: { enabled: monobankEnabled() },
+    offsiteBackup: { enabled: offsiteEnabled() },
     push: { enabled: true, publicKey: getVapidKeys().publicKey },
   };
 }
@@ -2270,6 +2270,7 @@ app.get("/api/state", requireAuth, (req, res) => {
     manualPlan: getManualPlan() || [],
     goals: getGoals(),
     currencyRate: currencyRate(),
+    eurRate: eurRate(),
   });
 });
 

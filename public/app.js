@@ -307,6 +307,47 @@ function drawCharts() {
   }
 }
 
+// Графики на экране истории: динамика капитала и свободный остаток по месяцам.
+async function initHistoryCharts() {
+  let data;
+  try {
+    data = await api.get("/api/history/charts");
+  } catch {
+    return;
+  }
+  const nw = $("#nwChart");
+  if (nw) {
+    if ((data.netWorth || []).length >= 2) {
+      drawLine(nw, data.netWorth.map((p) => ({ value: p.value })));
+      const last = data.netWorth[data.netWorth.length - 1];
+      const hint = $("#nwHint");
+      if (hint)
+        hint.textContent = `${fmtDate(data.netWorth[0].date)} → ${fmtDate(last.date)} · сейчас ${fmt(last.value)}`;
+    } else {
+      const hint = $("#nwHint");
+      if (hint) hint.textContent = "Появится после двух и более оценок активов.";
+    }
+  }
+  const mc = $("#monthChart");
+  if (mc) {
+    const monthly = (data.monthly || []).slice(-12);
+    if (monthly.length) {
+      drawBars(
+        mc,
+        monthly.map((m) => ({
+          value: Math.max(0, m.remaining),
+          label: m.month.slice(5),
+        })),
+      );
+      const hint = $("#monthHint");
+      if (hint)
+        hint.textContent = monthly
+          .map((m) => `${m.month.slice(5)}: ${fmtShort(m.remaining)}`)
+          .join(" · ");
+    }
+  }
+}
+
 // Клиентская копия логики вердикта (для живого отображения в модалке/таблице).
 function clientVerdict(scoreType, scores) {
   if (!scoreType || scoreType === "none" || !scores) return null;
@@ -667,6 +708,7 @@ async function loadAndRender() {
   state.manualPlan = data.manualPlan || [];
   state.goals = data.goals || [];
   state.currencyRate = data.currencyRate || 43.5;
+  state.eurRate = data.eurRate || 47;
   $("#app").classList.remove("hidden");
   renderTopbar();
   renderView();
@@ -686,6 +728,7 @@ async function refresh() {
   state.manualPlan = data.manualPlan || [];
   state.goals = data.goals || [];
   state.currencyRate = data.currencyRate || 43.5;
+  state.eurRate = data.eurRate || 47;
   renderTopbar();
   renderView();
 }
@@ -744,7 +787,10 @@ function renderView() {
   else if (v === "wallets") root.innerHTML = viewWallets();
   else if (v === "investments") root.innerHTML = viewInvestments();
   else if (v === "plan") root.innerHTML = viewPlan();
-  else if (v === "history") root.innerHTML = viewHistory();
+  else if (v === "history") {
+    root.innerHTML = viewHistory();
+    initHistoryCharts();
+  }
   else if (v === "assistant") {
     root.innerHTML = viewAssistant();
     initAssistant();
@@ -1545,8 +1591,10 @@ function viewPlan() {
   return `
   <div class="view-head row-between">
     <div><h1>План распределения</h1><p>Распределяйте только излишки после обязательных расходов, страховки и инвестиций; авто-план остаётся подсказкой рядом.</p></div>
-    <button class="btn btn-outline" data-act="close-month">Закрыть месяц</button>
+    <div style="display:flex;gap:8px"><button class="btn btn-ghost" data-act="what-if">Что если…</button>
+    <button class="btn btn-outline" data-act="close-month">Закрыть месяц</button></div>
   </div>
+  ${state.meta?.monobank?.enabled ? `<div class="card pad-lg" style="margin-bottom:16px" id="monoCard"><div class="row-between"><div class="section-title" style="margin:0">План vs факт (Monobank)</div><button class="btn btn-sm btn-outline" data-act="load-mono">Показать</button></div><div id="monoBody"></div></div>` : ""}
   <div class="card pad-lg" style="margin-bottom:16px">
     <div class="row-between"><div><div class="section-title" style="margin:0">Ручной план</div><p class="muted small" style="margin:4px 0 0">Введите, сколько отправить на каждое желание в этом месяце.</p></div>
       <div><div class="stat-value sm ${planned > available ? "red-num" : "green-num"}" data-manual-total>${fmt(planned)}</div><div class="muted small">из ${fmt(available)}</div></div></div>
@@ -1575,7 +1623,19 @@ function viewHistory() {
     return `<div class="view-head"><h1>История решений</h1><p>Закрытые месяцы появятся здесь.</p></div>
       ${richEmpty("↺", "История начнётся после первого закрытого месяца", "Когда зарплата распределена и решения выполнены — закройте месяц на экране плана, чтобы сохранить снимок.", "go-view", "Открыть план", "plan")}`;
   }
-  return `<div class="view-head"><h1>История решений</h1><p>Что ты решал в прошлые месяцы: купленное, отложенное, остаток.</p></div>
+  const years = [
+    ...new Set(
+      state.history.map((h) => String(h.closedAt || h.payday || "").slice(0, 4)),
+    ),
+  ].filter(Boolean);
+  return `<div class="view-head row-between">
+    <div><h1>История решений</h1><p>Что ты решал в прошлые месяцы: купленное, отложенное, остаток.</p></div>
+    <div style="display:flex;gap:8px">${years.map((y) => `<button class="btn btn-outline btn-sm" data-act="year-report" data-year="${y}">Отчёт ${y} CSV</button>`).join("")}</div>
+  </div>
+  <div class="grid cards" style="margin-bottom:16px">
+    <div class="card pad-lg"><div class="section-title" style="margin-top:0">Динамика капитала</div><canvas id="nwChart" height="160"></canvas><p class="muted small" id="nwHint"></p></div>
+    <div class="card pad-lg"><div class="section-title" style="margin-top:0">Свободный остаток по месяцам</div><canvas id="monthChart" height="160"></canvas><p class="muted small" id="monthHint"></p></div>
+  </div>
     ${state.history
       .map((h) => {
         const s = h.snapshot || {};
@@ -1588,8 +1648,10 @@ function viewHistory() {
           <div class="card"><div class="stat-label">Распределено</div><div class="stat-value sm">${fmt(t.allocated)}</div></div>
           <div class="card"><div class="stat-label">Осталось</div><div class="stat-value sm green-num">${fmt(t.remaining)}</div></div>
         </div>
-        <div style="margin-top:12px"><span class="muted small">Куплено:</span> ${(s.approved || []).map((x) => escapeHtml(x.title)).join(", ") || "—"}</div>
+        <div style="margin-top:12px"><span class="muted small">Куплено:</span> ${(s.approved || []).filter((x) => x.purchased !== false).map((x) => escapeHtml(x.title)).join(", ") || "—"}</div>
+        ${(s.approved || []).some((x) => x.purchased === false) ? `<div style="margin-top:6px"><span class="muted small">Не куплено (ушло в накопление):</span> ${(s.approved || []).filter((x) => x.purchased === false).map((x) => escapeHtml(x.title)).join(", ")}</div>` : ""}
         <div style="margin-top:6px"><span class="muted small">Отложено:</span> ${(s.deferred || []).map((x) => escapeHtml(x.title)).join(", ") || "—"}</div>
+        ${state.meta?.ai?.enabled ? `<div style="margin-top:10px"><button class="btn btn-ghost btn-sm" data-act="month-review" data-id="${h.id}">✦ AI-разбор месяца</button></div>` : ""}
       </div>`;
       })
       .join("")}`;
@@ -1772,6 +1834,10 @@ function bindViewEvents() {
       else if (act === "bought") await markBought(id);
       else if (act === "tradeoff") await showTradeoff(id);
       else if (act === "close-month") closeMonth();
+      else if (act === "what-if") openSimulatorModal();
+      else if (act === "load-mono") await loadMonobankSummary(el);
+      else if (act === "month-review") openMonthReviewModal(id || undefined);
+      else if (act === "year-report") await downloadYearReport(el.dataset.year);
       else if (act === "ai-explain") await explainItem(id);
       else if (act === "delete") await deleteItem(id);
       else if (act === "delete-wallet") await deleteWallet(el.dataset.id);
@@ -2019,15 +2085,105 @@ async function saveManualPlan() {
 }
 
 async function closeMonth() {
-  if (
-    !confirm(
-      "Закрыть месяц? Одобренные покупки уйдут в архив (купленные), отложенные останутся в очереди на следующую зарплату.",
+  // Чек-лист закрытия месяца: отмечаем, что реально куплено.
+  let preview;
+  try {
+    preview = await api.get("/api/plan/close-preview");
+  } catch (ex) {
+    return toast("Ошибка: " + ex.message);
+  }
+  const rows = (preview.approved || [])
+    .map(
+      (a) => `<label class="wallet-row" style="cursor:pointer">
+        <div><b>${escapeHtml(a.title)}</b>
+          <div class="muted small">${fmt(a.allocatedAmount)} из ${fmt(a.cost)}${a.recurring ? " · 🔁 регулярное" : ""}${a.fullyFunded ? "" : " · накоплено не всё"}</div></div>
+        <input type="checkbox" class="close-purchase" data-id="${a.itemId}" ${a.fullyFunded ? "checked" : ""} style="width:20px;height:20px;accent-color:var(--accent)" />
+      </label>`,
     )
-  )
-    return;
-  await api.post("/api/plan/close", { scenario: "balanced" });
-  toast("Месяц закрыт и сохранён в истории");
-  await refresh();
+    .join("");
+  openModal(`<div class="modal narrow">
+    <div class="modal-head"><h2>Закрыть месяц</h2><button class="close-x" data-close-modal>×</button></div>
+    <p class="muted small">Отметь, что реально куплено. Неотмеченное останется в очереди, а выделенные на него деньги превратятся в накопление. Отложенных желаний: ${preview.deferredCount}.</p>
+    <div>${rows || '<p class="muted">В этом месяце ничего не было одобрено.</p>'}</div>
+    <div class="modal-foot" style="margin-top:14px">
+      <button type="button" class="btn btn-ghost" data-close-modal>Отмена</button>
+      <button type="button" class="btn btn-primary" id="confirmCloseBtn">Закрыть месяц</button>
+    </div>
+  </div>`);
+  $("#confirmCloseBtn").addEventListener("click", async () => {
+    const purchases = $$(".close-purchase").map((el) => ({
+      itemId: +el.dataset.id,
+      purchased: el.checked,
+    }));
+    await api.post("/api/plan/close", { scenario: "balanced", purchases });
+    closeModal();
+    toast("Месяц закрыт и сохранён в истории");
+    await refresh();
+    // Предложим AI-разбор месяца, если ассистент включён.
+    if (state.meta?.ai?.enabled) openMonthReviewModal();
+  });
+}
+
+async function openMonthReviewModal(planId) {
+  openModal(`<div class="modal narrow">
+    <div class="modal-head"><h2>Разбор месяца</h2><button class="close-x" data-close-modal>×</button></div>
+    <div id="reviewBody"><p class="muted">Ассистент анализирует месяц…</p></div>
+    <div class="modal-foot"><button type="button" class="btn btn-ghost" data-close-modal>Закрыть</button></div>
+  </div>`);
+  try {
+    const out = await api.post("/api/ai/month-review", planId ? { planId } : {});
+    const body = $("#reviewBody");
+    if (body) body.innerHTML = `<div class="msg bot">${md(out.reply || "")}</div>`;
+  } catch (ex) {
+    const body = $("#reviewBody");
+    if (body) body.innerHTML = `<p class="muted">Не получилось: ${escapeHtml(ex.message)}</p>`;
+  }
+}
+
+// What-if симулятор: двигаем параметры плана и смотрим виртуальное распределение.
+function openSimulatorModal() {
+  const p = state.plan;
+  if (!p) return toast("Сначала настройте план");
+  const slider = (name, label, value, max) => `<div class="field full"><label>${label}: <b data-sim-val="${name}">${fmtShort(value)}</b> грн</label>
+    <input type="range" data-sim="${name}" min="0" max="${max}" step="100" value="${value}" style="width:100%" /></div>`;
+  openModal(`<div class="modal narrow">
+    <div class="modal-head"><h2>Что если…</h2><button class="close-x" data-close-modal>×</button></div>
+    <p class="muted small">Виртуальный расчёт — ничего не сохраняется.</p>
+    <div class="form-grid">
+      ${slider("salary", "Зарплата", p.salary || 0, Math.max(100000, (p.salary || 0) * 2))}
+      ${slider("survivalCost", "Обязательные расходы", p.survivalCost || 0, Math.max(50000, (p.salary || 0)))}
+      ${slider("buffer", "Страховка", p.buffer || 0, Math.max(20000, (p.salary || 0)))}
+      ${slider("investmentFixed", "Инвестиции", p.investmentFixed || 0, Math.max(20000, (p.salary || 0)))}
+    </div>
+    <div id="simResult" style="margin-top:12px"><p class="muted small">Двигайте ползунки…</p></div>
+    <div class="modal-foot"><button type="button" class="btn btn-ghost" data-close-modal>Закрыть</button></div>
+  </div>`);
+  let timer = null;
+  async function runSim() {
+    const params = new URLSearchParams();
+    $$("[data-sim]").forEach((el) => params.set(el.dataset.sim, el.value));
+    try {
+      const { allocation } = await api.get(`/api/allocation/simulate?${params}`);
+      const t = allocation.totals || {};
+      const box = $("#simResult");
+      if (!box) return;
+      box.innerHTML = `<div class="grid cards">
+        <div class="card"><div class="stat-label">На желания</div><div class="stat-value sm">${fmt(t.availableToAllocate)}</div></div>
+        <div class="card"><div class="stat-label">Остаток</div><div class="stat-value sm ${t.remaining < 0 ? "red-num" : "green-num"}">${fmt(t.remaining)}</div></div>
+      </div>
+      <div style="margin-top:10px"><span class="muted small">Купится:</span> ${(allocation.approved || []).map((a) => escapeHtml(a.item.title)).join(", ") || "—"}</div>
+      <div style="margin-top:6px"><span class="muted small">Отложится:</span> ${(allocation.deferred || []).map((d) => escapeHtml(d.item.title)).join(", ") || "—"}</div>`;
+    } catch {}
+  }
+  $$("[data-sim]").forEach((el) =>
+    el.addEventListener("input", () => {
+      const lbl = $(`[data-sim-val="${el.dataset.sim}"]`);
+      if (lbl) lbl.textContent = fmtShort(el.value);
+      clearTimeout(timer);
+      timer = setTimeout(runSim, 250);
+    }),
+  );
+  runSim();
 }
 
 async function deleteWallet(id) {
@@ -2109,6 +2265,92 @@ async function downloadCSV(type) {
   }
 }
 
+async function downloadYearReport(year) {
+  const y = year || new Date().getFullYear();
+  try {
+    const resp = await fetch(`/api/export/report/${y}`);
+    if (resp.status === 401) {
+      showAuthGate();
+      return toast("Сессия истекла");
+    }
+    if (!resp.ok) return toast("Ошибка загрузки отчёта");
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `report-${y}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 100);
+    toast("Годовой отчёт скачан");
+  } catch (e) {
+    toast("Ошибка: " + e.message);
+  }
+}
+
+async function loadMonobankSummary(btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const s = await api.get("/api/monobank/summary");
+    const box = $("#monoBody");
+    if (!box) return;
+    if (!s.enabled && s.enabled === false) {
+      box.innerHTML = '<p class="muted small">Monobank не настроен (MONOBANK_TOKEN).</p>';
+      return;
+    }
+    const plannedSpend = Number(s.plan?.survivalCost) || 0;
+    const diff = (s.totals?.spent || 0) - plannedSpend;
+    box.innerHTML = `<div class="grid cards" style="margin-top:12px">
+      <div class="card"><div class="stat-label">Потрачено (${s.month})</div><div class="stat-value sm">${fmt(s.totals?.spent)}</div></div>
+      <div class="card"><div class="stat-label">План обязательных</div><div class="stat-value sm">${fmt(plannedSpend)}</div></div>
+      <div class="card"><div class="stat-label">Разница</div><div class="stat-value sm ${diff > 0 ? "red-num" : "green-num"}">${diff > 0 ? "+" : ""}${fmtShort(diff)} грн</div></div>
+    </div>
+    <div style="margin-top:10px"><span class="muted small">Топ категорий:</span> ${(s.topCategories || []).map((c) => `${escapeHtml(c.name)} ${fmtShort(c.amount)}`).join(" · ") || "—"}</div>
+    ${s.biggest?.length ? `<div style="margin-top:6px"><span class="muted small">Самая крупная трата:</span> ${escapeHtml(s.biggest[0].description || "")} — ${fmt(s.biggest[0].amount)}</div>` : ""}`;
+  } catch (ex) {
+    const box = $("#monoBody");
+    if (box) box.innerHTML = `<p class="muted small">Ошибка Monobank: ${escapeHtml(ex.message)}</p>`;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// ---------- push-уведомления ----------
+function urlBase64ToUint8Array(base64) {
+  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+  const raw = atob((base64 + padding).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+async function getPushSubscription() {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return null;
+  const reg = await navigator.serviceWorker.ready;
+  return reg.pushManager.getSubscription();
+}
+async function enablePush() {
+  const publicKey = state.meta?.push?.publicKey;
+  if (!publicKey) return toast("Push не настроен на сервере");
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") return toast("Уведомления запрещены в браузере");
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: urlBase64ToUint8Array(publicKey),
+  });
+  await api.post("/api/push/subscribe", { subscription: sub.toJSON() });
+  toast("Уведомления включены 🎉");
+}
+async function disablePush() {
+  const sub = await getPushSubscription();
+  if (sub) {
+    await api.post("/api/push/unsubscribe", { endpoint: sub.endpoint });
+    await sub.unsubscribe();
+  }
+  toast("Уведомления выключены");
+}
+
 // ============================================================
 // MODALS
 // ============================================================
@@ -2175,11 +2417,24 @@ function openDataModal() {
       <button class="btn btn-outline" id="csvItemsBtn">CSV желания</button>
       <button class="btn btn-outline" id="csvTxBtn">CSV операции</button>
       <button class="btn btn-outline" id="csvValBtn">CSV оценки</button>
+      <button class="btn btn-outline" data-act="year-report" data-year="${new Date().getFullYear()}">Годовой отчёт CSV</button>
     </div>
-    <div class="section-title">Курс USD</div>
-    <div style="display:flex;gap:10px;align-items:center">
-      <input type="number" id="currencyRateInput" value="${state.currencyRate}" min="1" step="0.1" style="width:120px;background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;color:var(--text);font-size:14px" />
-      <button class="btn btn-primary btn-sm" id="saveRateBtn">Сохранить курс</button>
+    <div class="section-title">Курсы валют (грн)</div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <label class="muted small">USD <input type="number" id="currencyRateInput" value="${state.currencyRate}" min="1" step="0.1" style="width:100px;background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;color:var(--text);font-size:14px" /></label>
+      <label class="muted small">EUR <input type="number" id="eurRateInput" value="${state.eurRate || 47}" min="1" step="0.1" style="width:100px;background:var(--bg-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;color:var(--text);font-size:14px" /></label>
+      <button class="btn btn-primary btn-sm" id="saveRateBtn">Сохранить курсы</button>
+    </div>
+    <div class="section-title">Уведомления</div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button class="btn btn-outline btn-sm" id="pushToggleBtn">…</button>
+      <button class="btn btn-ghost btn-sm" id="pushTestBtn">Тестовый push</button>
+      <span class="muted small">День зарплаты, дедлайны, падение цен по ссылкам.</span>
+    </div>
+    <div class="section-title">Безопасность</div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button class="btn btn-outline btn-sm" id="changePinBtn">Сменить PIN</button>
+      <button class="btn btn-danger btn-sm" id="logoutAllBtn">Выйти на всех устройствах</button>
     </div>
     <div class="section-title">Цели-накопления</div>
     <div>${goalRows || '<p class="muted">Пока нет желаний.</p>'}</div>
@@ -2191,14 +2446,82 @@ function openDataModal() {
   $("#csvValBtn").addEventListener("click", () => downloadCSV("valuations"));
   $("#saveRateBtn").addEventListener("click", async () => {
     const rate = +$("#currencyRateInput").value;
-    if (rate < 1) return toast("Некорректный курс");
-    await api.post("/api/currency", { rate });
+    const eurRate = +$("#eurRateInput").value;
+    if (rate < 1 || eurRate < 1) return toast("Некорректный курс");
+    await api.post("/api/currency", { rate, eurRate });
     state.currencyRate = rate;
+    state.eurRate = eurRate;
     closeModal();
-    toast("Курс сохранён");
+    toast("Курсы сохранены, валютные желания пересчитаны");
     await refresh();
   });
+  // Push-переключатель: показываем актуальное состояние подписки.
+  const pushBtn = $("#pushToggleBtn");
+  (async () => {
+    const sub = await getPushSubscription().catch(() => null);
+    pushBtn.textContent = sub ? "Выключить уведомления" : "Включить уведомления";
+    pushBtn.dataset.on = sub ? "1" : "0";
+  })();
+  pushBtn.addEventListener("click", async () => {
+    try {
+      if (pushBtn.dataset.on === "1") {
+        await disablePush();
+        pushBtn.textContent = "Включить уведомления";
+        pushBtn.dataset.on = "0";
+      } else {
+        await enablePush();
+        pushBtn.textContent = "Выключить уведомления";
+        pushBtn.dataset.on = "1";
+      }
+    } catch (ex) {
+      toast("Ошибка: " + ex.message);
+    }
+  });
+  $("#pushTestBtn").addEventListener("click", async () => {
+    const { sent } = await api.post("/api/push/test", {});
+    toast(sent ? "Push отправлен" : "Нет активных подписок");
+  });
+  $("#changePinBtn").addEventListener("click", openChangePinModal);
+  $("#logoutAllBtn").addEventListener("click", async () => {
+    const ok = await confirmDialog({
+      title: "Выйти на всех устройствах?",
+      text: "Все сессии (включая эту) станут недействительными — потребуется заново ввести PIN.",
+      confirmText: "Выйти везде",
+      danger: true,
+    });
+    if (!ok) return;
+    await api.post("/api/auth/logout-all", {});
+    location.reload();
+  });
   bindViewEvents();
+}
+
+function openChangePinModal() {
+  openModal(`<div class="modal narrow">
+    <div class="modal-head"><h2>Сменить PIN</h2><button class="close-x" data-close-modal>×</button></div>
+    <form id="changePinForm" class="form-grid">
+      <div class="field full"><label>Текущий PIN</label><input type="password" name="currentPin" inputmode="numeric" autocomplete="current-password" required /></div>
+      <div class="field full"><label>Новый PIN (4–12 цифр)</label><input type="password" name="newPin" inputmode="numeric" autocomplete="new-password" minlength="4" maxlength="12" required /></div>
+      <div class="field full"><span class="muted small">После смены PIN остальные устройства будут разлогинены.</span></div>
+      <div class="modal-foot field full" style="flex-direction:row">
+        <button type="button" class="btn btn-ghost" data-close-modal>Отмена</button>
+        <button type="submit" class="btn btn-primary">Сменить</button>
+      </div>
+    </form></div>`);
+  $("#changePinForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = new FormData(e.currentTarget);
+    try {
+      await api.post("/api/auth/change-pin", {
+        currentPin: f.get("currentPin"),
+        newPin: f.get("newPin"),
+      });
+      closeModal();
+      toast("PIN изменён. Другие устройства разлогинены.");
+    } catch (ex) {
+      toast(ex.message === "bad_pin" ? "Неверный текущий PIN" : "Ошибка: " + ex.message);
+    }
+  });
 }
 
 function openPlanModal() {
@@ -2258,18 +2581,44 @@ function openSavingsModal(item) {
       <div class="field"><label>Цена</label><input value="${fmt(item.cost)}" disabled /></div>
       <div class="field"><label>Уже накоплено, грн</label><input type="number" name="savedAmount" min="0" value="${gp.saved}" /></div>
       <div class="field"><label>Откладывать в месяц, грн</label><input type="number" name="monthlyContribution" min="0" value="${gp.monthly || 0}" /></div>
+      <div class="field full"><label>Довнести сейчас, грн (опц.)</label><input type="number" name="contributionAmount" min="0" placeholder="0" />
+        <span class="muted small">Запишется в историю взносов отдельной строкой.</span></div>
       <div class="field full"><div class="goal-mini big"><div style="width:${gp.pct}%"></div></div><span class="muted small">${gp.pct}% · осталось ${fmt(gp.left)}</span></div>
+      <div class="field full"><div class="section-title" style="margin:6px 0">История взносов</div><div id="contribTimeline"><p class="muted small">Загрузка…</p></div></div>
       <div class="modal-foot field full" style="flex-direction:row">
         <button type="button" class="btn btn-ghost" data-close-modal>Отмена</button>
         <button type="submit" class="btn btn-primary">Сохранить</button>
       </div>
     </form></div>`);
+  // Таймлайн взносов: когда и сколько откладывалось на это желание.
+  api
+    .get(`/api/items/${item.id}/contributions`)
+    .then(({ contributions }) => {
+      const box = $("#contribTimeline");
+      if (!box) return;
+      box.innerHTML = contributions?.length
+        ? contributions
+            .map(
+              (c) => `<div class="row-between" style="padding:4px 0;border-bottom:1px solid var(--border)">
+                <span class="muted small">${fmtDate(c.date)}${c.note ? ` · ${escapeHtml(c.note)}` : ""}</span>
+                <b class="small green-num">+${fmtShort(c.amount)} грн</b></div>`,
+            )
+            .join("")
+        : '<p class="muted small">Взносов пока не было.</p>';
+    })
+    .catch(() => {
+      const box = $("#contribTimeline");
+      if (box) box.innerHTML = "";
+    });
   $("#savingsForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
+    const contributionAmount = +f.get("contributionAmount") || 0;
     await api.post(`/api/items/${item.id}/savings`, {
-      savedAmount: +f.get("savedAmount"),
+      savedAmount: +f.get("savedAmount") + contributionAmount,
       monthlyContribution: +f.get("monthlyContribution"),
+      contributionAmount: contributionAmount || undefined,
+      note: contributionAmount ? "Ручной взнос" : undefined,
     });
     closeModal();
     toast("Накопление обновлено");
@@ -2470,8 +2819,15 @@ function openItemModal(item) {
     <div class="modal-head"><h2>${item ? "Редактировать желание" : "Новое желание"}</h2><button class="close-x" data-close-modal>×</button></div>
     <form id="itemForm" class="form-grid">
       <div class="field full"><label>Название</label><input name="title" value="${escapeAttr(i.title)}" required /></div>
-      <div class="field"><label>Стоимость, грн</label><input type="number" id="costInput" name="cost" value="${i.cost}" min="0" required /></div>
+      <div class="field"><label>Стоимость</label><input type="number" id="costInput" name="cost" value="${i.currency && i.currency !== "UAH" ? (i.costOriginal ?? i.cost) : i.cost}" min="0" step="any" required /></div>
+      <div class="field"><label>Валюта</label><select name="currency" id="currencySelect">
+        <option value="UAH" ${(i.currency || "UAH") === "UAH" ? "selected" : ""}>UAH ₴</option>
+        <option value="USD" ${i.currency === "USD" ? "selected" : ""}>USD $</option>
+        <option value="EUR" ${i.currency === "EUR" ? "selected" : ""}>EUR €</option>
+      </select><span class="hint" id="currencyHint"></span></div>
       <div class="field"><label>Band (авто по сумме)</label><input id="bandDisplay" value="" disabled style="opacity:.8" /></div>
+      <div class="field"><label>Ссылка на товар (опц.)</label><input name="url" type="url" placeholder="https://..." value="${escapeAttr(i.url || "")}" />
+        ${i.linkPrice ? `<span class="hint">Цена по ссылке: ${fmtShort(i.linkPrice)} (${fmtDate(i.linkPriceAt)})</span>` : ""}</div>
       <div class="field"><label>Категория покупки</label><select name="category" id="catSelect">${catOpts}</select></div>
       <div class="field"><label>Слой капитала</label><select name="layer" id="layerSelect">${layerOpts}</select>
         <span class="hint">Подставляется из категории, можно изменить.</span></div>
@@ -2486,6 +2842,7 @@ function openItemModal(item) {
       ${range("emotional", i.emotional, "Эмоциональное желание 1–5")}
       ${range("trajectory", i.trajectory, "Долгосрочная ценность 1–5")}
       <div class="field full"><label class="switch-row"><input type="checkbox" name="canDefer" ${i.canDefer ? "checked" : ""} style="width:18px;height:18px;accent-color:var(--accent)"> Можно отложить на следующую зарплату</label></div>
+      <div class="field full"><label class="switch-row"><input type="checkbox" name="recurring" ${i.recurring ? "checked" : ""} style="width:18px;height:18px;accent-color:var(--accent)"> 🔁 Регулярное (после покупки вернётся в очередь)</label></div>
       <div class="field full"><label>Заметки</label><textarea name="notes">${escapeHtml(i.notes || "")}</textarea></div>
 
       <div class="subhead">Оценка покупки</div>
@@ -2498,6 +2855,10 @@ function openItemModal(item) {
       <div class="field full hidden" id="quickWrap"><div class="score-grid">${quickRows}</div></div>
       <div class="field full hidden" id="fullWrap"><div class="subhead" style="margin-top:0">Дополнительно (Full)</div><div class="score-grid">${fullRows}</div></div>
 
+      ${item ? `<div class="field full" style="display:flex;gap:10px;flex-wrap:wrap">
+        ${item.url ? `<button type="button" class="btn btn-outline btn-sm" id="checkPriceBtn">Проверить цену по ссылке</button>` : ""}
+        ${state.meta?.ai?.enabled ? `<button type="button" class="btn btn-outline btn-sm" id="talkMeOutBtn">😈 Отговори меня</button>` : ""}
+      </div><div class="field full hidden" id="talkMeOutBox"></div>` : ""}
       <div class="modal-foot field full" style="flex-direction:row;justify-content:space-between">
         <div>${item ? `<button type="button" class="btn btn-danger" id="delItem">Удалить</button>` : ""}</div>
         <div style="display:flex;gap:10px">
@@ -2525,8 +2886,23 @@ function openItemModal(item) {
     });
     return s;
   }
+  function itemCostUah() {
+    const cur = $("#currencySelect")?.value || "UAH";
+    const raw = +costInput.value || 0;
+    if (cur === "USD") return raw * (state.currencyRate || 43.5);
+    if (cur === "EUR") return raw * (state.eurRate || 47);
+    return raw;
+  }
+  function refreshCurrencyHint() {
+    const cur = $("#currencySelect")?.value || "UAH";
+    const hint = $("#currencyHint");
+    if (hint)
+      hint.textContent =
+        cur === "UAH" ? "" : `≈ ${fmtShort(itemCostUah())} грн по текущему курсу`;
+  }
   function refreshBand() {
-    const band = clientBand(costInput.value);
+    refreshCurrencyHint();
+    const band = clientBand(itemCostUah());
     bandDisplay.value = bandLabel(band);
     const rec =
       band === "large" || band === "major"
@@ -2564,6 +2940,36 @@ function openItemModal(item) {
   }
 
   costInput.addEventListener("input", refreshBand);
+  $("#currencySelect")?.addEventListener("change", refreshBand);
+  $("#checkPriceBtn")?.addEventListener("click", async () => {
+    const btn = $("#checkPriceBtn");
+    btn.disabled = true;
+    btn.textContent = "Проверяю…";
+    try {
+      const r = await api.post(`/api/items/${item.id}/check-price`, {});
+      toast(
+        r.found
+          ? `Цена по ссылке: ${fmtShort(r.price)}${r.currency ? " " + r.currency : ""}`
+          : "Не удалось распознать цену на странице",
+      );
+    } catch (ex) {
+      toast("Ошибка: " + ex.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Проверить цену по ссылке";
+    }
+  });
+  $("#talkMeOutBtn")?.addEventListener("click", async () => {
+    const box = $("#talkMeOutBox");
+    box.classList.remove("hidden");
+    box.innerHTML = '<p class="muted small">Ассистент готовит контраргументы…</p>';
+    try {
+      const out = await api.post("/api/ai/talk-me-out", { itemId: item.id });
+      box.innerHTML = `<div class="msg bot">${md(out.reply || "")}</div>`;
+    } catch (ex) {
+      box.innerHTML = `<p class="muted small">Не получилось: ${escapeHtml(ex.message)}</p>`;
+    }
+  });
   catSelect.addEventListener("change", () => {
     if (!layerTouched) {
       const c = catObj(catSelect.value);
@@ -2599,6 +3005,9 @@ function openItemModal(item) {
       deadline: f.get("deadline") || null,
       earliestDate: f.get("earliestDate") || null,
       canDefer: f.get("canDefer") === "on",
+      recurring: f.get("recurring") === "on",
+      currency: f.get("currency") || "UAH",
+      url: f.get("url") || null,
       notes: f.get("notes"),
       scoreType,
       scores: scoreType === "none" ? null : collectScores(),
@@ -2652,13 +3061,16 @@ $("#installBtn")?.addEventListener("click", async () => {
   deferredInstallPrompt = null;
   $("#installBtn")?.classList.add("hidden");
 });
+// Версия статики приходит из query-параметра, который сервер подставил в index.html.
+const STATIC_VERSION =
+  new URL(import.meta.url).searchParams.get("v") || "dev";
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("/sw.js?v=20260606-live-manual").then((registration) => {
+  navigator.serviceWorker.register(`/sw.js?v=${STATIC_VERSION}`).then((registration) => {
     registration.update?.();
   }).catch(() => {});
   navigator.serviceWorker.addEventListener("controllerchange", () => {
-    if (!sessionStorage.getItem("cq-sw-refreshed-20260606-live-manual")) {
-      sessionStorage.setItem("cq-sw-refreshed-20260606-live-manual", "1");
+    if (!sessionStorage.getItem(`cq-sw-refreshed-${STATIC_VERSION}`)) {
+      sessionStorage.setItem(`cq-sw-refreshed-${STATIC_VERSION}`, "1");
       location.reload();
     }
   });
@@ -2756,6 +3168,25 @@ document.addEventListener("visibilitychange", () => {
 document.addEventListener("click", () => {
   if (pendingSync && syncIsSafe()) syncFromRemote();
 });
-setInterval(pollVersion, 5000);
+
+// Адаптивный поллинг: активная вкладка опрашивается раз в 5с,
+// после 5 минут без взаимодействия — раз в 60с (экономия батареи/трафика).
+let lastInteraction = Date.now();
+for (const ev of ["click", "keydown", "touchstart", "scroll"]) {
+  document.addEventListener(ev, () => { lastInteraction = Date.now(); }, { passive: true });
+}
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) lastInteraction = Date.now();
+});
+(function pollLoop() {
+  const idleMs = Date.now() - lastInteraction;
+  const interval = idleMs > 5 * 60 * 1000 ? 60000 : 5000;
+  setTimeout(async () => {
+    try {
+      await pollVersion();
+    } catch {}
+    pollLoop();
+  }, interval);
+})();
 
 bootstrap().catch((e) => console.error(e));

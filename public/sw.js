@@ -1,7 +1,10 @@
-const CACHE = "capital-queue-v8-live-manual";
+// Версия подставляется сервером из hash содержимого статики —
+// меняется код, меняется версия везде одновременно.
+const VERSION = "__STATIC_VERSION__";
+const CACHE = `capital-queue-${VERSION}`;
 const STATIC = [
-  "/styles.css?v=20260605-layer1",
-  "/app.js?v=20260606-live-manual",
+  `/styles.css?v=${VERSION}`,
+  `/app.js?v=${VERSION}`,
   "/logo.svg",
   "/manifest.webmanifest",
   "/icon-192.png",
@@ -55,5 +58,39 @@ self.addEventListener("fetch", (event) => {
         return response;
       })
       .catch(() => caches.match(event.request)),
+  );
+});
+
+// ---------- Push-уведомления ----------
+self.addEventListener("push", (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch {
+    data = { body: event.data ? event.data.text() : "" };
+  }
+  event.waitUntil(
+    self.registration.showNotification(data.title || "Capital Queue", {
+      body: data.body || "",
+      icon: "/icon-192.png",
+      badge: "/icon-192.png",
+      data: { url: data.url || "/" },
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = event.notification.data?.url || "/";
+  event.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+      for (const client of list) {
+        if ("focus" in client) {
+          client.navigate?.(url);
+          return client.focus();
+        }
+      }
+      return clients.openWindow(url);
+    }),
   );
 });
