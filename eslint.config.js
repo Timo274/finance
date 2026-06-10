@@ -9,6 +9,7 @@ export default [
       "src/**/*.js",
       "test/**/*.js",
       "scripts/**/*.js",
+      "scripts/**/*.mjs",
       "e2e/**/*.js",
       "playwright.config.js",
       "eslint.config.js",

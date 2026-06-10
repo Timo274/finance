@@ -25,6 +25,11 @@ function friendlyError(data) {
 }
 const api = {
   async req(method, url, body) {
+    if (state.demo) {
+      // Демо-режим: ничего не пишем и не читаем с сервера (аудит 3.9).
+      if (method !== "GET") toast("Это демо — изменения не сохраняются");
+      throw new Error("demo");
+    }
     const opts = { method, headers: {} };
     if (body !== undefined) {
       opts.headers["Content-Type"] = "application/json";
@@ -48,6 +53,8 @@ const api = {
 
 // ---------- state ----------
 const state = {
+  authed: false,
+  demo: false,
   meta: null,
   plan: null,
   items: [],
@@ -438,33 +445,81 @@ function drawCharts() {
   }
   const portChart = $("#portChart");
   if (portChart && state.portfolio && state.portfolio.valuations.length) {
-    const latestByAssetMonth = new Map();
+    // Нормализация по количеству (аудит 8.4): месячная точка — это
+    // Σ по активам (количество на конец месяца × цена за единицу из
+    // последней оценки ≤ месяца). Проданный актив выходит из линии,
+    // а не «роняет» её старыми оценками.
+    const txByAsset = new Map();
+    (state.portfolio.transactions || []).forEach((t) => {
+      if (!txByAsset.has(t.assetId)) txByAsset.set(t.assetId, []);
+      txByAsset.get(t.assetId).push(t);
+    });
+    txByAsset.forEach((list) =>
+      list.sort(
+        (a, b) =>
+          String(a.date || "").localeCompare(String(b.date || "")) ||
+          String(a.createdAt || "").localeCompare(String(b.createdAt || "")),
+      ),
+    );
+    const qtyAt = (assetId, dateEnd) => {
+      let held = 0;
+      for (const tx of txByAsset.get(assetId) || []) {
+        if (String(tx.date || "") > dateEnd) break;
+        const q = Math.max(0, Number(tx.quantity) || 0);
+        if (tx.type === "buy") held += q;
+        else if (tx.type === "sell") held -= Math.min(q, held);
+      }
+      return Math.max(0, held);
+    };
+    const valsByAsset = new Map();
+    state.portfolio.valuations.forEach((v) => {
+      if (!v.assetId) return;
+      if (!valsByAsset.has(v.assetId)) valsByAsset.set(v.assetId, []);
+      valsByAsset.get(v.assetId).push(v);
+    });
+    valsByAsset.forEach((list) =>
+      list.sort(
+        (a, b) =>
+          String(a.date || "").localeCompare(String(b.date || "")) ||
+          String(a.createdAt || "").localeCompare(String(b.createdAt || "")),
+      ),
+    );
+    const monthSet = new Set();
     state.portfolio.valuations.forEach((v) => {
       const m = String(v.date || "").slice(0, 7);
-      if (!m || !v.assetId) return;
-      const key = `${v.assetId}:${m}`;
-      const prev = latestByAssetMonth.get(key);
-      const stamp = `${v.date || ""} ${v.createdAt || ""}`;
-      if (!prev || stamp > prev.stamp) {
-        latestByAssetMonth.set(key, {
-          month: m,
-          value: Number(v.value) || 0,
-          stamp,
-        });
-      }
+      if (m) monthSet.add(m);
     });
-    const byMonth = new Map();
-    latestByAssetMonth.forEach((v) => {
-      byMonth.set(v.month, (byMonth.get(v.month) || 0) + v.value);
+    (state.portfolio.transactions || []).forEach((t) => {
+      const m = String(t.date || "").slice(0, 7);
+      if (m) monthSet.add(m);
     });
-    const months = [...byMonth.entries()].sort(([a], [b]) =>
-      a.localeCompare(b),
-    );
-    drawLine(
-      portChart,
-      months.map(([, value]) => ({ value })),
-      { xStart: months[0]?.[0], xEnd: months[months.length - 1]?.[0] },
-    );
+    const monthsSorted = [...monthSet].sort();
+    const points = monthsSorted.map((m) => {
+      const monthEnd = m + "-31";
+      let total = 0;
+      valsByAsset.forEach((vals, assetId) => {
+        const qty = qtyAt(assetId, monthEnd);
+        if (qty <= 0 && txByAsset.has(assetId)) return; // продано — не тянем старую оценку
+        let last = null;
+        for (const v of vals) {
+          if (String(v.date || "") > monthEnd) break;
+          last = v;
+        }
+        if (!last) return;
+        const valTotal = Number(last.value) || 0;
+        const qtyAtVal = qtyAt(assetId, String(last.date || ""));
+        // Без транзакций количество неизвестно — берём оценку как есть.
+        total +=
+          qtyAtVal > 0 && txByAsset.has(assetId)
+            ? (valTotal / qtyAtVal) * qty
+            : valTotal;
+      });
+      return { value: Math.round(total) };
+    });
+    drawLine(portChart, points, {
+      xStart: monthsSorted[0],
+      xEnd: monthsSorted[monthsSorted.length - 1],
+    });
   }
 }
 
@@ -549,6 +604,13 @@ function amountToFund(item) {
   const cost = Math.max(0, Number(item?.cost) || 0);
   const saved = Math.max(0, Number(item?.savedAmount) || 0);
   return Math.max(0, cost - saved);
+}
+// Курс изменил цену валютного желания — объясняем «откат» прогресса (аудит 13.7).
+function fxDeltaNote(item) {
+  const d = Number(item.fxDelta) || 0;
+  if (Math.abs(d) < 1) return "";
+  const word = d > 0 ? "подорожала" : "подешевела";
+  return `<div class="qi-meta fx-note" style="color:${d > 0 ? "var(--color-warning)" : "var(--color-positive)"}">Цель ${word} на ${fmt(Math.abs(d))} из-за курса ${item.currency || ""}</div>`;
 }
 function goalProgress(item) {
   const cost = Number(item.cost) || 0;
@@ -768,6 +830,7 @@ function applyPalette(p = currentPalette()) {
   try {
     localStorage.setItem("cq-palette", palette);
   } catch {}
+  if (typeof pushUiPrefs === "function") pushUiPrefs({ palette });
   syncThemeControls(currentTheme(), palette);
   if (typeof drawCharts === "function") requestAnimationFrame(drawCharts);
 }
@@ -789,6 +852,7 @@ function applyTheme(t) {
   const mode = THEME_MODES.find((x) => x.id === theme) || THEME_MODES[0];
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute("content", mode.meta);
+  if (typeof pushUiPrefs === "function") pushUiPrefs({ theme });
   syncThemeControls(theme);
   if (typeof drawCharts === "function") requestAnimationFrame(drawCharts);
 }
@@ -806,6 +870,47 @@ applyPalette(currentPalette());
 // ============================================================
 // AUTH
 // ============================================================
+// ---------- демо-режим (аудит 3.9): смотрим на примере, ничего не пишем ----------
+async function enterDemoMode() {
+  let data;
+  try {
+    const res = await fetch("/demo-data.json");
+    data = await res.json();
+  } catch {
+    toast("Не удалось загрузить демо-данные");
+    return;
+  }
+  state.demo = true;
+  state.meta = data.meta;
+  state.plan = data.plan;
+  state.items = data.items || [];
+  state.allocation = data.allocation;
+  state.insights = data.insights || null;
+  state.history = data.history || [];
+  state.investments = data.investments || [];
+  state.portfolio = data.portfolio || null;
+  state.wallets = data.wallets || [];
+  state.manualPlan = data.manualPlan || [];
+  state.goals = data.goals || [];
+  state.currencyRate = data.currencyRate || 43.5;
+  state.eurRate = data.eurRate || 47;
+  $("#authGate").classList.add("hidden");
+  $("#app").classList.remove("hidden");
+  if (!$("#demoBanner")) {
+    const banner = document.createElement("div");
+    banner.id = "demoBanner";
+    banner.className = "demo-banner";
+    banner.innerHTML = `<span>👀 Это демо — изменения не сохраняются.</span><button class="btn btn-secondary" id="demoExit">Начать со своих данных</button>`;
+    document.body.prepend(banner);
+    banner.querySelector("#demoExit").addEventListener("click", () => {
+      location.reload();
+    });
+  }
+  renderTopbar();
+  renderView();
+}
+$("#demoBtn")?.addEventListener("click", enterDemoMode);
+
 async function bootstrap() {
   const st = await api.get("/api/auth/status");
   if (st.authed) {
@@ -876,6 +981,8 @@ $("#logoutBtnMobile")?.addEventListener("click", doLogout);
 // LOAD + RENDER
 // ============================================================
 async function loadAndRender() {
+  state.authed = true;
+  pullUiPrefs(); // тема/палитра/чат с сервера, не блокируем рендер (аудит 14.4)
   // Холодный старт Fly-машины занимает 2-4с — объясняем ожидание (аудит 17.3).
   const wakeTimer = setTimeout(
     () => toast("Сервер просыпается, секунду…", { duration: 4000 }),
@@ -913,16 +1020,21 @@ async function loadAndRender() {
 }
 
 async function refresh() {
-  const data = await api.get(`/api/state?scenario=balanced`);
+  if (state.demo) return; // в демо данные статичны
+  // Лёгкий синк (аудит 17.7): history/portfolio запрашиваем только на их экранах.
+  const needHeavy = state.view === "history" || state.view === "investments";
+  const data = await api.get(
+    `/api/state?scenario=balanced${needHeavy ? "" : "&lite=1"}`,
+  );
   state.plan = data.plan;
   state.items = pendingDeletes.size
     ? data.items.filter((i) => !pendingDeletes.has(i.id))
     : data.items;
   state.allocation = data.allocation;
   state.insights = data.insights || null;
-  state.history = data.history;
+  if (data.history) state.history = data.history;
   state.investments = data.investments || [];
-  state.portfolio = data.portfolio || null;
+  if (data.portfolio) state.portfolio = data.portfolio;
   state.wallets = data.wallets || [];
   state.manualPlan = data.manualPlan || [];
   state.goals = data.goals || [];
@@ -1004,6 +1116,10 @@ function animateNumbers(root) {
 function renderView() {
   const root = $("#views");
   const v = state.view;
+  // Сохраняем скролл и фокус через полный ререндер (аудит 17.1, частично).
+  const scrollX = window.scrollX;
+  const scrollY = window.scrollY;
+  const focusId = document.activeElement?.id || null;
   if (v === "dashboard") {
     root.innerHTML = viewDashboard();
     initDashboardSpark();
@@ -1025,6 +1141,8 @@ function renderView() {
     initSettings();
   }
   bindViewEvents();
+  if (focusId) document.getElementById(focusId)?.focus?.();
+  window.scrollTo(scrollX, scrollY);
   if (v !== _lastCountupView) {
     _lastCountupView = v;
     root.classList.remove("view-enter");
@@ -1061,6 +1179,8 @@ function setView(view, { fromHash = false } = {}) {
     x.classList.toggle("active", x.dataset.view === view),
   );
   renderView();
+  // Тяжёлые блоки (history/portfolio) подтягиваем при заходе на их экраны (аудит 17.7).
+  if (view === "history" || view === "investments") refresh().catch(() => {});
 }
 window.addEventListener("hashchange", () => {
   const v = viewFromHash();
@@ -1483,6 +1603,7 @@ function queueItemRow(item, extra = "", reason = "") {
         <span class="tag tag-${item.type}">${TYPE_LABELS[item.type]}</span>${verdictChip(item)}</div>
       <div class="qi-meta">${layerLabel(layer)} · ${catLabelShort(item.category)} · ${bandLabel(item.band)} · приоритет ${item.priority}/5 · траектория ${item.trajectory}/5${item.deadline ? " · дедлайн " + fmtDate(item.deadline) : ""}</div>
       ${gp.saved > 0 ? `<div class="goal-mini" role="progressbar" aria-valuenow="${gp.pct}" aria-valuemin="0" aria-valuemax="100" aria-label="Прогресс накопления"><div style="width:${gp.pct}%"></div></div><div class="qi-meta">Накоплено ${fmt(gp.saved)} из ${fmt(gp.cost)} · осталось ${fmt(gp.left)}</div>` : ""}
+      ${fxDeltaNote(item)}
       ${reason ? `<div class="reason">↪ ${escapeHtml(reason)}</div>` : ""}
       ${extra ? `<div class="qi-meta mobile-swipe-hint">${extra}</div>` : ""}
       <div class="mobile-item-actions" aria-label="Действия с желанием">
@@ -2080,8 +2201,46 @@ function saveChatHistory() {
     chatHistory = safeHistory;
     localStorage.setItem("chatHistory", JSON.stringify(safeHistory));
   } catch {}
+  pushUiPrefs({ chatHistory });
 }
 loadChatHistory();
+
+// ---------- ui-prefs: тема/палитра/чат переносятся между устройствами (аудит 14.4) ----------
+let _prefsT = null;
+function pushUiPrefs(patch) {
+  if (!state.authed) return;
+  clearTimeout(_prefsT);
+  _prefsT = setTimeout(() => {
+    api.put("/api/ui-prefs", patch).catch(() => {});
+  }, 800);
+}
+async function pullUiPrefs() {
+  try {
+    const prefs = await api.get("/api/ui-prefs");
+    if (prefs.theme && isTheme(prefs.theme) && prefs.theme !== currentTheme())
+      applyTheme(prefs.theme);
+    if (
+      prefs.palette &&
+      isPalette(prefs.palette) &&
+      prefs.palette !== currentPalette()
+    )
+      applyPalette(prefs.palette);
+    if (Array.isArray(prefs.chatHistory) && prefs.chatHistory.length) {
+      const local = JSON.stringify(chatHistory);
+      const remote = JSON.stringify(prefs.chatHistory);
+      // Сервер — источник истины, если локальной истории нет или она короче.
+      if (local !== remote && prefs.chatHistory.length >= chatHistory.length) {
+        chatHistory = prefs.chatHistory
+          .map(sanitizeChatMessage)
+          .filter(Boolean)
+          .slice(-50);
+        try {
+          localStorage.setItem("chatHistory", JSON.stringify(chatHistory));
+        } catch {}
+      }
+    }
+  } catch {}
+}
 
 function md(text) {
   return escapeHtml(text)
@@ -2428,10 +2587,14 @@ function flushPendingDeletes() {
 window.addEventListener("pagehide", flushPendingDeletes);
 
 async function commitDelete(id) {
-  if (!pendingDeletes.has(id)) return;
+  const pending = pendingDeletes.get(id);
+  if (!pending || pending.remote) return; // удаляет только вкладка-инициатор
   pendingDeletes.delete(id);
   try {
     await api.del(`/api/items/${id}`);
+  } catch {}
+  try {
+    SYNC_CHANNEL?.postMessage({ t: "pending-commit", id });
   } catch {}
   await refresh();
 }
@@ -2441,6 +2604,9 @@ async function deleteItem(id) {
   if (!item || pendingDeletes.has(id)) return;
   const timer = setTimeout(() => commitDelete(id), 6000);
   pendingDeletes.set(id, { timer });
+  try {
+    SYNC_CHANNEL?.postMessage({ t: "pending-delete", id });
+  } catch {}
   state.items = state.items.filter((i) => i.id !== id);
   // Кабинет не должен 6 секунд показывать удалённое в плане (аудит 3.10).
   if (state.allocation?.approved)
@@ -2461,6 +2627,9 @@ async function deleteItem(id) {
         if (!pending) return;
         clearTimeout(pending.timer);
         pendingDeletes.delete(id);
+        try {
+          SYNC_CHANNEL?.postMessage({ t: "pending-restore", id });
+        } catch {}
         await refresh();
         toast("Восстановлено");
       },
@@ -3767,7 +3936,7 @@ async function syncFromRemote() {
 }
 
 async function pollVersion() {
-  if (document.hidden || !appIsActive()) return;
+  if (state.demo || document.hidden || !appIsActive()) return;
   let version;
   try {
     ({ version } = await api.get("/api/version"));
@@ -3788,6 +3957,20 @@ async function pollVersion() {
 if (SYNC_CHANNEL)
   SYNC_CHANNEL.onmessage = (e) => {
     if (e?.data?.t === "changed") syncFromRemote();
+    // Оптимистичные удаления видны во всех вкладках (аудит 14.3):
+    // вкладка-инициатор владеет таймером, остальные только фильтруют рендер.
+    if (e?.data?.t === "pending-delete") {
+      pendingDeletes.set(e.data.id, { timer: null, remote: true });
+      state.items = state.items.filter((i) => i.id !== e.data.id);
+      if (syncIsSafe()) renderView();
+    }
+    if (e?.data?.t === "pending-restore" || e?.data?.t === "pending-commit") {
+      const pending = pendingDeletes.get(e.data.id);
+      if (pending?.remote) {
+        pendingDeletes.delete(e.data.id);
+        syncFromRemote();
+      }
+    }
   };
 window.addEventListener("storage", (e) => {
   if (e.key === "cq-sync") syncFromRemote();

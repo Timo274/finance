@@ -194,6 +194,9 @@ ensureColumn("currency", "TEXT NOT NULL DEFAULT 'UAH'");
 ensureColumn("cost_original", "REAL");
 ensureColumn("link_price", "REAL");
 ensureColumn("link_price_at", "TEXT");
+// Дельта последнего курсового пересчёта: «цель подорожала на X грн» (аудит 13.7).
+ensureColumn("fx_delta", "REAL");
+ensureColumn("fx_delta_at", "TEXT");
 ensurePlanColumn("investment_fixed", "REAL NOT NULL DEFAULT 0");
 
 // История проверок цены по ссылке желания (тренд в карточке).
@@ -397,6 +400,8 @@ export function rowToItem(r) {
     url: r.url || null,
     currency: r.currency || "UAH",
     costOriginal: r.cost_original ?? null,
+    fxDelta: r.fx_delta ?? null,
+    fxDeltaAt: r.fx_delta_at || null,
     linkPrice: r.link_price ?? null,
     linkPriceAt: r.link_price_at || null,
     priority: r.priority,

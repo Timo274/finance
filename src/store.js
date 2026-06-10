@@ -319,7 +319,14 @@ export function recomputeForeignCurrencyCosts() {
       const original = Number(row.cost_original) || 0;
       if (original <= 0) continue;
       const cost = Math.round(original * rateForCurrency(row.currency) * 100) / 100;
+      const prevCost = Number(row.cost) || 0;
       stmt.updateItemCostBand.run({ id: row.id, cost, band: bandForCost(cost) });
+      // Курс изменил цену — фиксируем дельту, чтобы объяснить пользователю,
+      // почему прогресс цели «откатился» без его участия (аудит 13.7).
+      if (Math.abs(cost - prevCost) >= 1) {
+        const accumulated = Number(row.fx_delta) || 0;
+        stmt.updateItemFxDelta.run({ id: row.id, fxDelta: accumulated + (cost - prevCost) });
+      }
       // Цель накопления привязана к цене — пересчитываем target вместе с курсом.
       const goal = stmt.goalByItem.get(row.id);
       if (goal) {

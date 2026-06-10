@@ -2780,3 +2780,12 @@ body.eco .bg-orb { filter: none !important; }
 .seg-btn:hover { border-color: var(--accent); color: var(--text); }
 .seg-btn.active { background: var(--accent); border-color: var(--accent); color: var(--nav-active-text, #fff); }
 .score-row .seg-scale { width: 200px; }
+
+/* Баннер демо-режима (аудит 3.9) */
+.demo-banner {
+  position: sticky; top: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center; gap: 14px;
+  padding: 8px 14px; font-size: 0.875rem;
+  background: var(--color-warning); color: #1d2230;
+}
+.demo-banner .btn { padding: 4px 10px; font-size: 0.8125rem; }

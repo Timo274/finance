@@ -1,5 +1,5 @@
 // Данные: meta, экспорт/импорт, бэкапы, история, агрегированный state, CSV-отчёты.
-import db, { rowToPlan, currencyRate, eurRate } from "../db.js";
+import db, { rowToPlan, currencyRate, eurRate, getSetting, setSetting } from "../db.js";
 import { stmt } from "../statements.js";
 import { requireAuth } from "../auth.js";
 import { importRateLimit, backupRateLimit } from "../middleware.js";
@@ -36,6 +36,9 @@ export default function registerDataRoutes(app) {
     res.status(validation.ok ? 200 : 400).json(validation);
   });
 
+  // Импорт пишется синхронно одной транзакцией (аудит 12.6 — осознанно):
+  // приложение single-user, атомарность восстановления важнее отзывчивости
+  // event loop на сотни мс; фоновые свипы цен просто подождут.
   app.post("/api/import", requireAuth, importRateLimit, (req, res) => {
     const data = req.body || {};
     const isFullBackup = Array.isArray(data.plans) && Array.isArray(data.items);
@@ -151,20 +154,60 @@ export default function registerDataRoutes(app) {
     });
   });
 
+  // UI-преференции (тема, палитра, история AI-чата) живут на сервере,
+  // чтобы переноситься между устройствами (аудит 14.4). localStorage — фолбэк.
+  app.get("/api/ui-prefs", requireAuth, (req, res) => {
+    let prefs = {};
+    try {
+      prefs = JSON.parse(getSetting("ui_prefs") || "{}");
+    } catch {
+      prefs = {};
+    }
+    res.json(prefs);
+  });
+
+  app.put("/api/ui-prefs", requireAuth, (req, res) => {
+    const b = req.body || {};
+    let prefs = {};
+    try {
+      prefs = JSON.parse(getSetting("ui_prefs") || "{}");
+    } catch {
+      prefs = {};
+    }
+    if (typeof b.theme === "string" && b.theme.length <= 20) prefs.theme = b.theme;
+    if (typeof b.palette === "string" && b.palette.length <= 20) prefs.palette = b.palette;
+    if (Array.isArray(b.chatHistory)) {
+      prefs.chatHistory = b.chatHistory
+        .filter(
+          (m) =>
+            m &&
+            (m.role === "user" || m.role === "assistant") &&
+            typeof m.content === "string",
+        )
+        .slice(-50)
+        .map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }));
+    }
+    setSetting("ui_prefs", JSON.stringify(prefs));
+    res.json({ ok: true });
+  });
+
   app.get("/api/state", requireAuth, (req, res) => {
     const plan = getActivePlan();
     const items = getActiveItems();
     const scenario = req.query.scenario || "balanced";
     const allocation = effectiveAllocation(plan, items, scenario);
+    // lite=1 — ядро без тяжёлых блоков (аудит 17.7): history и portfolio
+    // растут линейно со временем и нужны только на своих экранах.
+    const lite = req.query.lite === "1";
     res.json({
       plan,
       items,
       allocation,
       insights: buildDecisionInsights(plan, items, allocation),
-      history: stmt.closedPlans.all().map(rowToPlan),
+      ...(lite ? {} : { history: stmt.closedPlans.all().map(rowToPlan) }),
       meta: metaPayload(),
       investments: getInvestments(),
-      portfolio: getPortfolio(),
+      ...(lite ? {} : { portfolio: getPortfolio() }),
       wallets: getWallets(),
       manualPlan: getManualPlan() || [],
       goals: getGoals(),

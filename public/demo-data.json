@@ -1,0 +1,1245 @@
+{
+ "plan": {
+  "id": 1,
+  "name": "Июнь 2026",
+  "payday": "2026-06-11",
+  "salary": 62000,
+  "survivalCost": 28500,
+  "buffer": 6000,
+  "investmentFixed": 5000,
+  "status": "active",
+  "snapshot": null,
+  "createdAt": "2026-06-10 22:45:44",
+  "closedAt": null
+ },
+ "items": [
+  {
+   "id": 8,
+   "title": "Электрогриль",
+   "cost": 5600,
+   "category": "lifestyle",
+   "layer": "quality",
+   "bucket": "quality",
+   "band": "large",
+   "scoreType": "none",
+   "scores": null,
+   "savedAmount": 0,
+   "recurring": false,
+   "url": null,
+   "currency": "UAH",
+   "costOriginal": null,
+   "fxDelta": null,
+   "fxDeltaAt": null,
+   "linkPrice": null,
+   "linkPriceAt": null,
+   "priority": 2,
+   "type": "should",
+   "deadline": null,
+   "earliestDate": null,
+   "canDefer": true,
+   "emotional": 3,
+   "trajectory": 2,
+   "notes": null,
+   "status": "active",
+   "createdAt": "2026-06-10 22:45:44"
+  },
+  {
+   "id": 7,
+   "title": "Абонемент в зал (продление)",
+   "cost": 1800,
+   "category": "lifestyle",
+   "layer": "quality",
+   "bucket": "quality",
+   "band": "medium",
+   "scoreType": "none",
+   "scores": null,
+   "savedAmount": 0,
+   "recurring": true,
+   "url": null,
+   "currency": "UAH",
+   "costOriginal": null,
+   "fxDelta": null,
+   "fxDeltaAt": null,
+   "linkPrice": null,
+   "linkPriceAt": null,
+   "priority": 4,
+   "type": "should",
+   "deadline": null,
+   "earliestDate": null,
+   "canDefer": true,
+   "emotional": 2,
+   "trajectory": 4,
+   "notes": null,
+   "status": "active",
+   "createdAt": "2026-06-10 22:45:44"
+  },
+  {
+   "id": 6,
+   "title": "Поездка в Карпаты",
+   "cost": 9500,
+   "category": "lifestyle",
+   "layer": "quality",
+   "bucket": "quality",
+   "band": "large",
+   "scoreType": "none",
+   "scores": null,
+   "savedAmount": 0,
+   "recurring": false,
+   "url": null,
+   "currency": "UAH",
+   "costOriginal": null,
+   "fxDelta": null,
+   "fxDeltaAt": null,
+   "linkPrice": null,
+   "linkPriceAt": null,
+   "priority": 3,
+   "type": "should",
+   "deadline": null,
+   "earliestDate": null,
+   "canDefer": true,
+   "emotional": 5,
+   "trajectory": 3,
+   "notes": null,
+   "status": "active",
+   "createdAt": "2026-06-10 22:45:44"
+  },
+  {
+   "id": 5,
+   "title": "MacBook Air M4",
+   "cost": 60900,
+   "category": "lifestyle",
+   "layer": "quality",
+   "bucket": "quality",
+   "band": "major",
+   "scoreType": "none",
+   "scores": null,
+   "savedAmount": 0,
+   "recurring": false,
+   "url": null,
+   "currency": "USD",
+   "costOriginal": 1400,
+   "fxDelta": null,
+   "fxDeltaAt": null,
+   "linkPrice": null,
+   "linkPriceAt": null,
+   "priority": 4,
+   "type": "should",
+   "deadline": null,
+   "earliestDate": null,
+   "canDefer": true,
+   "emotional": 4,
+   "trajectory": 5,
+   "notes": null,
+   "status": "active",
+   "createdAt": "2026-06-10 22:45:44"
+  },
+  {
+   "id": 4,
+   "title": "Подарок маме",
+   "cost": 2500,
+   "category": "lifestyle",
+   "layer": "quality",
+   "bucket": "quality",
+   "band": "medium",
+   "scoreType": "none",
+   "scores": null,
+   "savedAmount": 0,
+   "recurring": false,
+   "url": null,
+   "currency": "UAH",
+   "costOriginal": null,
+   "fxDelta": null,
+   "fxDeltaAt": null,
+   "linkPrice": null,
+   "linkPriceAt": null,
+   "priority": 5,
+   "type": "should",
+   "deadline": "2026-07-10",
+   "earliestDate": null,
+   "canDefer": true,
+   "emotional": 5,
+   "trajectory": 2,
+   "notes": null,
+   "status": "active",
+   "createdAt": "2026-06-10 22:45:44"
+  },
+  {
+   "id": 3,
+   "title": "Кроссовки для бега",
+   "cost": 3800,
+   "category": "lifestyle",
+   "layer": "quality",
+   "bucket": "quality",
+   "band": "medium",
+   "scoreType": "none",
+   "scores": null,
+   "savedAmount": 0,
+   "recurring": false,
+   "url": null,
+   "currency": "UAH",
+   "costOriginal": null,
+   "fxDelta": null,
+   "fxDeltaAt": null,
+   "linkPrice": null,
+   "linkPriceAt": null,
+   "priority": 3,
+   "type": "should",
+   "deadline": null,
+   "earliestDate": null,
+   "canDefer": true,
+   "emotional": 3,
+   "trajectory": 4,
+   "notes": null,
+   "status": "active",
+   "createdAt": "2026-06-10 22:45:44"
+  },
+  {
+   "id": 2,
+   "title": "Курс по Python",
+   "cost": 4200,
+   "category": "lifestyle",
+   "layer": "quality",
+   "bucket": "quality",
+   "band": "medium",
+   "scoreType": "none",
+   "scores": null,
+   "savedAmount": 0,
+   "recurring": false,
+   "url": null,
+   "currency": "UAH",
+   "costOriginal": null,
+   "fxDelta": null,
+   "fxDeltaAt": null,
+   "linkPrice": null,
+   "linkPriceAt": null,
+   "priority": 5,
+   "type": "should",
+   "deadline": null,
+   "earliestDate": null,
+   "canDefer": true,
+   "emotional": 2,
+   "trajectory": 5,
+   "notes": null,
+   "status": "active",
+   "createdAt": "2026-06-10 22:45:44"
+  },
+  {
+   "id": 1,
+   "title": "Наушники Sony WH-1000XM5",
+   "cost": 14500,
+   "category": "lifestyle",
+   "layer": "quality",
+   "bucket": "quality",
+   "band": "major",
+   "scoreType": "none",
+   "scores": null,
+   "savedAmount": 0,
+   "recurring": false,
+   "url": null,
+   "currency": "UAH",
+   "costOriginal": null,
+   "fxDelta": null,
+   "fxDeltaAt": null,
+   "linkPrice": null,
+   "linkPriceAt": null,
+   "priority": 4,
+   "type": "should",
+   "deadline": null,
+   "earliestDate": null,
+   "canDefer": true,
+   "emotional": 4,
+   "trajectory": 3,
+   "notes": "Для работы и поездок",
+   "status": "active",
+   "createdAt": "2026-06-10 22:45:44"
+  }
+ ],
+ "allocation": {
+  "scenario": "balanced",
+  "scenarioLabel": "Сбалансированный",
+  "totals": {
+   "salary": 62000,
+   "survival": 28500,
+   "fixedInvestment": 5000,
+   "stableExpenses": 39500,
+   "buffer": 6000,
+   "reserve": 6000,
+   "baseReserve": 6000,
+   "availableToAllocate": 22500,
+   "allocated": 21800,
+   "remaining": 700,
+   "freeAfterBuffer": 700,
+   "freeAfterReserve": 700,
+   "status": "tight",
+   "statusReason": "tight",
+   "unfundedMust": []
+  },
+  "weights": {
+   "stability": 25,
+   "career": 25,
+   "investment": 20,
+   "quality": 25,
+   "leakage": 5
+  },
+  "policyTargets": {
+   "survival": 0,
+   "stability": 5625,
+   "career": 5625,
+   "investment": 4500,
+   "quality": 5625,
+   "leakage": 1125
+  },
+  "buckets": {
+   "survival": 0,
+   "stability": 0,
+   "career": 0,
+   "investment": 0,
+   "quality": 21800,
+   "leakage": 0
+  },
+  "approved": [
+   {
+    "item": {
+     "id": 4,
+     "title": "Подарок маме",
+     "cost": 2500,
+     "category": "lifestyle",
+     "layer": "quality",
+     "bucket": "quality",
+     "band": "medium",
+     "scoreType": "none",
+     "scores": null,
+     "savedAmount": 0,
+     "recurring": false,
+     "url": null,
+     "currency": "UAH",
+     "costOriginal": null,
+     "fxDelta": null,
+     "fxDeltaAt": null,
+     "linkPrice": null,
+     "linkPriceAt": null,
+     "priority": 5,
+     "type": "should",
+     "deadline": "2026-07-10",
+     "earliestDate": null,
+     "canDefer": true,
+     "emotional": 5,
+     "trajectory": 2,
+     "notes": null,
+     "status": "active",
+     "createdAt": "2026-06-10 22:45:44",
+     "remainingCost": 2500
+    },
+    "allocatedAmount": 2500,
+    "remainingCost": 2500,
+    "fullyFunded": true,
+    "balanceAfter": 20000
+   },
+   {
+    "item": {
+     "id": 7,
+     "title": "Абонемент в зал (продление)",
+     "cost": 1800,
+     "category": "lifestyle",
+     "layer": "quality",
+     "bucket": "quality",
+     "band": "medium",
+     "scoreType": "none",
+     "scores": null,
+     "savedAmount": 0,
+     "recurring": true,
+     "url": null,
+     "currency": "UAH",
+     "costOriginal": null,
+     "fxDelta": null,
+     "fxDeltaAt": null,
+     "linkPrice": null,
+     "linkPriceAt": null,
+     "priority": 4,
+     "type": "should",
+     "deadline": null,
+     "earliestDate": null,
+     "canDefer": true,
+     "emotional": 2,
+     "trajectory": 4,
+     "notes": null,
+     "status": "active",
+     "createdAt": "2026-06-10 22:45:44",
+     "remainingCost": 1800
+    },
+    "allocatedAmount": 1800,
+    "remainingCost": 1800,
+    "fullyFunded": true,
+    "balanceAfter": 18200
+   },
+   {
+    "item": {
+     "id": 2,
+     "title": "Курс по Python",
+     "cost": 4200,
+     "category": "lifestyle",
+     "layer": "quality",
+     "bucket": "quality",
+     "band": "medium",
+     "scoreType": "none",
+     "scores": null,
+     "savedAmount": 0,
+     "recurring": false,
+     "url": null,
+     "currency": "UAH",
+     "costOriginal": null,
+     "fxDelta": null,
+     "fxDeltaAt": null,
+     "linkPrice": null,
+     "linkPriceAt": null,
+     "priority": 5,
+     "type": "should",
+     "deadline": null,
+     "earliestDate": null,
+     "canDefer": true,
+     "emotional": 2,
+     "trajectory": 5,
+     "notes": null,
+     "status": "active",
+     "createdAt": "2026-06-10 22:45:44",
+     "remainingCost": 4200
+    },
+    "allocatedAmount": 4200,
+    "remainingCost": 4200,
+    "fullyFunded": true,
+    "beyondPolicy": true,
+    "balanceAfter": 14000
+   },
+   {
+    "item": {
+     "id": 3,
+     "title": "Кроссовки для бега",
+     "cost": 3800,
+     "category": "lifestyle",
+     "layer": "quality",
+     "bucket": "quality",
+     "band": "medium",
+     "scoreType": "none",
+     "scores": null,
+     "savedAmount": 0,
+     "recurring": false,
+     "url": null,
+     "currency": "UAH",
+     "costOriginal": null,
+     "fxDelta": null,
+     "fxDeltaAt": null,
+     "linkPrice": null,
+     "linkPriceAt": null,
+     "priority": 3,
+     "type": "should",
+     "deadline": null,
+     "earliestDate": null,
+     "canDefer": true,
+     "emotional": 3,
+     "trajectory": 4,
+     "notes": null,
+     "status": "active",
+     "createdAt": "2026-06-10 22:45:44",
+     "remainingCost": 3800
+    },
+    "allocatedAmount": 3800,
+    "remainingCost": 3800,
+    "fullyFunded": true,
+    "beyondPolicy": true,
+    "balanceAfter": 10200
+   },
+   {
+    "item": {
+     "id": 6,
+     "title": "Поездка в Карпаты",
+     "cost": 9500,
+     "category": "lifestyle",
+     "layer": "quality",
+     "bucket": "quality",
+     "band": "large",
+     "scoreType": "none",
+     "scores": null,
+     "savedAmount": 0,
+     "recurring": false,
+     "url": null,
+     "currency": "UAH",
+     "costOriginal": null,
+     "fxDelta": null,
+     "fxDeltaAt": null,
+     "linkPrice": null,
+     "linkPriceAt": null,
+     "priority": 3,
+     "type": "should",
+     "deadline": null,
+     "earliestDate": null,
+     "canDefer": true,
+     "emotional": 5,
+     "trajectory": 3,
+     "notes": null,
+     "status": "active",
+     "createdAt": "2026-06-10 22:45:44",
+     "remainingCost": 9500
+    },
+    "allocatedAmount": 9500,
+    "remainingCost": 9500,
+    "fullyFunded": true,
+    "beyondPolicy": true,
+    "balanceAfter": 700
+   }
+  ],
+  "deferred": [
+   {
+    "item": {
+     "id": 5,
+     "title": "MacBook Air M4",
+     "cost": 60900,
+     "category": "lifestyle",
+     "layer": "quality",
+     "bucket": "quality",
+     "band": "major",
+     "scoreType": "none",
+     "scores": null,
+     "savedAmount": 0,
+     "recurring": false,
+     "url": null,
+     "currency": "USD",
+     "costOriginal": 1400,
+     "fxDelta": null,
+     "fxDeltaAt": null,
+     "linkPrice": null,
+     "linkPriceAt": null,
+     "priority": 4,
+     "type": "should",
+     "deadline": null,
+     "earliestDate": null,
+     "canDefer": true,
+     "emotional": 4,
+     "trajectory": 5,
+     "notes": null,
+     "status": "active",
+     "createdAt": "2026-06-10 22:45:44",
+     "remainingCost": 60900
+    },
+    "remainingCost": 60900,
+    "policyLimited": true,
+    "reason": "Не проходит политику сценария: лимит слоя «Качество жизни»"
+   },
+   {
+    "item": {
+     "id": 1,
+     "title": "Наушники Sony WH-1000XM5",
+     "cost": 14500,
+     "category": "lifestyle",
+     "layer": "quality",
+     "bucket": "quality",
+     "band": "major",
+     "scoreType": "none",
+     "scores": null,
+     "savedAmount": 0,
+     "recurring": false,
+     "url": null,
+     "currency": "UAH",
+     "costOriginal": null,
+     "fxDelta": null,
+     "fxDeltaAt": null,
+     "linkPrice": null,
+     "linkPriceAt": null,
+     "priority": 4,
+     "type": "should",
+     "deadline": null,
+     "earliestDate": null,
+     "canDefer": true,
+     "emotional": 4,
+     "trajectory": 3,
+     "notes": "Для работы и поездок",
+     "status": "active",
+     "createdAt": "2026-06-10 22:45:44",
+     "remainingCost": 14500
+    },
+    "remainingCost": 14500,
+    "policyLimited": true,
+    "reason": "Не проходит политику сценария: лимит слоя «Качество жизни»"
+   },
+   {
+    "item": {
+     "id": 8,
+     "title": "Электрогриль",
+     "cost": 5600,
+     "category": "lifestyle",
+     "layer": "quality",
+     "bucket": "quality",
+     "band": "large",
+     "scoreType": "none",
+     "scores": null,
+     "savedAmount": 0,
+     "recurring": false,
+     "url": null,
+     "currency": "UAH",
+     "costOriginal": null,
+     "fxDelta": null,
+     "fxDeltaAt": null,
+     "linkPrice": null,
+     "linkPriceAt": null,
+     "priority": 2,
+     "type": "should",
+     "deadline": null,
+     "earliestDate": null,
+     "canDefer": true,
+     "emotional": 3,
+     "trajectory": 2,
+     "notes": null,
+     "status": "active",
+     "createdAt": "2026-06-10 22:45:44",
+     "remainingCost": 5600
+    },
+    "remainingCost": 5600,
+    "policyLimited": true,
+    "reason": "Не проходит политику сценария: лимит слоя «Качество жизни»"
+   }
+  ],
+  "timeline": [
+   {
+    "item": {
+     "id": 4,
+     "title": "Подарок маме",
+     "cost": 2500,
+     "category": "lifestyle",
+     "layer": "quality",
+     "bucket": "quality",
+     "band": "medium",
+     "scoreType": "none",
+     "scores": null,
+     "savedAmount": 0,
+     "recurring": false,
+     "url": null,
+     "currency": "UAH",
+     "costOriginal": null,
+     "fxDelta": null,
+     "fxDeltaAt": null,
+     "linkPrice": null,
+     "linkPriceAt": null,
+     "priority": 5,
+     "type": "should",
+     "deadline": "2026-07-10",
+     "earliestDate": null,
+     "canDefer": true,
+     "emotional": 5,
+     "trajectory": 2,
+     "notes": null,
+     "status": "active",
+     "createdAt": "2026-06-10 22:45:44",
+     "remainingCost": 2500
+    },
+    "date": "2026-06-11",
+    "allocatedAmount": 2500,
+    "balanceAfter": 20000
+   },
+   {
+    "item": {
+     "id": 7,
+     "title": "Абонемент в зал (продление)",
+     "cost": 1800,
+     "category": "lifestyle",
+     "layer": "quality",
+     "bucket": "quality",
+     "band": "medium",
+     "scoreType": "none",
+     "scores": null,
+     "savedAmount": 0,
+     "recurring": true,
+     "url": null,
+     "currency": "UAH",
+     "costOriginal": null,
+     "fxDelta": null,
+     "fxDeltaAt": null,
+     "linkPrice": null,
+     "linkPriceAt": null,
+     "priority": 4,
+     "type": "should",
+     "deadline": null,
+     "earliestDate": null,
+     "canDefer": true,
+     "emotional": 2,
+     "trajectory": 4,
+     "notes": null,
+     "status": "active",
+     "createdAt": "2026-06-10 22:45:44",
+     "remainingCost": 1800
+    },
+    "date": "2026-06-11",
+    "allocatedAmount": 1800,
+    "balanceAfter": 18200
+   },
+   {
+    "item": {
+     "id": 2,
+     "title": "Курс по Python",
+     "cost": 4200,
+     "category": "lifestyle",
+     "layer": "quality",
+     "bucket": "quality",
+     "band": "medium",
+     "scoreType": "none",
+     "scores": null,
+     "savedAmount": 0,
+     "recurring": false,
+     "url": null,
+     "currency": "UAH",
+     "costOriginal": null,
+     "fxDelta": null,
+     "fxDeltaAt": null,
+     "linkPrice": null,
+     "linkPriceAt": null,
+     "priority": 5,
+     "type": "should",
+     "deadline": null,
+     "earliestDate": null,
+     "canDefer": true,
+     "emotional": 2,
+     "trajectory": 5,
+     "notes": null,
+     "status": "active",
+     "createdAt": "2026-06-10 22:45:44",
+     "remainingCost": 4200
+    },
+    "date": "2026-06-11",
+    "allocatedAmount": 4200,
+    "balanceAfter": 14000
+   },
+   {
+    "item": {
+     "id": 3,
+     "title": "Кроссовки для бега",
+     "cost": 3800,
+     "category": "lifestyle",
+     "layer": "quality",
+     "bucket": "quality",
+     "band": "medium",
+     "scoreType": "none",
+     "scores": null,
+     "savedAmount": 0,
+     "recurring": false,
+     "url": null,
+     "currency": "UAH",
+     "costOriginal": null,
+     "fxDelta": null,
+     "fxDeltaAt": null,
+     "linkPrice": null,
+     "linkPriceAt": null,
+     "priority": 3,
+     "type": "should",
+     "deadline": null,
+     "earliestDate": null,
+     "canDefer": true,
+     "emotional": 3,
+     "trajectory": 4,
+     "notes": null,
+     "status": "active",
+     "createdAt": "2026-06-10 22:45:44",
+     "remainingCost": 3800
+    },
+    "date": "2026-06-11",
+    "allocatedAmount": 3800,
+    "balanceAfter": 10200
+   },
+   {
+    "item": {
+     "id": 6,
+     "title": "Поездка в Карпаты",
+     "cost": 9500,
+     "category": "lifestyle",
+     "layer": "quality",
+     "bucket": "quality",
+     "band": "large",
+     "scoreType": "none",
+     "scores": null,
+     "savedAmount": 0,
+     "recurring": false,
+     "url": null,
+     "currency": "UAH",
+     "costOriginal": null,
+     "fxDelta": null,
+     "fxDeltaAt": null,
+     "linkPrice": null,
+     "linkPriceAt": null,
+     "priority": 3,
+     "type": "should",
+     "deadline": null,
+     "earliestDate": null,
+     "canDefer": true,
+     "emotional": 5,
+     "trajectory": 3,
+     "notes": null,
+     "status": "active",
+     "createdAt": "2026-06-10 22:45:44",
+     "remainingCost": 9500
+    },
+    "date": "2026-06-11",
+    "allocatedAmount": 9500,
+    "balanceAfter": 700
+   }
+  ]
+ },
+ "insights": {
+  "status": "warning",
+  "headline": "Запас почти съеден — новые покупки только через trade-off",
+  "actions": [
+   {
+    "tone": "good",
+    "text": "Оставь 700 грн свободными или докинь в цель."
+   }
+  ],
+  "buyNow": [
+   {
+    "id": 4,
+    "title": "Подарок маме",
+    "cost": 2500,
+    "remainingCost": 2500,
+    "type": "should",
+    "layer": "quality",
+    "category": "lifestyle",
+    "priority": 5,
+    "deadline": "2026-07-10",
+    "deadlineText": "дедлайн через 30 дн.",
+    "canDefer": true
+   },
+   {
+    "id": 7,
+    "title": "Абонемент в зал (продление)",
+    "cost": 1800,
+    "remainingCost": 1800,
+    "type": "should",
+    "layer": "quality",
+    "category": "lifestyle",
+    "priority": 4,
+    "deadline": null,
+    "deadlineText": null,
+    "canDefer": true
+   },
+   {
+    "id": 2,
+    "title": "Курс по Python",
+    "cost": 4200,
+    "remainingCost": 4200,
+    "type": "should",
+    "layer": "quality",
+    "category": "lifestyle",
+    "priority": 5,
+    "deadline": null,
+    "deadlineText": null,
+    "canDefer": true
+   }
+  ],
+  "watch": [],
+  "postpone": [
+   {
+    "id": 5,
+    "title": "MacBook Air M4",
+    "cost": 60900,
+    "remainingCost": 60900,
+    "type": "should",
+    "layer": "quality",
+    "category": "lifestyle",
+    "priority": 4,
+    "deadline": null,
+    "deadlineText": null,
+    "canDefer": true,
+    "reason": "Не проходит политику сценария: лимит слоя «Качество жизни»"
+   },
+   {
+    "id": 1,
+    "title": "Наушники Sony WH-1000XM5",
+    "cost": 14500,
+    "remainingCost": 14500,
+    "type": "should",
+    "layer": "quality",
+    "category": "lifestyle",
+    "priority": 4,
+    "deadline": null,
+    "deadlineText": null,
+    "canDefer": true,
+    "reason": "Не проходит политику сценария: лимит слоя «Качество жизни»"
+   },
+   {
+    "id": 8,
+    "title": "Электрогриль",
+    "cost": 5600,
+    "remainingCost": 5600,
+    "type": "should",
+    "layer": "quality",
+    "category": "lifestyle",
+    "priority": 2,
+    "deadline": null,
+    "deadlineText": null,
+    "canDefer": true,
+    "reason": "Не проходит политику сценария: лимит слоя «Качество жизни»"
+   }
+  ],
+  "leakage": [],
+  "metrics": {
+   "available": 22500,
+   "allocated": 21800,
+   "remaining": 700,
+   "runwayPct": 3,
+   "activeCount": 8,
+   "plannedCount": 5,
+   "deferredCount": 3
+  }
+ },
+ "history": [],
+ "meta": {
+  "categories": [
+   {
+    "id": "asset",
+    "label": "Asset",
+    "ru": "Актив",
+    "layer": "investment"
+   },
+   {
+    "id": "tool",
+    "label": "Tool",
+    "ru": "Инструмент",
+    "layer": "career"
+   },
+   {
+    "id": "infrastructure",
+    "label": "Infrastructure",
+    "ru": "Инфраструктура",
+    "layer": "stability"
+   },
+   {
+    "id": "growth",
+    "label": "Growth",
+    "ru": "Рост",
+    "layer": "career"
+   },
+   {
+    "id": "experience",
+    "label": "Experience",
+    "ru": "Опыт",
+    "layer": "quality"
+   },
+   {
+    "id": "lifestyle",
+    "label": "Lifestyle",
+    "ru": "Образ жизни",
+    "layer": "quality"
+   },
+   {
+    "id": "status",
+    "label": "Status",
+    "ru": "Статус",
+    "layer": "quality"
+   },
+   {
+    "id": "dopamine",
+    "label": "Dopamine",
+    "ru": "Дофамин",
+    "layer": "leakage"
+   },
+   {
+    "id": "waste",
+    "label": "Waste",
+    "ru": "Трата впустую",
+    "layer": "leakage"
+   }
+  ],
+  "layers": {
+   "survival": {
+    "label": "Survival",
+    "ru": "Выживание",
+    "color": "#64748b"
+   },
+   "stability": {
+    "label": "Stability",
+    "ru": "Стабильность",
+    "color": "#0ea5e9"
+   },
+   "career": {
+    "label": "Career Capital",
+    "ru": "Карьерный капитал",
+    "color": "#2f6bff"
+   },
+   "investment": {
+    "label": "Investment",
+    "ru": "Инвестиции",
+    "color": "#16a34a"
+   },
+   "quality": {
+    "label": "Quality of Life",
+    "ru": "Качество жизни",
+    "color": "#a855f7"
+   },
+   "leakage": {
+    "label": "Leakage",
+    "ru": "Утечки",
+    "color": "#ef4444"
+   }
+  },
+  "buckets": {
+   "survival": {
+    "label": "Survival",
+    "ru": "Выживание",
+    "color": "#64748b"
+   },
+   "stability": {
+    "label": "Stability",
+    "ru": "Стабильность",
+    "color": "#0ea5e9"
+   },
+   "career": {
+    "label": "Career Capital",
+    "ru": "Карьерный капитал",
+    "color": "#2f6bff"
+   },
+   "investment": {
+    "label": "Investment",
+    "ru": "Инвестиции",
+    "color": "#16a34a"
+   },
+   "quality": {
+    "label": "Quality of Life",
+    "ru": "Качество жизни",
+    "color": "#a855f7"
+   },
+   "leakage": {
+    "label": "Leakage",
+    "ru": "Утечки",
+    "color": "#ef4444"
+   }
+  },
+  "types": {
+   "must": {
+    "label": "Must-have",
+    "ru": "Обязательно",
+    "rank": 0
+   },
+   "should": {
+    "label": "Should-have",
+    "ru": "Желательно",
+    "rank": 1
+   },
+   "nice": {
+    "label": "Nice-to-have",
+    "ru": "По желанию",
+    "rank": 2
+   }
+  },
+  "bands": [
+   {
+    "id": "trivial",
+    "label": "Trivial",
+    "ru": "Мелочь",
+    "max": 300
+   },
+   {
+    "id": "small",
+    "label": "Small",
+    "ru": "Небольшая",
+    "max": 1500
+   },
+   {
+    "id": "medium",
+    "label": "Medium",
+    "ru": "Средняя",
+    "max": 5000
+   },
+   {
+    "id": "large",
+    "label": "Large",
+    "ru": "Крупная",
+    "max": 12000
+   },
+   {
+    "id": "major",
+    "label": "Major",
+    "ru": "Большая",
+    "max": null
+   }
+  ],
+  "scoreTypes": {
+   "none": {
+    "ru": "Без оценки"
+   },
+   "quick": {
+    "ru": "Быстрая (Quick)"
+   },
+   "full": {
+    "ru": "Полная (Full)"
+   }
+  },
+  "scoreCriteria": {
+   "quick": [
+    {
+     "id": "retained_utility",
+     "ru": "Удержанная польза",
+     "hint": "Насколько вещь будет полезна и через месяцы",
+     "dir": "pos"
+    },
+    {
+     "id": "trajectory_alignment",
+     "ru": "Соответствие траектории",
+     "hint": "Двигает ли к долгосрочным целям",
+     "dir": "pos"
+    },
+    {
+     "id": "emotional_trigger",
+     "ru": "Эмоциональный триггер",
+     "hint": "Сколько здесь импульса «хочу сейчас»",
+     "dir": "neg"
+    },
+    {
+     "id": "capital_velocity",
+     "ru": "Скорость капитала",
+     "hint": "Как быстро вернёт ценность/деньги",
+     "dir": "pos"
+    },
+    {
+     "id": "predicted_30d",
+     "ru": "Ценность через 30 дней",
+     "hint": "Будешь ли ценить через месяц",
+     "dir": "pos"
+    }
+   ],
+   "full": [
+    {
+     "id": "future_leverage",
+     "ru": "Будущий рычаг",
+     "hint": "Открывает ли новые возможности",
+     "dir": "pos"
+    },
+    {
+     "id": "opportunity_cost",
+     "ru": "Альтернативная стоимость",
+     "hint": "Что теряешь, потратив сюда",
+     "dir": "neg"
+    },
+    {
+     "id": "identity_congruence",
+     "ru": "Соответствие себе",
+     "hint": "Это «настоящий ты» или образ?",
+     "dir": "pos"
+    },
+    {
+     "id": "reversibility",
+     "ru": "Обратимость",
+     "hint": "Можно ли вернуть/перепродать",
+     "dir": "pos"
+    },
+    {
+     "id": "optionality",
+     "ru": "Опциональность",
+     "hint": "Сохраняет ли свободу выбора",
+     "dir": "pos"
+    },
+    {
+     "id": "social_signal_distortion",
+     "ru": "Соц. сигнал",
+     "hint": "Покупка ради впечатления других",
+     "dir": "neg"
+    },
+    {
+     "id": "maintenance_burden",
+     "ru": "Стоимость владения",
+     "hint": "Сколько ещё потребует потом",
+     "dir": "neg"
+    },
+    {
+     "id": "regret_probability",
+     "ru": "Вероятность сожаления",
+     "hint": "Шанс пожалеть о покупке",
+     "dir": "neg"
+    }
+   ]
+  },
+  "scenarios": [
+   {
+    "key": "balanced",
+    "label": "Сбалансированный"
+   },
+   {
+    "key": "save_more",
+    "label": "Безопасный"
+   },
+   {
+    "key": "career",
+    "label": "Рост / карьера"
+   },
+   {
+    "key": "enjoy",
+    "label": "Жить сейчас"
+   },
+   {
+    "key": "custom",
+    "label": "Свой сценарий"
+   }
+  ],
+  "defaults": {
+   "salary": 25000,
+   "survivalCost": 6000,
+   "buffer": 1000,
+   "investmentFixed": 2000
+  },
+  "ai": {
+   "enabled": false,
+   "provider": null
+  },
+  "monobank": {
+   "enabled": false
+  },
+  "offsiteBackup": {
+   "enabled": false
+  },
+  "push": {
+   "enabled": true,
+   "publicKey": "BOq3ieSkbZZWAKxVJVOxTps7oAnBwk0H734Kq_iwJNiILUQpRGOKGeg0EGd5CnZMFOKq3QuRY7cTS30eWd7I9EM"
+  }
+ },
+ "investments": [],
+ "portfolio": {
+  "assets": [],
+  "transactions": [],
+  "valuations": [],
+  "totals": {
+   "totalValue": 0,
+   "totalInvested": 0,
+   "totalPnL": 0
+  },
+  "totalValue": 0,
+  "totalInvested": 0,
+  "totalPnL": 0
+ },
+ "wallets": [
+  {
+   "id": "1781131544202.3708",
+   "planId": 1,
+   "name": "Подушка безопасности",
+   "purpose": "",
+   "amount": 5000,
+   "month": "2026-06",
+   "createdAt": "2026-06-10 22:45:44"
+  },
+  {
+   "id": "1781131544202.6746",
+   "planId": 1,
+   "name": "Отпуск",
+   "purpose": "",
+   "amount": 3000,
+   "month": "2026-06",
+   "createdAt": "2026-06-10 22:45:44"
+  },
+  {
+   "id": "1781131544202.568",
+   "planId": 1,
+   "name": "Подарки",
+   "purpose": "",
+   "amount": 1500,
+   "month": "2026-06",
+   "createdAt": "2026-06-10 22:45:44"
+  }
+ ],
+ "manualPlan": [],
+ "goals": [],
+ "currencyRate": 43.5,
+ "eurRate": 47
+}

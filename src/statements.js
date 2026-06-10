@@ -45,6 +45,7 @@ export const stmt = {
     title=@title, cost=@cost, category=@category, bucket=@layer, band=@band, score_type=@scoreType, scores=@scores,
     priority=@priority, type=@type, deadline=@deadline, earliest_date=@earliestDate, can_defer=@canDefer, emotional=@emotional,
     trajectory=@trajectory, notes=@notes, recurring=@recurring, url=@url, currency=@currency, cost_original=@costOriginal,
+    fx_delta=NULL, fx_delta_at=NULL,
     updated_at=datetime('now') WHERE id=@id`),
   itemsWithUrl: db.prepare(
     "SELECT * FROM items WHERE status='active' AND url IS NOT NULL AND url != ''",
@@ -54,6 +55,9 @@ export const stmt = {
   ),
   updateItemCostBand: db.prepare(
     "UPDATE items SET cost=@cost, band=@band, updated_at=datetime('now') WHERE id=@id",
+  ),
+  updateItemFxDelta: db.prepare(
+    "UPDATE items SET fx_delta=@fxDelta, fx_delta_at=datetime('now') WHERE id=@id",
   ),
   updateItemLinkPrice: db.prepare(
     "UPDATE items SET link_price=@linkPrice, link_price_at=datetime('now') WHERE id=@id",
