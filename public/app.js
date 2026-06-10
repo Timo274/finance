@@ -1842,10 +1842,23 @@ function viewHistory() {
       </div>
     </div>`;
   }
+  // План 1.3: три последних месяца подряд факт обязательных выше плана >10% — сигнал.
+  const recent = state.history.slice(0, 3);
+  const underestimated =
+    recent.length === 3 &&
+    recent.every((h) => {
+      const sn = h.snapshot || {};
+      const planSurv = Number(sn.totals?.survival) || 0;
+      return planSurv > 0 && Number(sn.actualSurvivalCost) > planSurv * 1.1;
+    });
+  const survivalAlert = underestimated
+    ? `<div class="card pad-lg mb-16" style="border-color:var(--color-warning)"><div class="section-title mt-0">⚠️ Обязательные расходы занижены</div><p class="muted small m-0">Три месяца подряд факт превышает план более чем на 10%. Обновите сумму обязательных расходов в настройках зарплаты — иначе «Свободно» показывает больше, чем есть.</p><button class="btn btn-outline btn-sm mt-10" data-act="open-plan">Обновить план</button></div>`
+    : "";
   return `<div class="view-head row-between">
     <div><h1>История решений</h1><p>Что ты решал в прошлые месяцы: купленное, отложенное, остаток.</p></div>
     <div class="row-gap-8">${years.map((y) => `<button class="btn btn-outline btn-sm" data-act="year-report" data-year="${y}">Отчёт ${y} CSV</button>`).join("")}</div>
   </div>
+  ${survivalAlert}
   ${summaryBlock}
   <div class="grid cards mb-16">
     <div class="card pad-lg"><div class="section-title mt-0">Портфель по оценкам</div><canvas id="nwChart" height="160"></canvas><p class="muted small" id="nwHint"></p></div>
@@ -1863,6 +1876,7 @@ function viewHistory() {
           <div class="card"><div class="stat-label">Распределено</div><div class="stat-value sm">${fmt(t.allocated)}</div></div>
           <div class="card"><div class="stat-label">Осталось</div><div class="stat-value sm green-num">${fmt(t.remaining)}</div></div>
         </div>
+        ${s.actualSurvivalCost ? (() => { const planSurv = Number(t.survival) || 0; const deltaPct = planSurv ? Math.round(((s.actualSurvivalCost - planSurv) / planSurv) * 100) : 0; return `<div class="mt-10 small"><span class="muted">Обязательные:</span> план ${fmt(planSurv)} / факт ${fmt(s.actualSurvivalCost)} <b class="${deltaPct > 0 ? "red-num" : "green-num"}">(${deltaPct > 0 ? "+" : ""}${deltaPct}%)</b></div>`; })() : ""}
         <div class="mt-12"><span class="muted small">Куплено:</span> ${(s.approved || []).filter((x) => x.purchased !== false).map((x) => escapeHtml(x.title)).join(", ") || "—"}</div>
         ${(s.approved || []).some((x) => x.purchased === false) ? `<div class="mt-6"><span class="muted small">Не куплено (ушло в накопление):</span> ${(s.approved || []).filter((x) => x.purchased === false).map((x) => escapeHtml(x.title)).join(", ")}</div>` : ""}
         <div class="mt-6"><span class="muted small">Отложено:</span> ${(s.deferred || []).map((x) => escapeHtml(x.title)).join(", ") || "—"}</div>
@@ -2471,17 +2485,36 @@ async function closeMonth() {
     <p class="muted small">Отметь, что реально куплено. Неотмеченное останется в очереди, а выделенные на него деньги превратятся в накопление. Отложенных желаний: ${preview.deferredCount}.</p>
     <p class="small" style="color:var(--color-warning)">⚠️ Закрытие месяца необратимо: план уйдёт в историю, а текущие распределения зафиксируются.</p>
     <div>${rows || '<p class="muted">В этом месяце ничего не было одобрено.</p>'}</div>
+    <div class="field mt-14"><label>Факт обязательных расходов за месяц (опц.)</label>
+      <input type="number" id="actualSurvivalInput" min="0" step="any" placeholder="${state.plan?.survivalCost || 0}" />
+      <span class="hint" id="actualSurvivalHint">План: ${fmt(state.plan?.survivalCost || 0)}. Заполните, чтобы история показывала план/факт.</span></div>
     <div class="modal-foot mt-14">
       <button type="button" class="btn btn-ghost" data-close-modal>Отмена</button>
       <button type="button" class="btn btn-primary" id="confirmCloseBtn">Закрыть месяц</button>
     </div>
   </div>`);
+  // Monobank подключён — подставляем факт трат за месяц автоматически (план 1.3).
+  if (state.meta?.monobank?.enabled) {
+    api
+      .get("/api/monobank/summary")
+      .then((s) => {
+        const input = $("#actualSurvivalInput");
+        const spent = Number(s?.totals?.spent) || 0;
+        if (input && !input.value && spent > 0) {
+          input.value = spent;
+          const hint = $("#actualSurvivalHint");
+          if (hint) hint.textContent = `Подставлено из Monobank: траты за ${s.month}. План: ${fmt(state.plan?.survivalCost || 0)}.`;
+        }
+      })
+      .catch(() => {});
+  }
   $("#confirmCloseBtn").addEventListener("click", async () => {
     const purchases = $$(".close-purchase").map((el) => ({
       itemId: +el.dataset.id,
       purchased: el.checked,
     }));
-    await api.post("/api/plan/close", { scenario: "balanced", purchases });
+    const actualSurvivalCost = +($("#actualSurvivalInput")?.value || 0) || undefined;
+    await api.post("/api/plan/close", { scenario: "balanced", purchases, actualSurvivalCost });
     closeModal();
     confettiBurst(window.innerWidth / 2, window.innerHeight * 0.3, 48);
     toast("Месяц закрыт и сохранён в истории 🎉");

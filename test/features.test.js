@@ -140,11 +140,15 @@ describe("новые фичи", () => {
           { itemId: recurringId, purchased: true },
           { itemId: plainId, purchased: false },
         ],
+        actualSurvivalCost: 11500,
       },
     });
     assert.equal(close.res.status, 200);
     const approvedSnap = close.data.snapshot.approved;
     assert.equal(approvedSnap.find((a) => a.title === "Кресло").purchased, false);
+    // Якорь «факта» (план 1.3): факт и дельта к плану в снимке месяца.
+    assert.equal(close.data.snapshot.actualSurvivalCost, 11500);
+    assert.equal(close.data.snapshot.survivalDelta, 1500);
 
     const state = await request("/api/state");
     const recItem = state.data.items.find((i) => i.id === recurringId);

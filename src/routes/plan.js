@@ -76,6 +76,14 @@ export default function registerPlanRoutes(app) {
       })),
     };
 
+    // Якорь «факта» (план 1.3): необязательный факт обязательных расходов.
+    // В снимок пишем и факт, и дельту к плану — история покажет «план/факт».
+    const actualSurvival = positiveNumber(req.body?.actualSurvivalCost);
+    if (actualSurvival > 0) {
+      snapshot.actualSurvivalCost = actualSurvival;
+      snapshot.survivalDelta = Math.round(actualSurvival - (Number(plan.survivalCost) || 0));
+    }
+
     // Чек-лист закрытия: фронт может передать purchases=[{itemId, purchased}],
     // чтобы подтвердить, что реально куплено. Без purchases — прежнее поведение
     // (auto → всё approved куплено, manual → куплено только полностью накопленное).
