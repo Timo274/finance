@@ -24,7 +24,6 @@ function buildSystemPrompt(context) {
     allocation,
     goals,
     wallets,
-    investments,
     portfolio,
     manualPlan,
     itemsCount,

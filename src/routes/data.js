@@ -264,7 +264,7 @@ app.get("/api/export/report/:year", requireAuth, (req, res) => {
     .sort((a, b) => String(a.payday).localeCompare(String(b.payday)));
 
   const rows = [];
-  let totals = { salary: 0, allocated: 0, remaining: 0, purchased: 0 };
+  const totals = { salary: 0, allocated: 0, remaining: 0, purchased: 0 };
   for (const plan of plans) {
     const s = plan.snapshot || {};
     const t = s.totals || {};

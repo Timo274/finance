@@ -1,7 +1,6 @@
 // Доступ к данным и сборка агрегатов поверх prepared statements.
 import db, {
   getJSON,
-  setJSON,
   rowToItem,
   rowToPlan,
   rowToWallet,
@@ -9,8 +8,6 @@ import db, {
   rowToGoalContribution,
   rowToInvestmentUpdate,
   rowToAllocationDecision,
-  currencyRate,
-  eurRate,
   rateForCurrency,
 } from "./db.js";
 import { stmt, DEFAULTS, SETTINGS } from "./statements.js";

@@ -89,10 +89,6 @@ const bucketColor = layerColor;
 function catObj(id) {
   return state.meta?.categories?.find((c) => c.id === id);
 }
-function catLabel(id) {
-  const c = catObj(id);
-  return c ? `${c.ru} · ${c.label}` : id;
-}
 function catLabelShort(id) {
   const c = catObj(id);
   return c ? c.ru : id;
