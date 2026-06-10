@@ -105,6 +105,73 @@ function catLabelShort(id) {
   const c = catObj(id);
   return c ? c.ru : id;
 }
+
+// --- эмодзи-приколюхи: подбираем иконку желания по названию ---
+const WISH_EMOJI_RULES = [
+  [/macbook|ноутбук|laptop|компьютер|видеокарт|\bпк\b|\bpc\b/i, "💻"],
+  [/iphone|айфон|телефон|смартфон|pixel|galaxy/i, "📱"],
+  [/playstation|\bps[45]\b|xbox|nintendo|switch|steam *deck|консол|игров/i, "🎮"],
+  [/кроссовк|кеды|ботин|обувь|туфл|sneaker/i, "👟"],
+  [/куртк|пальто|джинс|худи|футболк|одежд|костюм|плать/i, "🧥"],
+  [/резин|шин[аы]|колес|колёс/i, "🛞"],
+  [/машин|\bавто\b|bmw|audi|tesla|toyota/i, "🚗"],
+  [/велосипед|самокат|\bbike\b/i, "🚲"],
+  [/подарок|подарк|\bgift\b/i, "🎁"],
+  [/путешеств|отпуск|поездк|билет|trip|мор[ея]/i, "✈️"],
+  [/час(ы|ов)\b|watch/i, "⌚"],
+  [/наушник|airpods|колонк|саундбар/i, "🎧"],
+  [/камер|фотоаппарат|объектив|gopro/i, "📷"],
+  [/телевизор|монитор|\bтв\b|\btv\b|oled/i, "📺"],
+  [/ремонт|мебел|диван|кресл|шкаф|матрас/i, "🛋️"],
+  [/курс|обучен|книг|учеб|школ/i, "📚"],
+  [/спортзал|тренаж|гантел|абонемент|фитнес/i, "🏋️"],
+  [/кофемашин|кофеварк|кофе/i, "☕"],
+  [/собак|кошк|\bкот\b|питомц/i, "🐾"],
+  [/дрель|шуруповёрт|инструмент|перфоратор/i, "🛠️"],
+  [/страховк|депозит|резерв|подушк/i, "🛡️"],
+];
+const CATEGORY_EMOJI = {
+  asset: "💎",
+  tool: "🛠️",
+  infrastructure: "🏗️",
+  growth: "🚀",
+  experience: "🌍",
+  lifestyle: "🛋️",
+  status: "👑",
+  dopamine: "🍩",
+  waste: "🗑️",
+};
+function wishEmoji(item) {
+  const title = String(item?.title || "");
+  for (const [re, emoji] of WISH_EMOJI_RULES) if (re.test(title)) return emoji;
+  return CATEGORY_EMOJI[item?.category] || "✨";
+}
+function wishEmojiTag(item) {
+  return `<span class="wish-emoji" aria-hidden="true">${wishEmoji(item)}</span>`;
+}
+// --- конфетти при покупках и закрытии месяца ---
+function confettiBurst(x, y, count = 26) {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const host = document.createElement("div");
+  host.className = "confetti-host";
+  const colors = ["#f8d29a", "#0e5f68", "#d33223", "#0c7a55", "#b5710a", "#2f6bff", "#7aa2ff"];
+  for (let i = 0; i < count; i++) {
+    const p = document.createElement("i");
+    const ang = Math.random() * Math.PI * 2;
+    const dist = 60 + Math.random() * 140;
+    p.style.setProperty("--dx", `${(Math.cos(ang) * dist).toFixed(0)}px`);
+    p.style.setProperty("--dy", `${(Math.sin(ang) * dist - 90).toFixed(0)}px`);
+    p.style.setProperty("--rot", `${Math.round(Math.random() * 720 - 360)}deg`);
+    p.style.background = colors[i % colors.length];
+    p.style.left = `${x}px`;
+    p.style.top = `${y}px`;
+    p.style.animationDelay = `${(Math.random() * 0.1).toFixed(2)}s`;
+    if (Math.random() < 0.35) p.style.borderRadius = "50%";
+    host.appendChild(p);
+  }
+  document.body.appendChild(host);
+  setTimeout(() => host.remove(), 1400);
+}
 function bandLabel(id) {
   const b = state.meta?.bands?.find((x) => x.id === id);
   return b ? b.label : id;
@@ -993,12 +1060,12 @@ function queueSummaryCard(filtered) {
       <div><span>Накоплено</span><b>${fmt(funded)}</b><em>по всем желаниям</em></div>
       <div class="${urgent.length ? "warn" : "good"}"><span>Дедлайны 30 дней</span><b>${urgent.length}</b><em>${planned} в плане</em></div>
     </div>
-    ${top.length ? `<div class="queue-focus"><span>Фокус:</span>${top.map((it) => `<button class="chip-btn" data-act="tradeoff" data-id="${it.id}">${escapeHtml(it.title)} · ${fmtShort(amountToFund(it))}</button>`).join("")}</div>` : ""}
+    ${top.length ? `<div class="queue-focus"><span>Фокус:</span>${top.map((it, i) => `<button class="chip-btn ticket-chip" data-act="tradeoff" data-id="${it.id}"><span class="ticket-no">№${i + 1}</span><span class="ticket-body">${wishEmojiTag(it)}${escapeHtml(it.title)} · ${fmtShort(amountToFund(it))}</span></button>`).join("")}</div>` : ""}
   </section>`;
 }
 
 function richEmpty(icon, title, text, action = "", button = "", targetView = "") {
-  return `<div class="empty rich-empty"><div class="big">${icon}</div><h3>${escapeHtml(title)}</h3><p>${escapeHtml(text)}</p>${action ? `<button class="btn btn-primary" data-act="${action}" ${targetView ? `data-target-view="${targetView}"` : ""}>${escapeHtml(button)}</button>` : ""}</div>`;
+  return `<div class="empty rich-empty"><div class="big"><i class="spark s1">✦</i><i class="spark s2">✧</i><span>${icon}</span></div><h3>${escapeHtml(title)}</h3><p>${escapeHtml(text)}</p>${action ? `<button class="btn btn-primary" data-act="${action}" ${targetView ? `data-target-view="${targetView}"` : ""}>${escapeHtml(button)}</button>` : ""}</div>`;
 }
 
 function noPlanBlock() {
@@ -1014,7 +1081,7 @@ function miniInsightItem(item, emptyText) {
   const layer = item.layer || item.bucket;
   return `<div class="insight-item" data-id="${item.id}">
     <div class="insight-item-main">
-      <div class="insight-item-title"><span class="dot" style="background:${layerColor(layer)}"></span>${escapeHtml(item.title)}</div>
+      <div class="insight-item-title"><span class="dot" style="background:${layerColor(layer)}"></span>${wishEmojiTag(item)}${escapeHtml(item.title)}</div>
       <div class="insight-item-meta">${layerLabel(layer)} · ${TYPE_LABELS[item.type] || item.type}${item.deadlineText ? ` · ${escapeHtml(item.deadlineText)}` : ""}</div>
     </div>
     <b>${insightMoney(item.remainingCost ?? item.cost)}</b>
@@ -1141,6 +1208,10 @@ function allocationLayerCard(t, segs, stablePct) {
   </section>`;
 }
 
+function statCard(ico, label, valueCls, value, sub) {
+  return `<div class="card stat-card"><span class="stat-watermark" aria-hidden="true">${ico}</span><div class="stat-label"><span class="stat-ico">${ico}</span> ${label}</div><div class="stat-value ${valueCls}">${value}</div><div class="stat-sub">${sub}</div></div>`;
+}
+
 function viewDashboard() {
   if (!state.plan || !state.allocation) {
     return `<div class="view-head"><h1>Кабинет</h1><p>Обзор будущей зарплаты до её прихода.</p></div>${noPlanBlock()}`;
@@ -1171,14 +1242,14 @@ function viewDashboard() {
     ${planPulseCard()}
     ${decisionCockpit()}
     <div class="grid cards dashboard-cards">
-    <div class="card"><div class="stat-label"><span class="stat-ico">💰</span> Зарплата</div><div class="stat-value">${fmt(t.salary)}</div><div class="stat-sub">${fmtDate(state.plan.payday)} ${fmtUsd(t.salary)}</div></div>
-    <div class="card"><div class="stat-label"><span class="stat-ico">🛡️</span> Обязательные расходы</div><div class="stat-value sm">${fmt(t.survival)}</div><div class="stat-sub">${fmtUsd(t.survival)} стабильный расходник</div></div>
-    <div class="card"><div class="stat-label"><span class="stat-ico">🏦</span> Страховка</div><div class="stat-value sm accent-num">${fmt(t.reserve)}</div><div class="stat-sub">${fmtUsd(t.reserve)} чёрный день</div></div>
-    <div class="card"><div class="stat-label"><span class="stat-ico">📈</span> Инвестиции</div><div class="stat-value sm green-num">${fmt(t.fixedInvestment)}</div><div class="stat-sub">${fmtUsd(t.fixedInvestment)} стабильно отложить</div></div>
-    <div class="card"><div class="stat-label"><span class="stat-ico">🎯</span> Излишки на желания</div><div class="stat-value accent-num">${fmt(t.availableToAllocate)}</div><div class="stat-sub">${fmtUsd(t.availableToAllocate)} после стабильных пунктов</div></div>
-    <div class="card"><div class="stat-label"><span class="stat-ico">📋</span> Распределено</div><div class="stat-value sm">${fmt(committedTotal())}</div><div class="stat-sub">${fmtUsd(committedTotal())} ${hasManualPlan() ? "ручной план" : `${state.allocation.approved.length} покупок`}</div></div>
-    <div class="card"><div class="stat-label"><span class="stat-ico">${remainingSurplus() < 0 ? "⚠️" : "✅"}</span> Останется из излишков</div><div class="stat-value ${remainingSurplus() < 0 ? "red-num" : "green-num"}">${fmt(remainingSurplus())}</div><div class="stat-sub">${fmtUsd(remainingSurplus())} ${hasManualPlan() ? "по ручному плану" : "по авто-распределению"}</div></div>
-    ${pfValue > 0 ? `<div class="card"><div class="stat-label"><span class="stat-ico">💼</span> Портфель</div><div class="stat-value sm">${fmt(pfValue)}</div><div class="stat-sub">${fmtUsd(pfValue)} ${pfPLpct ? `<span style="color:${pfPL >= 0 ? "var(--green)" : "var(--red)"};font-weight:700">${pfPL >= 0 ? "+" : ""}${pfPLpct}%</span>` : ""}</div></div>` : ""}
+    ${statCard("💰", "Зарплата", "", fmt(t.salary), `${fmtDate(state.plan.payday)} ${fmtUsd(t.salary)}`)}
+    ${statCard("🛡️", "Обязательные расходы", "sm", fmt(t.survival), `${fmtUsd(t.survival)} стабильный расходник`)}
+    ${statCard("🏦", "Страховка", "sm accent-num", fmt(t.reserve), `${fmtUsd(t.reserve)} чёрный день`)}
+    ${statCard("📈", "Инвестиции", "sm green-num", fmt(t.fixedInvestment), `${fmtUsd(t.fixedInvestment)} стабильно отложить`)}
+    ${statCard("🎯", "Излишки на желания", "accent-num", fmt(t.availableToAllocate), `${fmtUsd(t.availableToAllocate)} после стабильных пунктов`)}
+    ${statCard("📋", "Распределено", "sm", fmt(committedTotal()), `${fmtUsd(committedTotal())} ${hasManualPlan() ? "ручной план" : `${state.allocation.approved.length} покупок`}`)}
+    ${statCard(remainingSurplus() < 0 ? "⚠️" : "✅", "Останется из излишков", remainingSurplus() < 0 ? "red-num" : "green-num", fmt(remainingSurplus()), `${fmtUsd(remainingSurplus())} ${hasManualPlan() ? "по ручному плану" : "по авто-распределению"}`)}
+    ${pfValue > 0 ? statCard("💼", "Портфель", "sm", fmt(pfValue), `${fmtUsd(pfValue)} ${pfPLpct ? `<span style="color:${pfPL >= 0 ? "var(--green)" : "var(--red)"};font-weight:700">${pfPL >= 0 ? "+" : ""}${pfPLpct}%</span>` : ""}`) : ""}
     </div>
   </div>
   `;
@@ -1195,7 +1266,7 @@ function queueItemRow(item, extra = "", reason = "") {
   const gp = goalProgress(item);
   return `<div class="queue-item queue-swipe" data-id="${item.id}">
     <div class="qi-main">
-      <div class="qi-title"><span class="dot" style="background:${layerColor(layer)}"></span>${escapeHtml(item.title)}
+      <div class="qi-title"><span class="dot" style="background:${layerColor(layer)}"></span>${wishEmojiTag(item)}${escapeHtml(item.title)}
         <span class="tag tag-${item.type}">${TYPE_LABELS[item.type]}</span>${verdictChip(item)}</div>
       <div class="qi-meta">${layerLabel(layer)} · ${catLabelShort(item.category)} · ${bandLabel(item.band)} · приоритет ${item.priority}/5 · траектория ${item.trajectory}/5${item.deadline ? " · дедлайн " + fmtDate(item.deadline) : ""}</div>
       ${gp.saved > 0 ? `<div class="goal-mini"><div style="width:${gp.pct}%"></div></div><div class="qi-meta">Накоплено ${fmt(gp.saved)} из ${fmt(gp.cost)} · осталось ${fmt(gp.left)}</div>` : ""}
@@ -1246,7 +1317,7 @@ function viewQueue() {
       const layer = it.layer || it.bucket;
       const gp = goalProgress(it);
       return `<tr data-id="${it.id}">
-      <td><span class="dot" style="background:${layerColor(layer)}"></span>${escapeHtml(it.title)}${verdictChip(it)}</td>
+      <td><span class="dot" style="background:${layerColor(layer)}"></span>${wishEmojiTag(it)}${escapeHtml(it.title)}${verdictChip(it)}</td>
       <td>${fmt(it.cost)}</td>
       <td><div class="goal-cell"><b>${gp.pct}%</b><div class="goal-mini"><div style="width:${gp.pct}%"></div></div><span>${fmtShort(gp.saved)} / ${fmtShort(gp.cost)}</span></div></td>
       <td>${layerLabel(layer)}</td>
@@ -1255,7 +1326,7 @@ function viewQueue() {
       <td><span class="tag tag-${it.type}">${TYPE_LABELS[it.type]}</span></td>
       <td>${prioDots(it.priority)}</td>
       <td>${it.deadline ? fmtDate(it.deadline) : "—"}</td>
-      <td>${inPlan ? '<span class="green-num">в плане</span>' : '<span class="muted">позже</span>'}</td>
+      <td>${inPlan ? '<span class="stamp stamp-plan">в плане</span>' : '<span class="stamp stamp-later">позже</span>'}</td>
       <td style="text-align:right">
         <details class="row-menu">
           <summary aria-label="Действия с желанием">⋯</summary>
@@ -1873,9 +1944,10 @@ function bindViewEvents() {
   $$("[data-act]").forEach((el) => {
     if (el._bound) return;
     el._bound = true;
-    el.addEventListener("click", async () => {
+    el.addEventListener("click", async (ev) => {
       const act = el.dataset.act;
       const id = Number(el.dataset.id);
+      if (act === "bought") confettiBurst(ev.clientX, ev.clientY);
       if (act === "open-plan") openPlanModal();
       else if (act === "add-item") openItemModal();
       else if (act === "save-goal")
@@ -2205,7 +2277,8 @@ async function closeMonth() {
     }));
     await api.post("/api/plan/close", { scenario: "balanced", purchases });
     closeModal();
-    toast("Месяц закрыт и сохранён в истории");
+    confettiBurst(window.innerWidth / 2, window.innerHeight * 0.3, 48);
+    toast("Месяц закрыт и сохранён в истории 🎉");
     await refresh();
     // Предложим AI-разбор месяца, если ассистент включён.
     if (state.meta?.ai?.enabled) openMonthReviewModal();
