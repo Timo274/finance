@@ -525,7 +525,13 @@ tbody tr:last-child td { border-bottom: none; }
   position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
   background: var(--panel); border: 1px solid var(--border); color: var(--text);
   padding: 11px 18px; border-radius: var(--radius-sm); font-size: 13.5px; box-shadow: var(--shadow); z-index: 100;
+  display: flex; align-items: center; gap: 12px; white-space: nowrap;
 }
+.toast-action {
+  border: 0; background: none; color: var(--accent); font-weight: 600;
+  font-size: 13.5px; cursor: pointer; padding: 0;
+}
+.toast-action:hover { text-decoration: underline; }
 .fab {
   position: fixed; right: 18px; bottom: calc(84px + env(safe-area-inset-bottom));
   width: 56px; height: 56px; border-radius: 50%; border: 0;

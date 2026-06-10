@@ -198,6 +198,20 @@ ensureColumn("link_price", "REAL");
 ensureColumn("link_price_at", "TEXT");
 ensurePlanColumn("investment_fixed", "REAL NOT NULL DEFAULT 0");
 
+// История проверок цены по ссылке желания (тренд в карточке).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS price_checks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+    price REAL NOT NULL,
+    currency TEXT,
+    source TEXT NOT NULL DEFAULT 'manual',
+    checked_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_price_checks_item
+    ON price_checks(item_id, checked_at);
+`);
+
 // Подписки Web Push (PWA-напоминания).
 db.exec(`
   CREATE TABLE IF NOT EXISTS push_subscriptions (

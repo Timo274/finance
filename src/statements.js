@@ -69,6 +69,14 @@ export const stmt = {
   updateItemLinkPrice: db.prepare(
     "UPDATE items SET link_price=@linkPrice, link_price_at=datetime('now') WHERE id=@id",
   ),
+  insertPriceCheck: db.prepare(
+    `INSERT INTO price_checks (item_id, price, currency, source)
+     VALUES (@itemId, @price, @currency, @source)`,
+  ),
+  priceChecksByItem: db.prepare(
+    `SELECT id, price, currency, source, checked_at FROM price_checks
+     WHERE item_id = ? ORDER BY checked_at DESC, id DESC LIMIT 50`,
+  ),
   setItemStatus: db.prepare(
     "UPDATE items SET status=@status, updated_at=datetime('now') WHERE id=@id",
   ),

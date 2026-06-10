@@ -74,6 +74,12 @@ async function runDailyPriceSweep() {
       if (!result.found) continue;
       const oldPrice = Number(row.link_price) || Number(row.cost) || 0;
       stmt.updateItemLinkPrice.run({ id: row.id, linkPrice: result.price });
+      stmt.insertPriceCheck.run({
+        itemId: row.id,
+        price: result.price,
+        currency: result.currency || null,
+        source: "daily",
+      });
       // Push при удешевлении ≥5% относительно прошлой известной цены.
       if (oldPrice > 0 && result.price <= oldPrice * 0.95) {
         await sendPushToAll({

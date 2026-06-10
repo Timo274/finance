@@ -167,6 +167,18 @@ describe("новые фичи", () => {
     assert.equal(contrib.data.contributions[0].amount, 3000);
   });
 
+  it("отдаёт историю проверок цены и тренд", async () => {
+    const history = await request(`/api/items/${plainId}/price-history`);
+    assert.equal(history.res.status, 200);
+    assert.equal(history.data.itemId, plainId);
+    assert.ok(Array.isArray(history.data.checks));
+    assert.equal(history.data.checks.length, 0);
+    assert.equal(history.data.trend, null);
+
+    const missing = await request(`/api/items/999999/price-history`);
+    assert.equal(missing.res.status, 404);
+  });
+
   it("экспортирует goalContributions (v5) и восстанавливает их без дублей решений", async () => {
     const exported = await request("/api/export");
     assert.equal(exported.res.status, 200);

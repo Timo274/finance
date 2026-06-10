@@ -69,12 +69,24 @@ function fmtDate(d) {
     year: "numeric",
   });
 }
-function toast(msg) {
+function toast(msg, opts = {}) {
   const t = $("#toast");
   t.textContent = msg;
+  if (opts.action) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "toast-action";
+    btn.textContent = opts.action.label;
+    btn.addEventListener("click", () => {
+      t.classList.add("hidden");
+      clearTimeout(toast._t);
+      opts.action.onClick();
+    });
+    t.appendChild(btn);
+  }
   t.classList.remove("hidden");
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => t.classList.add("hidden"), 2400);
+  toast._t = setTimeout(() => t.classList.add("hidden"), opts.duration || 2400);
 }
 function layerLabel(key) {
   const l = state.meta?.layers?.[key];
@@ -714,7 +726,9 @@ async function loadAndRender() {
 async function refresh() {
   const data = await api.get(`/api/state?scenario=balanced`);
   state.plan = data.plan;
-  state.items = data.items;
+  state.items = pendingDeletes.size
+    ? data.items.filter((i) => !pendingDeletes.has(i.id))
+    : data.items;
   state.allocation = data.allocation;
   state.insights = data.insights || null;
   state.history = data.history;
@@ -1961,18 +1975,50 @@ async function markBought(id) {
   await refresh();
 }
 
+// Удаление с возможностью отмены: желание сразу убирается из интерфейса,
+// а реальный DELETE уходит на сервер через 6 секунд, если не нажали «Отменить».
+const pendingDeletes = new Map();
+
+function flushPendingDeletes() {
+  for (const [id, pending] of pendingDeletes) {
+    clearTimeout(pending.timer);
+    // keepalive — запрос доживёт даже при закрытии вкладки
+    fetch(`/api/items/${id}`, { method: "DELETE", keepalive: true }).catch(() => {});
+  }
+  pendingDeletes.clear();
+}
+window.addEventListener("pagehide", flushPendingDeletes);
+
+async function commitDelete(id) {
+  if (!pendingDeletes.has(id)) return;
+  pendingDeletes.delete(id);
+  try {
+    await api.del(`/api/items/${id}`);
+  } catch {}
+  await refresh();
+}
+
 async function deleteItem(id) {
   const item = state.items.find((i) => i.id === id);
-  const ok = await confirmDialog({
-    title: "Удалить желание?",
-    text: `«${item?.title || "Желание"}» будет удалено из очереди и планов. Если покупка уже сделана — лучше отметьте её купленной.`,
-    confirmText: "Удалить навсегда",
-    danger: true,
+  if (!item || pendingDeletes.has(id)) return;
+  const timer = setTimeout(() => commitDelete(id), 6000);
+  pendingDeletes.set(id, { timer });
+  state.items = state.items.filter((i) => i.id !== id);
+  renderView();
+  toast(`«${item.title}» удалено`, {
+    duration: 6000,
+    action: {
+      label: "Отменить",
+      onClick: async () => {
+        const pending = pendingDeletes.get(id);
+        if (!pending) return;
+        clearTimeout(pending.timer);
+        pendingDeletes.delete(id);
+        await refresh();
+        toast("Восстановлено");
+      },
+    },
   });
-  if (!ok) return;
-  await api.del(`/api/items/${id}`);
-  toast("Удалено");
-  await refresh();
 }
 
 function bindSwipe(row) {
@@ -2823,7 +2869,8 @@ function openItemModal(item) {
       </select><span class="hint" id="currencyHint"></span></div>
       <div class="field"><label>Band (авто по сумме)</label><input id="bandDisplay" value="" disabled style="opacity:.8" /></div>
       <div class="field"><label>Ссылка на товар (опц.)</label><input name="url" type="url" placeholder="https://..." value="${escapeAttr(i.url || "")}" />
-        ${i.linkPrice ? `<span class="hint">Цена по ссылке: ${fmtShort(i.linkPrice)} (${fmtDate(i.linkPriceAt)})</span>` : ""}</div>
+        ${i.linkPrice ? `<span class="hint">Цена по ссылке: ${fmtShort(i.linkPrice)} (${fmtDate(i.linkPriceAt)})</span>` : ""}
+        <span class="hint" id="priceTrendHint"></span></div>
       <div class="field"><label>Категория покупки</label><select name="category" id="catSelect">${catOpts}</select></div>
       <div class="field"><label>Слой капитала</label><select name="layer" id="layerSelect">${layerOpts}</select>
         <span class="hint">Подставляется из категории, можно изменить.</span></div>
@@ -2937,6 +2984,32 @@ function openItemModal(item) {
 
   costInput.addEventListener("input", refreshBand);
   $("#currencySelect")?.addEventListener("change", refreshBand);
+
+// Тренд цены по ссылке: история проверок из /api/items/:id/price-history.
+async function renderPriceTrend(itemId) {
+  const el = $("#priceTrendHint");
+  if (!el) return;
+  try {
+    const h = await api.get(`/api/items/${itemId}/price-history`);
+    if (!h.trend || h.checks.length < 2) {
+      el.textContent = h.checks.length === 1 ? "Проверок цены: 1 — тренд появится после следующей" : "";
+      return;
+    }
+    const dPrev = h.trend.changeFromPrevious;
+    const dFirst = h.trend.changeFromFirst;
+    const arrow = dPrev > 0 ? "📈" : dPrev < 0 ? "📉" : "➡️";
+    const sign = (v) => (v > 0 ? "+" : "") + fmtShort(v);
+    const parts = [`${arrow} ${sign(dPrev)} с прошлой проверки`];
+    if (dFirst !== null && Math.abs(dFirst - dPrev) > 0.005)
+      parts.push(`${sign(dFirst)} с первой`);
+    parts.push(`проверок: ${h.checks.length}`);
+    el.textContent = parts.join(" · ");
+    el.style.color = dPrev < 0 ? "var(--ok, #16a34a)" : dPrev > 0 ? "var(--danger, #dc2626)" : "";
+  } catch {
+    el.textContent = "";
+  }
+}
+
   $("#checkPriceBtn")?.addEventListener("click", async () => {
     const btn = $("#checkPriceBtn");
     btn.disabled = true;
@@ -2954,7 +3027,9 @@ function openItemModal(item) {
       btn.disabled = false;
       btn.textContent = "Проверить цену по ссылке";
     }
+    renderPriceTrend(item.id);
   });
+  if (item?.url) renderPriceTrend(item.id);
   $("#talkMeOutBtn")?.addEventListener("click", async () => {
     const box = $("#talkMeOutBox");
     box.classList.remove("hidden");
@@ -3016,17 +3091,8 @@ function openItemModal(item) {
   });
   if (item)
     $("#delItem")?.addEventListener("click", async () => {
-      const ok = await confirmDialog({
-        title: "Удалить желание навсегда?",
-        text: `«${item.title}» будет удалено из очереди, накоплений и ручного плана.`,
-        confirmText: "Удалить",
-        danger: true,
-      });
-      if (!ok) return;
-      await api.del(`/api/items/${item.id}`);
       closeModal();
-      toast("Удалено");
-      await refresh();
+      await deleteItem(item.id);
     });
 }
 
