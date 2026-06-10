@@ -1,16 +1,93 @@
 // Проверка цены по ссылке на товар: вытаскиваем цену из структурированных
 // данных страницы (JSON-LD, meta-теги). Best-effort: часть магазинов закрыта от ботов.
 
+import { lookup } from "node:dns/promises";
+import net from "node:net";
+
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 const MAX_BYTES = 600 * 1024;
+const MAX_REDIRECTS = 5;
+
+// SSRF-защита: сервер ходит по URL из пользовательского ввода, поэтому
+// запрещаем всё, что резолвится в приватные/служебные адреса (localhost,
+// 10/8, 172.16/12, 192.168/16, link-local, метаданные облаков и т.п.).
+function isPrivateIp(ip) {
+  if (net.isIPv6(ip)) {
+    const low = ip.toLowerCase();
+    if (low === "::1" || low === "::") return true;
+    if (low.startsWith("fe80:") || low.startsWith("fc") || low.startsWith("fd"))
+      return true;
+    // IPv4-mapped (::ffff:127.0.0.1)
+    const mapped = low.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+    if (mapped) return isPrivateIp(mapped[1]);
+    return false;
+  }
+  const parts = ip.split(".").map(Number);
+  if (parts.length !== 4 || parts.some((p) => !Number.isInteger(p) || p < 0 || p > 255))
+    return true; // не похоже на нормальный IPv4 — не рискуем
+  const [a, b] = parts;
+  if (a === 0 || a === 10 || a === 127) return true;
+  if (a === 169 && b === 254) return true; // link-local / cloud metadata
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
+  if (a >= 224) return true; // multicast/reserved
+  return false;
+}
+
+export async function assertPublicHttpUrl(rawUrl) {
+  let u;
+  try {
+    u = new URL(rawUrl);
+  } catch {
+    throw new Error("invalid_url");
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:")
+    throw new Error("unsupported_protocol");
+  // У IPv6 в URL hostname приходит в скобках: [::1]
+  const host = u.hostname.replace(/^\[|\]$/g, "");
+  if (net.isIP(host)) {
+    if (isPrivateIp(host)) throw new Error("blocked_host");
+    return u;
+  }
+  if (host === "localhost" || host.endsWith(".local") || host.endsWith(".internal"))
+    throw new Error("blocked_host");
+  let addrs;
+  try {
+    addrs = await lookup(host, { all: true, verbatim: true });
+  } catch {
+    throw new Error("dns_failed");
+  }
+  if (!addrs.length || addrs.some((a) => isPrivateIp(a.address)))
+    throw new Error("blocked_host");
+  return u;
+}
 
 async function fetchHtml(url) {
-  const res = await fetch(url, {
-    headers: { "User-Agent": UA, Accept: "text/html,*/*" },
-    redirect: "follow",
-    signal: AbortSignal.timeout(10000),
-  });
+  // Редиректы обрабатываем вручную, чтобы перепроверять каждый hop
+  // (иначе публичный URL может средиректить на 169.254.169.254).
+  let current = url;
+  let res;
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    await assertPublicHttpUrl(current);
+    res = await fetch(current, {
+      headers: { "User-Agent": UA, Accept: "text/html,*/*" },
+      redirect: "manual",
+      signal: AbortSignal.timeout(10000),
+    });
+    if (res.status >= 300 && res.status < 400) {
+      const loc = res.headers.get("location");
+      if (!loc) throw new Error(`http_${res.status}`);
+      current = new URL(loc, current).href;
+      try {
+        await res.body?.cancel();
+      } catch {}
+      continue;
+    }
+    break;
+  }
+  if (res.status >= 300 && res.status < 400) throw new Error("too_many_redirects");
   if (!res.ok) throw new Error(`http_${res.status}`);
   const reader = res.body?.getReader();
   if (!reader) return res.text();
