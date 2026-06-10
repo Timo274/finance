@@ -2308,7 +2308,7 @@ async function loadMonobankSummary(btn) {
       <div class="card"><div class="stat-label">План обязательных</div><div class="stat-value sm">${fmt(plannedSpend)}</div></div>
       <div class="card"><div class="stat-label">Разница</div><div class="stat-value sm ${diff > 0 ? "red-num" : "green-num"}">${diff > 0 ? "+" : ""}${fmtShort(diff)} грн</div></div>
     </div>
-    <div style="margin-top:10px"><span class="muted small">Топ категорий:</span> ${(s.topCategories || []).map((c) => `${escapeHtml(c.name)} ${fmtShort(c.amount)}`).join(" · ") || "—"}</div>
+    <div style="margin-top:10px"><span class="muted small">Топ категорий:</span> ${(s.topCategories || []).map((c) => `${escapeHtml(c.label)} ${fmtShort(c.amount)}`).join(" · ") || "—"}</div>
     ${s.biggest?.length ? `<div style="margin-top:6px"><span class="muted small">Самая крупная трата:</span> ${escapeHtml(s.biggest[0].description || "")} — ${fmt(s.biggest[0].amount)}</div>` : ""}`;
   } catch (ex) {
     const box = $("#monoBody");
