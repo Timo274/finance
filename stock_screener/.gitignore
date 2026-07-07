@@ -1,0 +1,9 @@
+
+# Generated artifacts
+__pycache__/
+*.py[cod]
+.coverage
+.pytest_cache/
+.cache/
+sample_outputs/*.xlsx
+sample_outputs/*.html
