@@ -1,25 +1,6 @@
-tickers:
-  - AAPL
-  - MSFT
-  - NVDA
-  - AMZN
-  - GOOGL
-  - META
-  - AVGO
-  - AMD
-  - ORCL
-  - CRM
-  - ADBE
-  - INTC
-  - QCOM
-  - TXN
-  - MU
-  - JPM
-  - V
-  - MA
-
+tickers: [AAPL, MSFT, NVDA, AMZN, GOOGL, META, AVGO, AMD, ORCL, CRM, ADBE, INTC, QCOM, TXN, MU, JPM, V, MA]
 filters:
-  market_cap_min: 50000000000      # $50bn
+  market_cap_min: 50000000000
   pe_max: 80
   ev_ebitda_max: 60
   roe_min: 0.05
@@ -27,7 +8,6 @@ filters:
   fcf_growth_min: -0.50
   debt_to_equity_max: 3.00
   gross_margin_min: 0.20
-
 weights:
   pe_ratio: 0.15
   ev_ebitda: 0.15
@@ -37,7 +17,9 @@ weights:
   debt_to_equity: 0.10
   gross_margin: 0.10
   market_cap: 0.10
-
+runtime:
+  concurrency: 8
+  cache_ttl_seconds: 86400
 output:
   excel_file: sample_outputs/stock_screen_results.xlsx
   chart_file: sample_outputs/stock_screen_charts.html
