@@ -1,0 +1,17 @@
+[project]
+name = "investment-stock-screener"
+version = "1.0.0"
+description = "Python stock screening application for investment analysts"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "yfinance>=0.2.54",
+    "pandas>=2.2.0",
+    "numpy>=1.26.0",
+    "openpyxl>=3.1.0",
+    "plotly>=5.24.0",
+    "pyyaml>=6.0.0",
+]
+
+[project.scripts]
+stock-screener = "stock_screener.cli:main"
